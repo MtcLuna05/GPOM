@@ -29,7 +29,8 @@ public final class ThaumcraftStartupProfilerTransformer implements IClassTransfo
         boolean targetedPackage = className != null
                 && (className.startsWith("thaumcraft.")
                 || className.startsWith("vazkii.botania.common.integration.thaumcraft."));
-        if (methods == null && !targetedPackage && !ASPECT_EVENT_PROFILER) {
+        boolean possibleAspectEventHandler = ASPECT_EVENT_PROFILER && containsAscii(basicClass, "thaumcraft/api/aspects/AspectRegistryEvent");
+        if (methods == null && !targetedPackage && !possibleAspectEventHandler) {
             return basicClass;
         }
 
@@ -82,6 +83,27 @@ public final class ThaumcraftStartupProfilerTransformer implements IClassTransfo
 
     private static void add(Map<String, Set<MethodKey>> targets, String className, String methodName, String descriptor) {
         targets.computeIfAbsent(className, ignored -> new HashSet<>()).add(new MethodKey(methodName, descriptor));
+    }
+
+    private static boolean containsAscii(byte[] bytes, String needle) {
+        if (bytes == null || needle == null || needle.isEmpty() || bytes.length < needle.length()) {
+            return false;
+        }
+        int limit = bytes.length - needle.length();
+        int first = needle.charAt(0);
+        for (int i = 0; i <= limit; i++) {
+            if ((bytes[i] & 0xFF) != first) {
+                continue;
+            }
+            int j = 1;
+            while (j < needle.length() && (bytes[i + j] & 0xFF) == needle.charAt(j)) {
+                j++;
+            }
+            if (j == needle.length()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static final class ThaumcraftClassVisitor extends ClassVisitor {

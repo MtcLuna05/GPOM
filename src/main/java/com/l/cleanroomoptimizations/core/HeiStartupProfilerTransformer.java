@@ -79,12 +79,14 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
             methods = TARGETS.get(className);
         }
 
+        boolean possibleJeiPlugin = PLUGIN_PROFILER && containsAscii(basicClass, "mezz/jei/api/IModPlugin");
+        if (methods == null && !possibleJeiPlugin) {
+            return basicClass;
+        }
+
         try {
             ClassReader reader = new ClassReader(basicClass);
-            boolean plugin = PLUGIN_PROFILER && implementsJeiPlugin(reader);
-            if (methods == null && !plugin) {
-                return basicClass;
-            }
+            boolean plugin = possibleJeiPlugin && implementsJeiPlugin(reader);
 
             ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
             reader.accept(new HeiClassVisitor(writer, className, methods, plugin), 0);
@@ -413,6 +415,27 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static boolean implementsJeiPlugin(ClassReader reader) {
         for (String iface : reader.getInterfaces()) {
             if ("mezz/jei/api/IModPlugin".equals(iface)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsAscii(byte[] bytes, String needle) {
+        if (bytes == null || needle == null || needle.isEmpty() || bytes.length < needle.length()) {
+            return false;
+        }
+        int limit = bytes.length - needle.length();
+        int first = needle.charAt(0);
+        for (int i = 0; i <= limit; i++) {
+            if ((bytes[i] & 0xFF) != first) {
+                continue;
+            }
+            int j = 1;
+            while (j < needle.length() && (bytes[i + j] & 0xFF) == needle.charAt(j)) {
+                j++;
+            }
+            if (j == needle.length()) {
                 return true;
             }
         }
