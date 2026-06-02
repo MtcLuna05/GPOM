@@ -21,7 +21,7 @@ public final class CleanroomOptimizationLoadingPlugin implements IFMLLoadingPlug
                 "com.l.cleanroomoptimizations.core.HeiStartupProfilerTransformer",
                 "com.l.cleanroomoptimizations.core.ModularMachineryStartupProfilerTransformer",
                 "com.l.cleanroomoptimizations.core.ThaumcraftStartupProfilerTransformer",
-                "com.l.cleanroomoptimizations.core.CitNbtResourceReloadTransformer",
+                "com.l.cleanroomoptimizations.core.ForcedResourceReloadTransformer",
                 "com.l.cleanroomoptimizations.core.RenderLibCompatibilityTransformer",
                 "com.l.cleanroomoptimizations.core.LibVulpesCompatibilityTransformer"
         };
