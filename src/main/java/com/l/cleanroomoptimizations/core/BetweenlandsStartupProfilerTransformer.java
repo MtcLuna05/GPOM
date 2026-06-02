@@ -6,6 +6,14 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,6 +22,7 @@ import java.util.Set;
 
 public final class BetweenlandsStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.betweenlandsProfiler", "true"));
+    private static final boolean FAST_ENTITY_REGISTRATION = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.betweenlands.fastEntityRegistration", "true"));
     private static final Map<String, Set<MethodKey>> TARGETS = createTargets();
 
     @Override
@@ -23,6 +32,10 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
         }
 
         String className = transformedName != null ? transformedName : name;
+        if ("thebetweenlands.common.registries.EntityRegistry".equals(className) && FAST_ENTITY_REGISTRATION) {
+            basicClass = patchEntityRegistry(basicClass);
+        }
+
         Set<MethodKey> methods = TARGETS.get(className);
         if (methods == null) {
             return basicClass;
@@ -60,10 +73,6 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
 
         add(targets, "thebetweenlands.common.registries.EntityRegistry", "<clinit>", "()V");
         add(targets, "thebetweenlands.common.registries.EntityRegistry", "preInit", "()V");
-        add(targets, "thebetweenlands.common.registries.EntityRegistry", "registerEntity", "(Ljava/lang/Class;Ljava/lang/String;IIZ)V");
-        add(targets, "thebetweenlands.common.registries.EntityRegistry", "registerEntity", "(Ljava/lang/Class;Ljava/lang/String;)V");
-        add(targets, "thebetweenlands.common.registries.EntityRegistry", "registerEntity", "(Ljava/lang/Class;Ljava/lang/String;IIIIZ)V");
-        add(targets, "thebetweenlands.common.registries.EntityRegistry", "registerEntity", "(Ljava/lang/Class;Ljava/lang/String;II)V");
 
         add(targets, "thebetweenlands.common.registries.SoundRegistry", "<clinit>", "()V");
         add(targets, "thebetweenlands.common.registries.SoundRegistry", "preInit", "()V");
@@ -92,6 +101,140 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
 
     private static void add(Map<String, Set<MethodKey>> targets, String className, String methodName, String descriptor) {
         targets.computeIfAbsent(className, ignored -> new HashSet<>()).add(new MethodKey(methodName, descriptor));
+    }
+
+    private static byte[] patchEntityRegistry(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"registerEntity".equals(method.name)) {
+                    continue;
+                }
+                if ("(Ljava/lang/Class;Ljava/lang/String;IIZ)V".equals(method.desc)) {
+                    replaceRegisterModEntity(method, 2, 3, 4);
+                    changed = true;
+                } else if ("(Ljava/lang/Class;Ljava/lang/String;)V".equals(method.desc)) {
+                    replaceRegisterModEntity(method, 64, 3, true);
+                    changed = true;
+                } else if ("(Ljava/lang/Class;Ljava/lang/String;IIIIZ)V".equals(method.desc)) {
+                    replaceRegisterLivingEntity(method, 4, 5, 6, 2, 3);
+                    changed = true;
+                } else if ("(Ljava/lang/Class;Ljava/lang/String;II)V".equals(method.desc)) {
+                    replaceRegisterLivingEntity(method, 64, 3, true, 2, 3);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static void replaceRegisterModEntity(MethodNode method, int rangeLocal, int updateLocal, int velocityLocal) {
+        method.instructions = new InsnList();
+        method.tryCatchBlocks.clear();
+        loadClassNameId(method.instructions);
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, rangeLocal));
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, updateLocal));
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, velocityLocal));
+        callRegisterModEntity(method.instructions);
+        incrementId(method.instructions);
+        method.instructions.add(new InsnNode(Opcodes.RETURN));
+    }
+
+    private static void replaceRegisterModEntity(MethodNode method, int range, int updateFrequency, boolean sendVelocityUpdates) {
+        method.instructions = new InsnList();
+        method.tryCatchBlocks.clear();
+        loadClassNameId(method.instructions);
+        pushInt(method.instructions, range);
+        pushInt(method.instructions, updateFrequency);
+        method.instructions.add(new InsnNode(sendVelocityUpdates ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
+        callRegisterModEntity(method.instructions);
+        incrementId(method.instructions);
+        method.instructions.add(new InsnNode(Opcodes.RETURN));
+    }
+
+    private static void replaceRegisterLivingEntity(MethodNode method, int rangeLocal, int updateLocal, int velocityLocal, int primaryLocal, int secondaryLocal) {
+        method.instructions = new InsnList();
+        method.tryCatchBlocks.clear();
+        loadClassNameId(method.instructions);
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, rangeLocal));
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, updateLocal));
+        method.instructions.add(new VarInsnNode(Opcodes.ILOAD, velocityLocal));
+        callRegisterModEntity(method.instructions);
+        incrementId(method.instructions);
+        callRegisterEgg(method.instructions, primaryLocal, secondaryLocal);
+        incrementId(method.instructions);
+        method.instructions.add(new InsnNode(Opcodes.RETURN));
+    }
+
+    private static void replaceRegisterLivingEntity(MethodNode method, int range, int updateFrequency, boolean sendVelocityUpdates, int primaryLocal, int secondaryLocal) {
+        method.instructions = new InsnList();
+        method.tryCatchBlocks.clear();
+        loadClassNameId(method.instructions);
+        pushInt(method.instructions, range);
+        pushInt(method.instructions, updateFrequency);
+        method.instructions.add(new InsnNode(sendVelocityUpdates ? Opcodes.ICONST_1 : Opcodes.ICONST_0));
+        callRegisterModEntity(method.instructions);
+        incrementId(method.instructions);
+        callRegisterEgg(method.instructions, primaryLocal, secondaryLocal);
+        incrementId(method.instructions);
+        method.instructions.add(new InsnNode(Opcodes.RETURN));
+    }
+
+    private static void loadClassNameId(InsnList instructions) {
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, "thebetweenlands/common/registries/EntityRegistry", "id", "I"));
+    }
+
+    private static void callRegisterModEntity(InsnList instructions) {
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/cleanroomoptimizations/profiling/BetweenlandsOptimizations",
+                "registerModEntity",
+                "(Ljava/lang/Class;Ljava/lang/String;IIIZ)V",
+                false
+        ));
+    }
+
+    private static void callRegisterEgg(InsnList instructions, int primaryLocal, int secondaryLocal) {
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new VarInsnNode(Opcodes.ILOAD, primaryLocal));
+        instructions.add(new VarInsnNode(Opcodes.ILOAD, secondaryLocal));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/cleanroomoptimizations/profiling/BetweenlandsOptimizations",
+                "registerEgg",
+                "(Ljava/lang/String;II)V",
+                false
+        ));
+    }
+
+    private static void incrementId(InsnList instructions) {
+        instructions.add(new FieldInsnNode(Opcodes.GETSTATIC, "thebetweenlands/common/registries/EntityRegistry", "id", "I"));
+        instructions.add(new InsnNode(Opcodes.ICONST_1));
+        instructions.add(new InsnNode(Opcodes.IADD));
+        instructions.add(new FieldInsnNode(Opcodes.PUTSTATIC, "thebetweenlands/common/registries/EntityRegistry", "id", "I"));
+    }
+
+    private static void pushInt(InsnList instructions, int value) {
+        if (value >= -1 && value <= 5) {
+            instructions.add(new InsnNode(Opcodes.ICONST_0 + value));
+        } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
+            instructions.add(new IntInsnNode(Opcodes.BIPUSH, value));
+        } else if (value >= Short.MIN_VALUE && value <= Short.MAX_VALUE) {
+            instructions.add(new IntInsnNode(Opcodes.SIPUSH, value));
+        } else {
+            throw new IllegalArgumentException("Unsupported integer constant: " + value);
+        }
     }
 
     private static final class BetweenlandsClassVisitor extends ClassVisitor {
