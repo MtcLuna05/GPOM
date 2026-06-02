@@ -5,6 +5,7 @@
   "refmap": "cleanroomoptimizations.refmap.json",
   "mixins": [
     "fml.MixinAutomaticEventSubscriberStartupProfiler",
+    "fml.MixinEventBusStartupProfiler",
     "fml.MixinFMLModContainerStartupProfiler",
     "fml.MixinLoadControllerStartupProfiler"
   ],

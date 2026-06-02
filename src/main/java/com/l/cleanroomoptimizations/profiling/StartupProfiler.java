@@ -207,6 +207,18 @@ public final class StartupProfiler {
         endProbe("FML subscriber register " + safeLabel(modId) + " " + safeLabel(className), startedAt, PROBE_THRESHOLD_NANOS);
     }
 
+    public static void endEventBusGetMethods(String targetName, long startedAt, int methodCount) {
+        endProbe("FML EventBus getMethods " + safeLabel(targetName) + " methods=" + methodCount, startedAt, PROBE_THRESHOLD_NANOS);
+    }
+
+    public static void endEventBusHandlerRegister(String targetName, String eventName, String methodName, long startedAt) {
+        endProbe(
+                "FML EventBus handler " + safeLabel(targetName) + " " + safeLabel(eventName) + "#" + safeLabel(methodName),
+                startedAt,
+                PROBE_THRESHOLD_NANOS
+        );
+    }
+
     public static void beginResourceReload(int packCount) {
         if (!ENABLED || !RESOURCE_LOAD_ORDER_ENABLED) {
             return;
