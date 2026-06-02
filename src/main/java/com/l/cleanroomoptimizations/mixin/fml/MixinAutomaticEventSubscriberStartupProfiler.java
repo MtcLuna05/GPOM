@@ -1,5 +1,6 @@
 package com.l.cleanroomoptimizations.mixin.fml;
 
+import com.l.cleanroomoptimizations.profiling.AoAConstructionOptimizations;
 import com.l.cleanroomoptimizations.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.AutomaticEventSubscriber;
 import net.minecraftforge.fml.common.ModContainer;
@@ -18,14 +19,19 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     @Unique
     private static final ThreadLocal<String> cleanroomoptimizations$currentModId = new ThreadLocal<>();
 
+    @Unique
+    private static final ThreadLocal<ModContainer> cleanroomoptimizations$currentMod = new ThreadLocal<>();
+
     @Inject(method = "inject", at = @At("HEAD"))
     private static void cleanroomoptimizations$beginInject(ModContainer mod, ASMDataTable asmData, Side side, CallbackInfo ci) {
         cleanroomoptimizations$currentModId.set(mod == null ? null : mod.getModId());
+        cleanroomoptimizations$currentMod.set(mod);
     }
 
     @Inject(method = "inject", at = @At("RETURN"))
     private static void cleanroomoptimizations$endInject(ModContainer mod, ASMDataTable asmData, Side side, CallbackInfo ci) {
         cleanroomoptimizations$currentModId.remove();
+        cleanroomoptimizations$currentMod.remove();
     }
 
     @Redirect(
@@ -54,7 +60,9 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     private static void cleanroomoptimizations$timeSubscriberRegister(EventBus eventBus, Object target) {
         long startedAt = StartupProfiler.beginAutomaticSubscriberProbe();
         try {
-            eventBus.register(target);
+            if (!AoAConstructionOptimizations.tryRegisterAutomaticSubscriber(cleanroomoptimizations$currentModId.get(), target, cleanroomoptimizations$currentMod.get())) {
+                eventBus.register(target);
+            }
         } finally {
             StartupProfiler.endAutomaticSubscriberRegister(cleanroomoptimizations$currentModId.get(), subscriberName(target), startedAt);
         }

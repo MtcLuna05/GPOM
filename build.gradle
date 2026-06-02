@@ -34,6 +34,10 @@ repositories {
     }
 }
 
+dependencies {
+    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/AoA3-3.3.6.jar')
+}
+
 unimined.minecraft {
     version '1.12.2'
 
