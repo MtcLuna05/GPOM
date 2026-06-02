@@ -25,7 +25,7 @@ public final class StartupProfiler {
     private static final long STACK_SAMPLER_THRESHOLD_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerThresholdMs", 500L);
     private static final long STACK_SAMPLER_INTERVAL_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerIntervalMs", 1_000L);
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("cleanroomoptimizations.startupProfiler.stackSamplerFrames", 32);
-    private static final Set<String> STACK_SAMPLER_MODS = setProperty("cleanroomoptimizations.startupProfiler.stackSamplerMods", "aoa3,enderio,forgelin,tconstruct,thaumcraft,thebetweenlands,jei");
+    private static final Set<String> STACK_SAMPLER_MODS = setProperty("cleanroomoptimizations.startupProfiler.stackSamplerMods", "aoa3,abyssalcraft,agricraft,appliedenergistics2,astralsorcery,brandonscore,citnbt,codechickenlib,contenttweaker,crafttweaker,cyclicmagic,draconicevolution,enderio,extrautils2,forestry,forgelin,integrateddynamics,opencomputers,railcraft,techreborn,tconstruct,thaumcraft,thebetweenlands,thermalexpansion,thermalfoundation");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.startupProfiler.progressBars", "false"));
     private static final boolean RESOURCE_LOAD_ORDER_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.resourceLoadOrder", "true"));
     private static final int TOP_COUNT = intProperty("cleanroomoptimizations.startupProfiler.topCount", 10);
