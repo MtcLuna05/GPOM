@@ -23,12 +23,14 @@ public abstract class MixinSimpleReloadableResourceManagerStartupProfiler {
 
     @Inject(method = "reloadResources", at = @At("HEAD"))
     private void cleanroomoptimizations$beginReloadResources(List<IResourcePack> resourcePacks, CallbackInfo ci) {
+        StartupProfiler.beginResourceReload(resourcePacks.size());
         cleanroomoptimizations$reloadResourcesStartedAt = StartupProfiler.beginProbe();
     }
 
     @Inject(method = "reloadResources", at = @At("RETURN"))
     private void cleanroomoptimizations$endReloadResources(List<IResourcePack> resourcePacks, CallbackInfo ci) {
         StartupProfiler.endProbeAlways("ResourceManager.reloadResources packs=" + resourcePacks.size(), cleanroomoptimizations$reloadResourcesStartedAt);
+        StartupProfiler.endResourceReload();
         cleanroomoptimizations$reloadResourcesStartedAt = 0L;
     }
 
@@ -39,6 +41,8 @@ public abstract class MixinSimpleReloadableResourceManagerStartupProfiler {
 
     @Inject(method = "reloadResourcePack", at = @At("RETURN"))
     private void cleanroomoptimizations$endReloadResourcePack(IResourcePack resourcePack, CallbackInfo ci) {
+        long elapsed = System.nanoTime() - cleanroomoptimizations$reloadResourcePackStartedAt;
+        StartupProfiler.recordResourcePackReload(resourcePack.getPackName(), elapsed);
         StartupProfiler.endProbe("ResourceManager.reloadResourcePack " + resourcePack.getPackName(), cleanroomoptimizations$reloadResourcePackStartedAt);
         cleanroomoptimizations$reloadResourcePackStartedAt = 0L;
     }
@@ -74,6 +78,7 @@ public abstract class MixinSimpleReloadableResourceManagerStartupProfiler {
         try {
             listener.onResourceManagerReload(resourceManager);
         } finally {
+            StartupProfiler.recordResourceReloadListener(listener.getClass().getName(), System.nanoTime() - startedAt, false);
             StartupProfiler.endProbe("Resource reload listener " + listener.getClass().getName(), startedAt);
         }
     }
@@ -87,6 +92,7 @@ public abstract class MixinSimpleReloadableResourceManagerStartupProfiler {
         try {
             listener.onResourceManagerReload(resourceManager);
         } finally {
+            StartupProfiler.recordResourceReloadListener(listener.getClass().getName(), System.nanoTime() - startedAt, true);
             StartupProfiler.endProbeAlways("Registered resource reload listener " + listener.getClass().getName(), startedAt);
         }
     }

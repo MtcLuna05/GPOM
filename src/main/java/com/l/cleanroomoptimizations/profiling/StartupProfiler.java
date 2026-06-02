@@ -27,16 +27,20 @@ public final class StartupProfiler {
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("cleanroomoptimizations.startupProfiler.stackSamplerFrames", 32);
     private static final Set<String> STACK_SAMPLER_MODS = setProperty("cleanroomoptimizations.startupProfiler.stackSamplerMods", "jei,thaumcraft");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.startupProfiler.progressBars", "false"));
+    private static final boolean RESOURCE_LOAD_ORDER_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.resourceLoadOrder", "true"));
     private static final int TOP_COUNT = intProperty("cleanroomoptimizations.startupProfiler.topCount", 10);
+    private static final int RESOURCE_LOAD_ORDER_TOP_COUNT = intProperty("cleanroomoptimizations.resourceLoadOrder.topCount", 12);
 
     private static final Object LOCK = new Object();
     private static final Map<String, PhaseData> PHASES = new LinkedHashMap<>();
     private static final ThreadLocal<Map<String, Deque<Long>>> NAMED_PROBES = ThreadLocal.withInitial(LinkedHashMap::new);
     private static final ThreadLocal<Map<String, Deque<ProgressManager.ProgressBar>>> NAMED_PROGRESS_BARS = ThreadLocal.withInitial(LinkedHashMap::new);
+    private static final ThreadLocal<ResourceReloadData> ACTIVE_RESOURCE_RELOAD = new ThreadLocal<>();
     private static final ThreadLocal<Deque<Long>> MOD_HEAP_STARTS = ThreadLocal.withInitial(ArrayDeque::new);
     private static final ThreadLocal<Integer> ACTIVE_PROGRESS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static String activePhase;
     private static long activePhaseStartedAt;
+    private static int resourceReloadSequence;
 
     private StartupProfiler() {
     }
@@ -189,6 +193,48 @@ public final class StartupProfiler {
 
     public static void endProbeAlways(String probeName, long startedAt) {
         endProbe(probeName, startedAt, 0L);
+    }
+
+    public static void beginResourceReload(int packCount) {
+        if (!ENABLED || !RESOURCE_LOAD_ORDER_ENABLED) {
+            return;
+        }
+        synchronized (LOCK) {
+            ACTIVE_RESOURCE_RELOAD.set(new ResourceReloadData(++resourceReloadSequence, packCount, System.nanoTime()));
+        }
+    }
+
+    public static void recordResourcePackReload(String packName, long elapsedNanos) {
+        if (!ENABLED || !RESOURCE_LOAD_ORDER_ENABLED || packName == null || elapsedNanos < 0L) {
+            return;
+        }
+        ResourceReloadData data = ACTIVE_RESOURCE_RELOAD.get();
+        if (data != null) {
+            data.resourcePacks.add(new OrderedTiming(data.resourcePacks.size() + 1, packName, elapsedNanos));
+        }
+    }
+
+    public static void recordResourceReloadListener(String listenerName, long elapsedNanos, boolean immediate) {
+        if (!ENABLED || !RESOURCE_LOAD_ORDER_ENABLED || listenerName == null || elapsedNanos < 0L) {
+            return;
+        }
+        ResourceReloadData data = ACTIVE_RESOURCE_RELOAD.get();
+        if (data != null) {
+            data.listeners.add(new OrderedTiming(data.listeners.size() + 1, listenerName + (immediate ? " [register]" : ""), elapsedNanos));
+        }
+    }
+
+    public static void endResourceReload() {
+        if (!ENABLED || !RESOURCE_LOAD_ORDER_ENABLED) {
+            return;
+        }
+        ResourceReloadData data = ACTIVE_RESOURCE_RELOAD.get();
+        ACTIVE_RESOURCE_RELOAD.remove();
+        if (data == null) {
+            return;
+        }
+        data.elapsedNanos = System.nanoTime() - data.startedAt;
+        logResourceReloadSummary(data);
     }
 
     private static void endProbe(String probeName, long startedAt, long thresholdNanos) {
@@ -457,6 +503,57 @@ public final class StartupProfiler {
         }
     }
 
+    private static void logResourceReloadSummary(ResourceReloadData data) {
+        CleanroomOptimizations.LOGGER.info(
+                "[ResourceLoadOrder] reload #{} finished: {} ms, packs={}, packLoads={}, listeners={}",
+                data.sequence,
+                formatMillis(data.elapsedNanos),
+                data.packCount,
+                data.resourcePacks.size(),
+                data.listeners.size()
+        );
+
+        List<OrderedTiming> listenerOrder = new ArrayList<>(data.listeners);
+        int orderLimit = Math.min(RESOURCE_LOAD_ORDER_TOP_COUNT, listenerOrder.size());
+        for (int i = 0; i < orderLimit; i++) {
+            OrderedTiming timing = listenerOrder.get(i);
+            CleanroomOptimizations.LOGGER.info(
+                    "[ResourceLoadOrder]   listener order #{} {} ms - {}",
+                    timing.order,
+                    formatMillis(timing.elapsedNanos),
+                    timing.name
+            );
+        }
+
+        List<OrderedTiming> slowListeners = new ArrayList<>(data.listeners);
+        slowListeners.sort(Comparator.comparingLong((OrderedTiming timing) -> timing.elapsedNanos).reversed());
+        int listenerLimit = Math.min(RESOURCE_LOAD_ORDER_TOP_COUNT, slowListeners.size());
+        for (int i = 0; i < listenerLimit; i++) {
+            OrderedTiming timing = slowListeners.get(i);
+            CleanroomOptimizations.LOGGER.info(
+                    "[ResourceLoadOrder]   slow listener #{} {} ms, order={} - {}",
+                    i + 1,
+                    formatMillis(timing.elapsedNanos),
+                    timing.order,
+                    timing.name
+            );
+        }
+
+        List<OrderedTiming> slowPacks = new ArrayList<>(data.resourcePacks);
+        slowPacks.sort(Comparator.comparingLong((OrderedTiming timing) -> timing.elapsedNanos).reversed());
+        int packLimit = Math.min(RESOURCE_LOAD_ORDER_TOP_COUNT, slowPacks.size());
+        for (int i = 0; i < packLimit; i++) {
+            OrderedTiming timing = slowPacks.get(i);
+            CleanroomOptimizations.LOGGER.info(
+                    "[ResourceLoadOrder]   slow pack #{} {} ms, order={} - {}",
+                    i + 1,
+                    formatMillis(timing.elapsedNanos),
+                    timing.order,
+                    timing.name
+            );
+        }
+    }
+
     private static String eventName(FMLEvent event) {
         String type = event.getEventType();
         if (type != null && !type.isEmpty()) {
@@ -615,6 +712,33 @@ public final class StartupProfiler {
                 total += timing.elapsedNanos;
             }
             return total;
+        }
+    }
+
+    private static final class ResourceReloadData {
+        private final int sequence;
+        private final int packCount;
+        private final long startedAt;
+        private final List<OrderedTiming> resourcePacks = new ArrayList<>();
+        private final List<OrderedTiming> listeners = new ArrayList<>();
+        private long elapsedNanos;
+
+        private ResourceReloadData(int sequence, int packCount, long startedAt) {
+            this.sequence = sequence;
+            this.packCount = packCount;
+            this.startedAt = startedAt;
+        }
+    }
+
+    private static final class OrderedTiming {
+        private final int order;
+        private final String name;
+        private final long elapsedNanos;
+
+        private OrderedTiming(int order, String name, long elapsedNanos) {
+            this.order = order;
+            this.name = name;
+            this.elapsedNanos = elapsedNanos;
         }
     }
 
