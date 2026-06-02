@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_8",
   "refmap": "cleanroomoptimizations.refmap.json",
   "mixins": [
+    "fml.MixinAutomaticEventSubscriberStartupProfiler",
     "fml.MixinFMLModContainerStartupProfiler",
     "fml.MixinLoadControllerStartupProfiler"
   ],

@@ -22,10 +22,10 @@ public final class StartupProfiler {
     private static final long DETAIL_THRESHOLD_NANOS = millisProperty("cleanroomoptimizations.startupProfiler.detailThresholdMs", 100L) * 1_000_000L;
     private static final long PROBE_THRESHOLD_NANOS = millisProperty("cleanroomoptimizations.startupProfiler.probeThresholdMs", 25L) * 1_000_000L;
     private static final boolean STACK_SAMPLER_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.startupProfiler.stackSampler", "true"));
-    private static final long STACK_SAMPLER_THRESHOLD_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerThresholdMs", 5_000L);
-    private static final long STACK_SAMPLER_INTERVAL_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerIntervalMs", 5_000L);
+    private static final long STACK_SAMPLER_THRESHOLD_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerThresholdMs", 500L);
+    private static final long STACK_SAMPLER_INTERVAL_MILLIS = millisProperty("cleanroomoptimizations.startupProfiler.stackSamplerIntervalMs", 1_000L);
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("cleanroomoptimizations.startupProfiler.stackSamplerFrames", 32);
-    private static final Set<String> STACK_SAMPLER_MODS = setProperty("cleanroomoptimizations.startupProfiler.stackSamplerMods", "jei,thaumcraft");
+    private static final Set<String> STACK_SAMPLER_MODS = setProperty("cleanroomoptimizations.startupProfiler.stackSamplerMods", "aoa3,enderio,forgelin,tconstruct,thaumcraft,thebetweenlands,jei");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.startupProfiler.progressBars", "false"));
     private static final boolean RESOURCE_LOAD_ORDER_ENABLED = Boolean.parseBoolean(System.getProperty("cleanroomoptimizations.resourceLoadOrder", "true"));
     private static final int TOP_COUNT = intProperty("cleanroomoptimizations.startupProfiler.topCount", 10);
@@ -193,6 +193,18 @@ public final class StartupProfiler {
 
     public static void endProbeAlways(String probeName, long startedAt) {
         endProbe(probeName, startedAt, 0L);
+    }
+
+    public static long beginAutomaticSubscriberProbe() {
+        return beginProbe();
+    }
+
+    public static void endAutomaticSubscriberClassLoad(String modId, String className, long startedAt) {
+        endProbe("FML subscriber class load " + safeLabel(modId) + " " + safeLabel(className), startedAt, PROBE_THRESHOLD_NANOS);
+    }
+
+    public static void endAutomaticSubscriberRegister(String modId, String className, long startedAt) {
+        endProbe("FML subscriber register " + safeLabel(modId) + " " + safeLabel(className), startedAt, PROBE_THRESHOLD_NANOS);
     }
 
     public static void beginResourceReload(int packCount) {
@@ -576,6 +588,10 @@ public final class StartupProfiler {
         } catch (RuntimeException ignored) {
             return "<unknown>";
         }
+    }
+
+    private static String safeLabel(String value) {
+        return value == null || value.isEmpty() ? "<unknown>" : value;
     }
 
     private static String formatMillis(long nanos) {
