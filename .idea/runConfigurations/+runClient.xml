@@ -1,0 +1,33 @@
+<component name="ProjectRunConfigurationManager">
+    <configuration default="false" name=" Minecraft Client" factoryName="Application" type="Application">
+        <option name="ALTERNATIVE_JRE_PATH" value="/usr/lib/jvm/java-25-openjdk"></option>
+        <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true"></option>
+        <envs>
+            <env name="assetDirectory" value="/home/luna/.gradle/caches/unimined/assets"></env>
+            <env name="nativesDirectory" value="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/run/client/natives"></env>
+            <env name="FORGE_GROUP" value="com.cleanroommc"></env>
+            <env name="MCP_TO_SRG" value="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/.gradle/unimined/local/mappings/srg2mcp.tsrg"></env>
+            <env name="mainClass" value="top.outlands.foundation.boot.Foundation"></env>
+            <env name="FORGE_VERSION" value="14.23.5.2864"></env>
+            <env name="tweakClass" value="net.minecraftforge.fml.common.launcher.FMLTweaker"></env>
+            <env name="MCP_MAPPINGS" value="unimined.stub"></env>
+            <env name="MC_VERSION" value="1.12.2"></env>
+            <env name="MOD_CLASSES" value="__main%%/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/resources/main:__main%%/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/classes/java/main"></env>
+            <env name="assetIndex" value="1.12"></env>
+            <env name="FORGE_SPEC" value="2"></env>
+        </envs>
+        <option name="MAIN_CLASS_NAME" value="com.cleanroommc.boot.MainClient"></option>
+        <module name="CleanroomOptimizations.main"></module>
+        <classpathModifications>
+            <entry path="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/classes/java/main" exclude="true"></entry>
+            <entry path="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/resources/main" exclude="true"></entry>
+        </classpathModifications>
+        <option name="PROGRAM_PARAMETERS" value="--username Developer"></option>
+        <option name="VM_PARAMETERS" value="-Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -Djava.library.path=/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/run/client/natives -Dminecraft.launcher.brand=UniminedDev -Dminecraft.launcher.version=1.0.0 -javaagent:/home/luna/.gradle/caches/modules-2/files-2.1/io.github.juuxel/unprotect/1.3.0/d51641f60082321fa30f4b220741d2c9fe122151/unprotect-1.3.0.jar -Dcrl.dev.extrapath=/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/classes/java/main:/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/resources/main"></option>
+        <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/run/client"></option>
+        <method v="2">
+            <option name="Make" enabled="true"></option>
+            <option scriptParameters="" name="Gradle.BeforeRunTask" externalProjectPath="$PROJECT_DIR$/" vmOptions="" enabled="true" tasks="preRunClient"></option>
+        </method>
+    </configuration>
+</component>

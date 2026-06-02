@@ -1,0 +1,10 @@
+{
+  "required": false,
+  "package": "com.l.cleanroomoptimizations.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "cleanroomoptimizations.refmap.json",
+  "mixins": [],
+  "client": [],
+  "server": [],
+  "minVersion": "0.8"
+}
