@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
 
 public final class ThaumcraftRecipeIndex {
@@ -17,6 +19,10 @@ public final class ThaumcraftRecipeIndex {
     private static volatile int indexedRecipes;
     private static volatile int indexedOutputs;
     private static volatile boolean indexFailed;
+    private static volatile Field craftingRegistryField;
+    private static volatile Method getAspectsFromIngredientsMethod;
+    private static volatile Method itemIdMethod;
+    private static final ConcurrentMap<String, Method> METHOD_CACHE = new ConcurrentHashMap<>();
     private static final ThreadLocal<Integer> CURRENT_CANDIDATES = ThreadLocal.withInitial(() -> 64);
     private static final LongAdder LOOKUPS = new LongAdder();
     private static final LongAdder CANDIDATES = new LongAdder();
@@ -178,15 +184,19 @@ public final class ThaumcraftRecipeIndex {
     }
 
     private static Object getAspectsFromIngredients(Object ingredients, Object recipeOut, Object recipe, ArrayList<String> history) throws Exception {
-        Method method = Class.forName("thaumcraft.common.lib.crafting.ThaumcraftCraftingManager")
-                .getDeclaredMethod(
-                        "getAspectsFromIngredients",
-                        Class.forName("net.minecraft.util.NonNullList"),
-                        Class.forName("net.minecraft.item.ItemStack"),
-                        Class.forName("net.minecraft.item.crafting.IRecipe"),
-                        ArrayList.class
-                );
-        method.setAccessible(true);
+        Method method = getAspectsFromIngredientsMethod;
+        if (method == null) {
+            method = Class.forName("thaumcraft.common.lib.crafting.ThaumcraftCraftingManager")
+                    .getDeclaredMethod(
+                            "getAspectsFromIngredients",
+                            Class.forName("net.minecraft.util.NonNullList"),
+                            Class.forName("net.minecraft.item.ItemStack"),
+                            Class.forName("net.minecraft.item.crafting.IRecipe"),
+                            ArrayList.class
+                    );
+            method.setAccessible(true);
+            getAspectsFromIngredientsMethod = method;
+        }
         return method.invoke(null, ingredients, recipeOut, recipe, history);
     }
 
@@ -203,7 +213,12 @@ public final class ThaumcraftRecipeIndex {
     }
 
     private static Object craftingRegistry() throws Exception {
-        Field field = Class.forName("net.minecraft.item.crafting.CraftingManager").getField("field_193380_a");
+        Field field = craftingRegistryField;
+        if (field == null) {
+            field = Class.forName("net.minecraft.item.crafting.CraftingManager").getField("field_193380_a");
+            field.setAccessible(true);
+            craftingRegistryField = field;
+        }
         return field.get(null);
     }
 
@@ -270,7 +285,13 @@ public final class ThaumcraftRecipeIndex {
     }
 
     private static int itemId(Object item) throws Exception {
-        Method method = Class.forName("net.minecraft.item.Item").getMethod("func_150891_b", Class.forName("net.minecraft.item.Item"));
+        Method method = itemIdMethod;
+        if (method == null) {
+            Class<?> itemClass = Class.forName("net.minecraft.item.Item");
+            method = itemClass.getMethod("func_150891_b", itemClass);
+            method.setAccessible(true);
+            itemIdMethod = method;
+        }
         Object value = method.invoke(null, item);
         return value instanceof Number ? ((Number) value).intValue() : 0;
     }
@@ -291,27 +312,78 @@ public final class ThaumcraftRecipeIndex {
     }
 
     private static Object call(Object target, String... names) throws Exception {
-        for (String name : names) {
-            try {
-                Method method = target.getClass().getMethod(name);
-                method.setAccessible(true);
-                return method.invoke(target);
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        throw new NoSuchMethodException(names[0]);
+        return noArgMethod(target.getClass(), names).invoke(target);
     }
 
     private static Object call(Object target, String name, Class<?> argType, Object arg) throws Exception {
-        Method method = findCompatibleMethod(target.getClass(), name, argType);
-        method.setAccessible(true);
-        return method.invoke(target, arg);
+        return oneArgMethod(target.getClass(), argType, name).invoke(target, arg);
     }
 
     private static Object call(Object target, String name, Class<?> firstArgType, Class<?> secondArgType, Object firstArg, Object secondArg) throws Exception {
-        Method method = target.getClass().getMethod(name, firstArgType, secondArgType);
-        method.setAccessible(true);
-        return method.invoke(target, firstArg, secondArg);
+        return twoArgMethod(target.getClass(), firstArgType, secondArgType, name).invoke(target, firstArg, secondArg);
+    }
+
+    private static Method noArgMethod(Class<?> type, String... names) throws NoSuchMethodException {
+        String key = methodKey(type, "()", names);
+        Method cached = METHOD_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        NoSuchMethodException last = null;
+        for (String name : names) {
+            try {
+                Method method = type.getMethod(name);
+                method.setAccessible(true);
+                METHOD_CACHE.putIfAbsent(key, method);
+                return method;
+            } catch (NoSuchMethodException exception) {
+                last = exception;
+            }
+        }
+        throw last != null ? last : new NoSuchMethodException(names[0]);
+    }
+
+    private static Method oneArgMethod(Class<?> type, Class<?> argType, String... names) throws NoSuchMethodException {
+        String key = methodKey(type, "(" + argType.getName() + ")", names);
+        Method cached = METHOD_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        NoSuchMethodException last = null;
+        for (String name : names) {
+            try {
+                Method method = findCompatibleMethod(type, name, argType);
+                method.setAccessible(true);
+                METHOD_CACHE.putIfAbsent(key, method);
+                return method;
+            } catch (NoSuchMethodException exception) {
+                last = exception;
+            }
+        }
+        throw last != null ? last : new NoSuchMethodException(names[0]);
+    }
+
+    private static Method twoArgMethod(Class<?> type, Class<?> firstArgType, Class<?> secondArgType, String... names) throws NoSuchMethodException {
+        String key = methodKey(type, "(" + firstArgType.getName() + "," + secondArgType.getName() + ")", names);
+        Method cached = METHOD_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        NoSuchMethodException last = null;
+        for (String name : names) {
+            try {
+                Method method = type.getMethod(name, firstArgType, secondArgType);
+                method.setAccessible(true);
+                METHOD_CACHE.putIfAbsent(key, method);
+                return method;
+            } catch (NoSuchMethodException exception) {
+                last = exception;
+            }
+        }
+        throw last != null ? last : new NoSuchMethodException(names[0]);
     }
 
     private static Method findCompatibleMethod(Class<?> type, String name, Class<?> argType) throws NoSuchMethodException {
@@ -329,6 +401,14 @@ public final class ThaumcraftRecipeIndex {
             }
             throw exactMiss;
         }
+    }
+
+    private static String methodKey(Class<?> type, String descriptor, String... names) {
+        StringBuilder key = new StringBuilder(type.getName()).append('#').append(descriptor);
+        for (String name : names) {
+            key.append('/').append(name);
+        }
+        return key.toString();
     }
 
     private static final class RecipeKey {

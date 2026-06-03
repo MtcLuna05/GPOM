@@ -6,12 +6,14 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.LongAdder;
 
 public final class ThaumcraftAspectCache {
-    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.thaumcraft.generatedAspectCache", "false"));
+    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.thaumcraft.generatedAspectCache", "true"));
     private static final ThreadLocal<Integer> ACTIVE_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static final Map<String, Object> GENERATED_TAGS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Method> METHOD_CACHE = new ConcurrentHashMap<>();
     private static final LongAdder EXISTS_HITS = new LongAdder();
     private static final LongAdder EXISTS_MISSES = new LongAdder();
 
@@ -201,27 +203,53 @@ public final class ThaumcraftAspectCache {
     }
 
     private static Object call(Object target, String... names) throws Exception {
-        for (String name : names) {
-            try {
-                Method method = target.getClass().getMethod(name);
-                method.setAccessible(true);
-                return method.invoke(target);
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        throw new NoSuchMethodException(names[0]);
+        return noArgMethod(target.getClass(), names).invoke(target);
     }
 
     private static Object call(Object target, String mcpName, String srgName, Class<?> argType, Object arg) throws Exception {
-        for (String name : new String[]{mcpName, srgName}) {
+        return oneArgMethod(target.getClass(), argType, mcpName, srgName).invoke(target, arg);
+    }
+
+    private static Method noArgMethod(Class<?> type, String... names) throws NoSuchMethodException {
+        String key = methodKey(type, "()", names);
+        Method cached = METHOD_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        NoSuchMethodException last = null;
+        for (String name : names) {
             try {
-                Method method = findMethod(target.getClass(), name, argType);
+                Method method = type.getMethod(name);
                 method.setAccessible(true);
-                return method.invoke(target, arg);
-            } catch (NoSuchMethodException ignored) {
+                METHOD_CACHE.putIfAbsent(key, method);
+                return method;
+            } catch (NoSuchMethodException exception) {
+                last = exception;
             }
         }
-        throw new NoSuchMethodException(mcpName);
+        throw last != null ? last : new NoSuchMethodException(names[0]);
+    }
+
+    private static Method oneArgMethod(Class<?> type, Class<?> argType, String... names) throws NoSuchMethodException {
+        String key = methodKey(type, "(" + argType.getName() + ")", names);
+        Method cached = METHOD_CACHE.get(key);
+        if (cached != null) {
+            return cached;
+        }
+
+        NoSuchMethodException last = null;
+        for (String name : names) {
+            try {
+                Method method = findMethod(type, name, argType);
+                method.setAccessible(true);
+                METHOD_CACHE.putIfAbsent(key, method);
+                return method;
+            } catch (NoSuchMethodException exception) {
+                last = exception;
+            }
+        }
+        throw last != null ? last : new NoSuchMethodException(names[0]);
     }
 
     private static Method findMethod(Class<?> type, String name, Class<?> argType) throws NoSuchMethodException {
@@ -241,5 +269,13 @@ public final class ThaumcraftAspectCache {
             }
             throw ignored;
         }
+    }
+
+    private static String methodKey(Class<?> type, String descriptor, String... names) {
+        StringBuilder key = new StringBuilder(type.getName()).append('#').append(descriptor);
+        for (String name : names) {
+            key.append('/').append(name);
+        }
+        return key.toString();
     }
 }
