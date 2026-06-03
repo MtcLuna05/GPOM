@@ -29,6 +29,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.progressBar.enabled", "true");
+        DEFAULTS.setProperty("fml.parallel.progressBar.workerLanes", "4");
 
         VALUES.putAll(DEFAULTS);
         load();
@@ -75,6 +76,10 @@ public final class GpomEarlyConfig {
 
     public static boolean parallelProgressBarEnabled() {
         return booleanValue("fml.parallel.progressBar.enabled");
+    }
+
+    public static int parallelProgressBarWorkerLanes() {
+        return Math.max(1, intValue("fml.parallel.progressBar.workerLanes", 4));
     }
 
     private static void load() {

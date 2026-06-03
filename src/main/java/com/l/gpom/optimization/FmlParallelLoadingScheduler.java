@@ -68,18 +68,15 @@ public final class FmlParallelLoadingScheduler {
                 activeModList.size(),
                 true
         );
-        ProgressManager.ProgressBar threadedProgress = null;
+        WorkerProgressBars workerProgress = null;
+        int workerProgressLanes = Math.min(workers, Math.min(parallelEligibleHandlers, GpomEarlyConfig.parallelProgressBarWorkerLanes()));
         if (GpomEarlyConfig.parallelProgressBarEnabled() && parallelEligibleHandlers > 0) {
-            threadedProgress = ProgressManager.push(
-                    "GPOM threaded " + event.description(),
-                    parallelEligibleHandlers,
-                    true
-            );
+            workerProgress = WorkerProgressBars.push(event.description(), workerProgressLanes, parallelEligibleHandlers);
         }
 
         long startedAt = System.nanoTime();
         int parallelHandlers = 0;
-        ProgressState progressState = new ProgressState(event.getEventType(), activeModList.size(), parallelEligibleHandlers);
+        ProgressState progressState = new ProgressState(event.getEventType(), activeModList.size(), parallelEligibleHandlers, workerProgressLanes);
         boolean completed = false;
         try {
             List<ModContainer> batch = new ArrayList<>();
@@ -88,14 +85,14 @@ public final class FmlParallelLoadingScheduler {
 
                 if (parallelAllowed) {
                     if (hasOrderDependencyWithBatch(mod, batch)) {
-                        parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
+                        parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, workerProgress, progressState, executor, continueOnModError);
                         batch.clear();
                     }
                     batch.add(mod);
                     continue;
                 }
 
-                parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
+                parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, workerProgress, progressState, executor, continueOnModError);
                 batch.clear();
                 DispatchResult result = dispatchSingle(event, mod, eventChannels, modStates, true);
                 commitResult(result, modStates);
@@ -103,11 +100,11 @@ public final class FmlParallelLoadingScheduler {
                 handleFailure(event, result, modStates, progressState, continueOnModError);
             }
 
-            parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
+            parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, workerProgress, progressState, executor, continueOnModError);
             completed = true;
         } finally {
-            if (completed && threadedProgress != null) {
-                ProgressManager.pop(threadedProgress);
+            if (completed && workerProgress != null) {
+                workerProgress.pop();
             }
             if (completed) {
                 ProgressManager.pop(progress);
@@ -132,7 +129,7 @@ public final class FmlParallelLoadingScheduler {
                                   ImmutableMap<String, EventBus> eventChannels,
                                   Multimap<String, LoaderState.ModState> modStates,
                                   ProgressManager.ProgressBar progress,
-                                  ProgressManager.ProgressBar threadedProgress,
+                                  WorkerProgressBars workerProgress,
                                   ProgressState progressState,
                                   ExecutorService executor,
                                   boolean continueOnModError) {
@@ -142,10 +139,12 @@ public final class FmlParallelLoadingScheduler {
 
         if (batch.size() == 1) {
             ModContainer mod = batch.get(0);
-            DispatchResult result = dispatchSingle(phaseEvent, mod, eventChannels, modStates, false);
+            int displayLane = progressState.nextDisplayLane();
+            DispatchResult result = dispatchSingle(phaseEvent, mod, eventChannels, modStates, false)
+                    .withDisplayLane(displayLane);
             commitResult(result, modStates);
             stepMainProgress(progress, mod, progressState);
-            stepThreadedProgress(threadedProgress, mod, progressState);
+            stepThreadedProgress(workerProgress, mod, progressState, displayLane);
             handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
             return 1;
         }
@@ -153,7 +152,13 @@ public final class FmlParallelLoadingScheduler {
         CompletionService<DispatchResult> completionService = new ExecutorCompletionService<>(executor);
         List<Future<DispatchResult>> futures = new ArrayList<>(batch.size());
         for (ModContainer mod : batch) {
-            futures.add(completionService.submit(new DispatchTask(phaseEvent, mod, eventChannels, modStates)));
+            futures.add(completionService.submit(new DispatchTask(
+                    phaseEvent,
+                    mod,
+                    eventChannels,
+                    modStates,
+                    progressState.nextDisplayLane()
+            )));
         }
 
         List<DispatchResult> results = new ArrayList<>(Collections.nCopies(batch.size(), null));
@@ -172,7 +177,7 @@ public final class FmlParallelLoadingScheduler {
                 results.set(index, result);
                 ModContainer mod = result == null || result.mod == null ? batch.get(index) : result.mod;
                 stepMainProgress(progress, mod, progressState);
-                stepThreadedProgress(threadedProgress, mod, progressState);
+                stepThreadedProgress(workerProgress, mod, progressState, result == null ? -1 : result.displayLane);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 for (Future<DispatchResult> future : futures) {
@@ -184,7 +189,7 @@ public final class FmlParallelLoadingScheduler {
                 DispatchResult result = DispatchResult.failed(null, cause);
                 results.set(i, result);
                 stepMainProgress(progress, batch.get(i), progressState);
-                stepThreadedProgress(threadedProgress, batch.get(i), progressState);
+                stepThreadedProgress(workerProgress, batch.get(i), progressState, -1);
             }
         }
 
@@ -204,13 +209,13 @@ public final class FmlParallelLoadingScheduler {
         progress.step(progressLabel("done", mod, ++state.completedHandlers, state.totalHandlers));
     }
 
-    private static void stepThreadedProgress(ProgressManager.ProgressBar progress, ModContainer mod, ProgressState state) {
+    private static void stepThreadedProgress(WorkerProgressBars progress, ModContainer mod, ProgressState state, int displayLane) {
         if (mod == null) {
             return;
         }
-        int completed = ++state.completedParallelHandlers;
+        ++state.completedParallelHandlers;
         if (progress != null) {
-            progress.step(progressLabel("worker done", mod, completed, state.totalParallelHandlers));
+            progress.step(displayLane, mod);
         }
         maybeLogProgressSnapshot(mod, state);
     }
@@ -465,19 +470,65 @@ public final class FmlParallelLoadingScheduler {
         private final ModContainer mod;
         private final ImmutableMap<String, EventBus> eventChannels;
         private final Multimap<String, LoaderState.ModState> modStates;
+        private final int displayLane;
 
         private DispatchTask(FMLEvent phaseEvent, ModContainer mod,
                              ImmutableMap<String, EventBus> eventChannels,
-                             Multimap<String, LoaderState.ModState> modStates) {
+                             Multimap<String, LoaderState.ModState> modStates,
+                             int displayLane) {
             this.phaseEvent = phaseEvent;
             this.mod = mod;
             this.eventChannels = eventChannels;
             this.modStates = modStates;
+            this.displayLane = displayLane;
         }
 
         @Override
         public DispatchResult call() {
-            return dispatchSingle(phaseEvent, mod, eventChannels, modStates, false);
+            return dispatchSingle(phaseEvent, mod, eventChannels, modStates, false)
+                    .withDisplayLane(displayLane);
+        }
+    }
+
+    private static final class WorkerProgressBars {
+        private final ProgressManager.ProgressBar[] bars;
+        private final int[] completed;
+        private final int[] totals;
+
+        private WorkerProgressBars(ProgressManager.ProgressBar[] bars, int[] totals) {
+            this.bars = bars;
+            this.totals = totals;
+            this.completed = new int[bars.length];
+        }
+
+        private static WorkerProgressBars push(String eventDescription, int lanes, int totalParallelHandlers) {
+            ProgressManager.ProgressBar[] bars = new ProgressManager.ProgressBar[lanes];
+            int[] totals = new int[lanes];
+            int base = totalParallelHandlers / lanes;
+            int remainder = totalParallelHandlers % lanes;
+            for (int lane = 0; lane < lanes; lane++) {
+                totals[lane] = base + (lane < remainder ? 1 : 0);
+                bars[lane] = ProgressManager.push(
+                        "GPOM worker lane " + (lane + 1) + "/" + lanes + " " + eventDescription,
+                        Math.max(1, totals[lane]),
+                        true
+                );
+            }
+            return new WorkerProgressBars(bars, totals);
+        }
+
+        private void step(int displayLane, ModContainer mod) {
+            if (displayLane < 0 || displayLane >= bars.length || mod == null) {
+                return;
+            }
+            int done = ++completed[displayLane];
+            bars[displayLane].step(progressLabel("done", mod, done, totals[displayLane]));
+        }
+
+        private void pop() {
+            for (int lane = bars.length - 1; lane >= 0; lane--) {
+                ProgressManager.pop(bars[lane]);
+            }
         }
     }
 
@@ -485,15 +536,25 @@ public final class FmlParallelLoadingScheduler {
         private final String eventType;
         private final int totalHandlers;
         private final int totalParallelHandlers;
+        private final int displayLanes;
         private int completedHandlers;
         private int completedParallelHandlers;
+        private int nextDisplayLane;
         private int lastLoggedParallelHandlers;
         private int continuedFailures;
 
-        private ProgressState(String eventType, int totalHandlers, int totalParallelHandlers) {
+        private ProgressState(String eventType, int totalHandlers, int totalParallelHandlers, int displayLanes) {
             this.eventType = eventType;
             this.totalHandlers = totalHandlers;
             this.totalParallelHandlers = totalParallelHandlers;
+            this.displayLanes = Math.max(1, displayLanes);
+        }
+
+        private int nextDisplayLane() {
+            if (totalParallelHandlers <= 0) {
+                return -1;
+            }
+            return nextDisplayLane++ % displayLanes;
         }
     }
 
@@ -501,23 +562,29 @@ public final class FmlParallelLoadingScheduler {
         private final ModContainer mod;
         private final LoaderState.ModState state;
         private final Throwable throwable;
+        private final int displayLane;
 
-        private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable) {
+        private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable, int displayLane) {
             this.mod = mod;
             this.state = state;
             this.throwable = throwable;
+            this.displayLane = displayLane;
         }
 
         private static DispatchResult ok(ModContainer mod) {
-            return new DispatchResult(mod, null, null);
+            return new DispatchResult(mod, null, null, -1);
         }
 
         private static DispatchResult state(ModContainer mod, LoaderState.ModState state) {
-            return new DispatchResult(mod, state, null);
+            return new DispatchResult(mod, state, null, -1);
         }
 
         private static DispatchResult failed(ModContainer mod, Throwable throwable) {
-            return new DispatchResult(mod, null, throwable);
+            return new DispatchResult(mod, null, throwable, -1);
+        }
+
+        private DispatchResult withDisplayLane(int displayLane) {
+            return new DispatchResult(mod, state, throwable, displayLane);
         }
     }
 }
