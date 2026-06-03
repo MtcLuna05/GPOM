@@ -19,11 +19,11 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 public final class RailcraftInitializationOptimizations {
-    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.railcraftLazyItemConditions", "true"));
-    private static final boolean DEFER_MODULE_IC2_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.railcraft.deferModuleIC2Containers", "true"));
+    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.railcraftLazyItemConditions", "false"));
+    private static final boolean DEFER_MODULE_IC2_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.railcraft.deferModuleIC2Containers", "false"));
     private static final boolean DEFER_MODULE_CONTAINERS = Boolean.parseBoolean(System.getProperty(
             "gpom.railcraft.deferModuleContainers",
-            System.getProperty("gpom.railcraft.deferModuleIC2Containers", "true")));
+            System.getProperty("gpom.railcraft.deferModuleIC2Containers", "false")));
     private static final ConcurrentHashMap<String, Boolean> LOGGED = new ConcurrentHashMap<>();
     private static final Set<Object> DEFERRED_MODULE_IC2_BASE = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
     private static final Set<Object> DEFERRED_MODULE_IC2_CLASSIC = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());

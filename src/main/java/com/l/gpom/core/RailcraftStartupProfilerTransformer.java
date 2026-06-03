@@ -25,11 +25,11 @@ import java.util.Set;
 
 public final class RailcraftStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.railcraftProfiler", "true"));
-    private static final boolean LAZY_ITEM_CONDITIONS = Boolean.parseBoolean(System.getProperty("gpom.railcraftLazyItemConditions", "true"));
-    private static final boolean DEFER_MODULE_IC2_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.railcraft.deferModuleIC2Containers", "true"));
+    private static final boolean LAZY_ITEM_CONDITIONS = Boolean.parseBoolean(System.getProperty("gpom.railcraftLazyItemConditions", "false"));
+    private static final boolean DEFER_MODULE_IC2_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.railcraft.deferModuleIC2Containers", "false"));
     private static final boolean DEFER_MODULE_CONTAINERS = Boolean.parseBoolean(System.getProperty(
             "gpom.railcraft.deferModuleContainers",
-            System.getProperty("gpom.railcraft.deferModuleIC2Containers", "true")));
+            System.getProperty("gpom.railcraft.deferModuleIC2Containers", "false")));
     private static final boolean LAZY_CART_CONFIG = Boolean.parseBoolean(System.getProperty("gpom.railcraft.lazyCartConfig", "false"));
     private static final Map<String, Set<String>> EXACT_TARGETS = createExactTargets();
     private static final Set<String> MODULE_METHODS = set("<clinit>", "<init>", "construction", "loadConfig", "preInit", "init", "postInit", "initClient");
