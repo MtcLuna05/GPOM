@@ -24,10 +24,10 @@ import java.util.Set;
 public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.heiProfiler", "true"));
     private static final boolean ASYNC_TOOLTIP_SEARCH = Boolean.parseBoolean(System.getProperty("gpom.hei.asyncTooltipSearch", "false"));
-    private static final boolean PARALLEL_SEARCH_BUILD = Boolean.parseBoolean(System.getProperty("gpom.hei.parallelSearchBuild", "false"));
+    private static final boolean PARALLEL_SEARCH_BUILD = Boolean.parseBoolean(System.getProperty("gpom.hei.parallelSearchBuild", "true"));
     private static final boolean SKIP_RECIPE_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipRecipeProgress", "true"));
     private static final boolean SKIP_SEARCH_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipSearchProgress", "true"));
-    private static final boolean SKIP_PLUGIN_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipPluginProgress", "false"));
+    private static final boolean SKIP_PLUGIN_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipPluginProgress", "true"));
     private static final boolean DISABLE_TOOLTIP_SEARCH_INDEX = Boolean.parseBoolean(System.getProperty("gpom.hei.disableTooltipSearchIndex", "true"));
     private static final boolean FAST_JER_ENCHANTMENTS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastJerEnchantments", "true"));
     private static final boolean FAST_JER_VILLAGERS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastJerVillagers", "true"));
