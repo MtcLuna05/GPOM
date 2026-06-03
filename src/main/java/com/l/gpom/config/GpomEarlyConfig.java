@@ -23,7 +23,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.loadComplete.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.workers", Integer.toString(Math.max(1, Runtime.getRuntime().availableProcessors() - 1)));
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft,topaddons,thaumicaugmentation");
         DEFAULTS.setProperty("fml.parallel.postInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "");
