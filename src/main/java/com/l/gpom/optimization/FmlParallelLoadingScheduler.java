@@ -71,22 +71,23 @@ public final class FmlParallelLoadingScheduler {
         try {
             List<ModContainer> batch = new ArrayList<>();
             for (ModContainer mod : activeModList) {
-                if (isParallelAllowed(mod, parallelMods, deniedMods) && !hasOrderDependencyWithBatch(mod, batch)) {
+                boolean parallelAllowed = isParallelAllowed(mod, parallelMods, deniedMods);
+
+                if (parallelAllowed) {
+                    if (hasOrderDependencyWithBatch(mod, batch)) {
+                        parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, executor);
+                        batch.clear();
+                    }
                     batch.add(mod);
                     continue;
                 }
 
                 parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, executor);
                 batch.clear();
-
                 progress.step(mod.getName());
                 DispatchResult result = dispatchSingle(event, mod, eventChannels, modStates, true);
                 commitResult(result, modStates);
                 rethrowIfFailed(result);
-
-                if (isParallelAllowed(mod, parallelMods, deniedMods)) {
-                    batch.add(mod);
-                }
             }
 
             parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, executor);
