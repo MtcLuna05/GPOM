@@ -36,6 +36,8 @@ repositories {
 
 dependencies {
     compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/AoA3-3.3.6.jar')
+    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/EnderCore-1.12.2-0.5.78.jar')
+    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/EnderIO-1.12.2-5.3.72.jar')
 }
 
 unimined.minecraft {

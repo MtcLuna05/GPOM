@@ -15,7 +15,12 @@ if [ "${CRO_KILL_STALE:-0}" = "1" ]; then
 fi
 
 : > "$LOG"
-nohup setsid flatpak run --command=prismrun org.prismlauncher.PrismLauncher --launch "$INSTANCE_ID" </dev/null >/tmp/cro-prism-launch.out 2>/tmp/cro-prism-launch.err &
+launch_args=(--launch "$INSTANCE_ID")
+if [ -n "${CRO_OFFLINE_NAME:-}" ]; then
+  launch_args+=(--offline "$CRO_OFFLINE_NAME")
+fi
+
+nohup setsid flatpak run --command=prismrun org.prismlauncher.PrismLauncher "${launch_args[@]}" </dev/null >/tmp/cro-prism-launch.out 2>/tmp/cro-prism-launch.err &
 echo $! > /tmp/cro-prism-launch.pid
 
 for i in $(seq 1 "$TIMEOUT_SECONDS"); do

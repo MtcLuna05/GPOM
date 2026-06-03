@@ -1,0 +1,10 @@
+{
+  "required": false,
+  "package": "com.l.gpom.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "gpom.refmap.json",
+  "mixins": [],
+  "client": [],
+  "server": [],
+  "minVersion": "0.8"
+}
