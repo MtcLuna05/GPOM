@@ -23,7 +23,9 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.loadComplete.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.workers", Integer.toString(Math.max(1, Runtime.getRuntime().availableProcessors() - 1)));
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "modularmachinery,techreborn");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "enderio");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "");
+        DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "");
         DEFAULTS.setProperty("fml.parallel.progressBar.enabled", "true");
 
         VALUES.putAll(DEFAULTS);
@@ -49,8 +51,16 @@ public final class GpomEarlyConfig {
         return setValue("fml.parallel.postInit.allowlist");
     }
 
+    public static Set<String> parallelPostInitDenylist() {
+        return setValue("fml.parallel.postInit.denylist");
+    }
+
     public static Set<String> parallelLoadCompleteAllowlist() {
         return setValue("fml.parallel.loadComplete.allowlist");
+    }
+
+    public static Set<String> parallelLoadCompleteDenylist() {
+        return setValue("fml.parallel.loadComplete.denylist");
     }
 
     public static boolean parallelProgressBarEnabled() {

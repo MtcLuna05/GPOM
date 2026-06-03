@@ -43,6 +43,7 @@ public final class FmlParallelLoadingScheduler {
                                  ImmutableMap<String, EventBus> eventChannels,
                                  Multimap<String, LoaderState.ModState> modStates) {
         Set<String> parallelMods = parallelMods(event);
+        Set<String> deniedMods = deniedMods(event);
         if (parallelMods.isEmpty()) {
             return;
         }
@@ -70,7 +71,7 @@ public final class FmlParallelLoadingScheduler {
         try {
             List<ModContainer> batch = new ArrayList<>();
             for (ModContainer mod : activeModList) {
-                if (isParallelAllowed(mod, parallelMods) && !hasOrderDependencyWithBatch(mod, batch)) {
+                if (isParallelAllowed(mod, parallelMods, deniedMods) && !hasOrderDependencyWithBatch(mod, batch)) {
                     batch.add(mod);
                     continue;
                 }
@@ -83,7 +84,7 @@ public final class FmlParallelLoadingScheduler {
                 commitResult(result, modStates);
                 rethrowIfFailed(result);
 
-                if (isParallelAllowed(mod, parallelMods)) {
+                if (isParallelAllowed(mod, parallelMods, deniedMods)) {
                     batch.add(mod);
                 }
             }
@@ -105,12 +106,13 @@ public final class FmlParallelLoadingScheduler {
 
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         GPOM.LOGGER.info(
-                "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, wall={} ms, allowlist={}",
+                "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, wall={} ms, allowlist={}, denylist={}",
                 event.getEventType(),
                 workers,
                 parallelHandlers,
                 elapsedMillis,
-                parallelMods
+                parallelMods,
+                deniedMods
         );
     }
 
@@ -260,8 +262,9 @@ public final class FmlParallelLoadingScheduler {
         throw new RuntimeException(throwable);
     }
 
-    private static boolean isParallelAllowed(ModContainer mod, Set<String> parallelMods) {
-        return parallelMods.contains("*") || parallelMods.contains(normalize(mod.getModId()));
+    private static boolean isParallelAllowed(ModContainer mod, Set<String> parallelMods, Set<String> deniedMods) {
+        String modId = normalize(mod.getModId());
+        return !deniedMods.contains(modId) && (parallelMods.contains("*") || parallelMods.contains(modId));
     }
 
     private static boolean hasOrderDependencyWithBatch(ModContainer mod, List<ModContainer> batch) {
@@ -299,6 +302,16 @@ public final class FmlParallelLoadingScheduler {
         }
         if (event instanceof FMLLoadCompleteEvent) {
             return GpomEarlyConfig.parallelLoadCompleteAllowlist();
+        }
+        return new LinkedHashSet<>();
+    }
+
+    private static Set<String> deniedMods(FMLEvent event) {
+        if (event instanceof FMLPostInitializationEvent) {
+            return GpomEarlyConfig.parallelPostInitDenylist();
+        }
+        if (event instanceof FMLLoadCompleteEvent) {
+            return GpomEarlyConfig.parallelLoadCompleteDenylist();
         }
         return new LinkedHashSet<>();
     }
