@@ -23,13 +23,13 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.loadComplete.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.workers", Integer.toString(Math.max(1, Runtime.getRuntime().availableProcessors() - 1)));
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft");
         DEFAULTS.setProperty("fml.parallel.postInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.progressBar.enabled", "true");
-        DEFAULTS.setProperty("fml.parallel.progressBar.workerLanes", "4");
+        DEFAULTS.setProperty("fml.parallel.progressBar.workerLanes", "2");
 
         VALUES.putAll(DEFAULTS);
         load();
@@ -79,7 +79,7 @@ public final class GpomEarlyConfig {
     }
 
     public static int parallelProgressBarWorkerLanes() {
-        return Math.max(1, intValue("fml.parallel.progressBar.workerLanes", 4));
+        return Math.max(1, intValue("fml.parallel.progressBar.workerLanes", 2));
     }
 
     private static void load() {
