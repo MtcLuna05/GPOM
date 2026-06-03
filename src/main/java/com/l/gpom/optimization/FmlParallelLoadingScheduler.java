@@ -35,6 +35,7 @@ import java.util.concurrent.Future;
 
 public final class FmlParallelLoadingScheduler {
     private static final Object MOD_STATE_LOCK = new Object();
+    private static final int PROGRESS_LOG_INTERVAL = 25;
 
     private FmlParallelLoadingScheduler() {
     }
@@ -49,6 +50,7 @@ public final class FmlParallelLoadingScheduler {
                                  Multimap<String, LoaderState.ModState> modStates) {
         Set<String> parallelMods = parallelMods(event);
         Set<String> deniedMods = deniedMods(event);
+        boolean continueOnModError = continueOnModError(event);
         if (parallelMods.isEmpty()) {
             return;
         }
@@ -77,7 +79,7 @@ public final class FmlParallelLoadingScheduler {
 
         long startedAt = System.nanoTime();
         int parallelHandlers = 0;
-        ProgressState progressState = new ProgressState(activeModList.size(), parallelEligibleHandlers);
+        ProgressState progressState = new ProgressState(event.getEventType(), activeModList.size(), parallelEligibleHandlers);
         boolean completed = false;
         try {
             List<ModContainer> batch = new ArrayList<>();
@@ -86,22 +88,22 @@ public final class FmlParallelLoadingScheduler {
 
                 if (parallelAllowed) {
                     if (hasOrderDependencyWithBatch(mod, batch)) {
-                        parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor);
+                        parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
                         batch.clear();
                     }
                     batch.add(mod);
                     continue;
                 }
 
-                parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor);
+                parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
                 batch.clear();
                 DispatchResult result = dispatchSingle(event, mod, eventChannels, modStates, true);
                 commitResult(result, modStates);
                 stepMainProgress(progress, mod, progressState);
-                rethrowIfFailed(result);
+                handleFailure(event, result, modStates, progressState, continueOnModError);
             }
 
-            parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor);
+            parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, progressState, executor, continueOnModError);
             completed = true;
         } finally {
             if (completed && threadedProgress != null) {
@@ -115,10 +117,11 @@ public final class FmlParallelLoadingScheduler {
 
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         GPOM.LOGGER.info(
-                "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, wall={} ms, allowlist={}, denylist={}",
+                "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, continuedFailures={}, wall={} ms, allowlist={}, denylist={}",
                 event.getEventType(),
                 workers,
                 parallelHandlers,
+                progressState.continuedFailures,
                 elapsedMillis,
                 parallelMods,
                 deniedMods
@@ -131,7 +134,8 @@ public final class FmlParallelLoadingScheduler {
                                   ProgressManager.ProgressBar progress,
                                   ProgressManager.ProgressBar threadedProgress,
                                   ProgressState progressState,
-                                  ExecutorService executor) {
+                                  ExecutorService executor,
+                                  boolean continueOnModError) {
         if (batch.isEmpty()) {
             return 0;
         }
@@ -142,7 +146,7 @@ public final class FmlParallelLoadingScheduler {
             commitResult(result, modStates);
             stepMainProgress(progress, mod, progressState);
             stepThreadedProgress(threadedProgress, mod, progressState);
-            rethrowIfFailed(result);
+            handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
             return 1;
         }
 
@@ -188,7 +192,7 @@ public final class FmlParallelLoadingScheduler {
             commitResult(result, modStates);
         }
         for (DispatchResult result : results) {
-            rethrowIfFailed(result);
+            handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
         }
         return batch.size();
     }
@@ -201,10 +205,14 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static void stepThreadedProgress(ProgressManager.ProgressBar progress, ModContainer mod, ProgressState state) {
-        if (progress == null || mod == null) {
+        if (mod == null) {
             return;
         }
-        progress.step(progressLabel("worker done", mod, ++state.completedParallelHandlers, state.totalParallelHandlers));
+        int completed = ++state.completedParallelHandlers;
+        if (progress != null) {
+            progress.step(progressLabel("worker done", mod, completed, state.totalParallelHandlers));
+        }
+        maybeLogProgressSnapshot(mod, state);
     }
 
     private static String progressLabel(String prefix, ModContainer mod, int completed, int total) {
@@ -213,8 +221,30 @@ public final class FmlParallelLoadingScheduler {
             label.append(' ').append(completed).append('/').append(total);
         }
         label.append(' ').append(mod.getName());
-        label.append(" heap=").append(usedHeapMib()).append(" MiB");
         return label.toString();
+    }
+
+    private static void maybeLogProgressSnapshot(ModContainer mod, ProgressState state) {
+        if (state.totalParallelHandlers <= 0) {
+            return;
+        }
+        int completed = state.completedParallelHandlers;
+        if (completed != state.totalParallelHandlers
+                && completed - state.lastLoggedParallelHandlers < PROGRESS_LOG_INTERVAL) {
+            return;
+        }
+        state.lastLoggedParallelHandlers = completed;
+        GPOM.LOGGER.info(
+                "[FmlParallelLoading] progress {} parallel={}/{} total={}/{} heap={} MiB last={} ({})",
+                state.eventType,
+                completed,
+                state.totalParallelHandlers,
+                state.completedHandlers,
+                state.totalHandlers,
+                usedHeapMib(),
+                mod.getModId(),
+                mod.getName()
+        );
     }
 
     private static DispatchResult dispatchSingle(FMLEvent phaseEvent, ModContainer mod,
@@ -302,11 +332,42 @@ public final class FmlParallelLoadingScheduler {
         }
     }
 
-    private static void rethrowIfFailed(DispatchResult result) {
+    private static void handleFailure(FMLEvent event, DispatchResult result,
+                                      Multimap<String, LoaderState.ModState> modStates,
+                                      ProgressState progressState,
+                                      boolean continueOnModError) {
         if (result == null || result.throwable == null) {
             return;
         }
-        Throwable throwable = result.throwable;
+        if (!continueOnModError) {
+            rethrow(result.throwable);
+            return;
+        }
+
+        progressState.continuedFailures++;
+        ModContainer mod = result.mod;
+        if (mod != null) {
+            synchronized (MOD_STATE_LOCK) {
+                modStates.put(mod.getModId(), LoaderState.ModState.ERRORED);
+            }
+            GPOM.LOGGER.error(
+                    "[FmlParallelLoading] Continuing after {} failure in {} ({}); marking mod errored for diagnostics",
+                    event.getEventType(),
+                    mod.getModId(),
+                    mod.getName(),
+                    result.throwable
+            );
+            return;
+        }
+
+        GPOM.LOGGER.error(
+                "[FmlParallelLoading] Continuing after {} failure in an unknown worker task; no mod state could be marked",
+                event.getEventType(),
+                result.throwable
+        );
+    }
+
+    private static void rethrow(Throwable throwable) {
         if (throwable instanceof RuntimeException) {
             throw (RuntimeException) throwable;
         }
@@ -380,6 +441,16 @@ public final class FmlParallelLoadingScheduler {
         return new LinkedHashSet<>();
     }
 
+    private static boolean continueOnModError(FMLEvent event) {
+        if (event instanceof FMLPostInitializationEvent) {
+            return GpomEarlyConfig.parallelPostInitContinueOnModError();
+        }
+        if (event instanceof FMLLoadCompleteEvent) {
+            return GpomEarlyConfig.parallelLoadCompleteContinueOnModError();
+        }
+        return false;
+    }
+
     private static String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
@@ -411,12 +482,16 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static final class ProgressState {
+        private final String eventType;
         private final int totalHandlers;
         private final int totalParallelHandlers;
         private int completedHandlers;
         private int completedParallelHandlers;
+        private int lastLoggedParallelHandlers;
+        private int continuedFailures;
 
-        private ProgressState(int totalHandlers, int totalParallelHandlers) {
+        private ProgressState(String eventType, int totalHandlers, int totalParallelHandlers) {
+            this.eventType = eventType;
             this.totalHandlers = totalHandlers;
             this.totalParallelHandlers = totalParallelHandlers;
         }
