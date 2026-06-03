@@ -61,11 +61,12 @@ public final class FmlParallelLoadingScheduler {
         );
         ProgressManager.ProgressBar threadedProgress = null;
         if (GpomEarlyConfig.parallelProgressBarEnabled()) {
-            threadedProgress = ProgressManager.push("GPOM threaded " + event.description(), activeModList.size(), true);
+            threadedProgress = ProgressManager.push("GPOM threaded " + event.description(), 1, true);
         }
 
         long startedAt = System.nanoTime();
         int parallelHandlers = 0;
+        boolean completed = false;
         try {
             List<ModContainer> batch = new ArrayList<>();
             for (ModContainer mod : activeModList) {
@@ -78,7 +79,6 @@ public final class FmlParallelLoadingScheduler {
                 batch.clear();
 
                 progress.step(mod.getName());
-                stepThreadedProgress(threadedProgress, mod);
                 DispatchResult result = dispatchSingle(event, mod, eventChannels, modStates, true);
                 commitResult(result, modStates);
                 rethrowIfFailed(result);
@@ -89,11 +89,17 @@ public final class FmlParallelLoadingScheduler {
             }
 
             parallelHandlers += flushBatch(event, batch, eventChannels, modStates, progress, threadedProgress, executor);
-        } finally {
             if (threadedProgress != null) {
+                threadedProgress.step("completed");
+            }
+            completed = true;
+        } finally {
+            if (completed && threadedProgress != null) {
                 ProgressManager.pop(threadedProgress);
             }
-            ProgressManager.pop(progress);
+            if (completed) {
+                ProgressManager.pop(progress);
+            }
             executor.shutdownNow();
         }
 
@@ -121,7 +127,6 @@ public final class FmlParallelLoadingScheduler {
         if (batch.size() == 1) {
             ModContainer mod = batch.get(0);
             progress.step(mod.getName());
-            stepThreadedProgress(threadedProgress, mod);
             DispatchResult result = dispatchSingle(phaseEvent, mod, eventChannels, modStates, false);
             commitResult(result, modStates);
             rethrowIfFailed(result);
@@ -131,7 +136,6 @@ public final class FmlParallelLoadingScheduler {
         List<Future<DispatchResult>> futures = new ArrayList<>(batch.size());
         for (ModContainer mod : batch) {
             progress.step(mod.getName());
-            stepThreadedProgress(threadedProgress, mod);
             futures.add(executor.submit(new DispatchTask(phaseEvent, mod, eventChannels, modStates)));
         }
 
@@ -297,12 +301,6 @@ public final class FmlParallelLoadingScheduler {
             return GpomEarlyConfig.parallelLoadCompleteAllowlist();
         }
         return new LinkedHashSet<>();
-    }
-
-    private static void stepThreadedProgress(ProgressManager.ProgressBar progress, ModContainer mod) {
-        if (progress != null) {
-            progress.step(mod.getName());
-        }
     }
 
     private static String normalize(String value) {
