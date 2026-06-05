@@ -99,9 +99,6 @@ public final class AoAConstructionOptimizations {
         }
 
         for (String className : classNames) {
-            if (!initializeSubscriberClass(className)) {
-                return false;
-            }
             registerByName(className, mod);
         }
         return true;
@@ -390,20 +387,6 @@ public final class AoAConstructionOptimizations {
     private static void setOwner(Event event, ModContainer owner) {
         if (event instanceof IContextSetter) {
             ((IContextSetter) event).setModContainer(owner);
-        }
-    }
-
-    private static boolean initializeSubscriberClass(String className) {
-        try {
-            ClassLoader loader = Thread.currentThread().getContextClassLoader();
-            if (loader == null) {
-                loader = AoAConstructionOptimizations.class.getClassLoader();
-            }
-            Class.forName(className, true, loader);
-            return true;
-        } catch (ClassNotFoundException | LinkageError exception) {
-            GPOM.LOGGER.warn("[AoA Construction] Falling back to Forge subscriber injection; could not initialize {}", className, exception);
-            return false;
         }
     }
 

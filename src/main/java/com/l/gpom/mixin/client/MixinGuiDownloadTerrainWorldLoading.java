@@ -14,8 +14,7 @@ public abstract class MixinGuiDownloadTerrainWorldLoading {
                     "drawScreen(IIF)V",
                     "func_73863_a(IIF)V"
             },
-            at = @At("HEAD"),
-            cancellable = true,
+            at = @At("RETURN"),
             require = 0
     )
     private void gpom$drawWorldLoadingTerrain(int mouseX, int mouseY, float partialTicks, CallbackInfo ci) {
@@ -24,6 +23,5 @@ public abstract class MixinGuiDownloadTerrainWorldLoading {
         }
         WorldLoadingProgress.beginTerrainIfNeeded();
         WorldLoadingProgress.safeRenderCurrentMinecraft(-1, false);
-        ci.cancel();
     }
 }

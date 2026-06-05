@@ -27,14 +27,10 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "func_73721_b(Ljava/lang/String;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$resetWorldLoadTitle(String title, CallbackInfo ci) {
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
-        if (gpom$renderWorldLoadingOverlay(-1, true)) {
-            ci.cancel();
-        }
     }
 
     @Inject(
@@ -43,14 +39,10 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "func_73720_a(Ljava/lang/String;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$setWorldLoadTitle(String title, CallbackInfo ci) {
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
-        if (gpom$renderWorldLoadingOverlay(-1, true)) {
-            ci.cancel();
-        }
     }
 
     @Inject(
@@ -59,14 +51,10 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "func_73719_c(Ljava/lang/String;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$setWorldLoadDetail(String detail, CallbackInfo ci) {
         WorldLoadingProgress.updateFromVanilla(null, detail, -1);
-        if (gpom$renderWorldLoadingOverlay(-1, true)) {
-            ci.cancel();
-        }
     }
 
     @Inject(
@@ -75,7 +63,6 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "func_73718_a(I)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$drawWorldLoadingScreen(int progress, CallbackInfo ci) {
@@ -83,9 +70,6 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             return;
         }
         WorldLoadingProgress.updateFromVanilla(null, null, progress);
-        if (gpom$renderWorldLoadingOverlay(progress, true)) {
-            ci.cancel();
-        }
     }
 
     @Inject(
@@ -93,7 +77,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "setLoadingProgress(I)V",
                     "func_73718_a(I)V"
             },
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;updateDisplay()V"),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/shader/Framebuffer;unbindFramebuffer()V"),
             require = 0
     )
     private void gpom$renderWorldLoadingOverlayMcp(int progress, CallbackInfo ci) {
@@ -105,7 +89,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "setLoadingProgress(I)V",
                     "func_73718_a(I)V"
             },
-            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;func_175601_h()V"),
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/shader/Framebuffer;func_147609_e()V"),
             require = 0
     )
     private void gpom$renderWorldLoadingOverlaySrg(int progress, CallbackInfo ci) {

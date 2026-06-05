@@ -96,6 +96,8 @@ public final class HeiOptimizations {
     private static Method merchantRecipeGetItemToBuy;
     private static Method merchantRecipeGetSecondItemToBuy;
     private static Method merchantRecipeGetItemToSell;
+    private static Method enchantmentHelperGetEnchantmentLevel;
+    private static Method enchantmentHelperSetEnchantments;
     private static Method nbtDataWrite;
     private static Method nbtDataRead;
     private static Method itemGetEnchantability;
@@ -1245,11 +1247,11 @@ public final class HeiOptimizations {
             }
 
             ItemStack enchanted = copyStack(stack);
-            if (EnchantmentHelper.getEnchantmentLevel(mending, enchanted) <= 0) {
+            if (getEnchantmentLevelReflective(mending, enchanted) <= 0) {
                 if (!mending.canApply(enchanted)) {
                     continue;
                 }
-                EnchantmentHelper.setEnchantments(Collections.singletonMap(mending, 1), enchanted);
+                setEnchantmentsReflective(Collections.singletonMap(mending, 1), enchanted);
             }
 
             ItemStack damaged = copyStack(enchanted);
@@ -1309,6 +1311,45 @@ public final class HeiOptimizations {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static int getEnchantmentLevelReflective(Enchantment enchantment, ItemStack stack) throws ReflectiveOperationException {
+        Method method = enchantmentHelperGetEnchantmentLevel;
+        if (method == null) {
+            method = findStaticMethod(
+                    EnchantmentHelper.class,
+                    "func_77506_a",
+                    "getEnchantmentLevel",
+                    Enchantment.class,
+                    ItemStack.class
+            );
+            if (method == null) {
+                throw new NoSuchMethodException("EnchantmentHelper#getEnchantmentLevel/func_77506_a");
+            }
+            enchantmentHelperGetEnchantmentLevel = method;
+        }
+
+        Object value = method.invoke(null, enchantment, stack);
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    private static void setEnchantmentsReflective(Map<Enchantment, Integer> enchantments, ItemStack stack) throws ReflectiveOperationException {
+        Method method = enchantmentHelperSetEnchantments;
+        if (method == null) {
+            method = findStaticMethod(
+                    EnchantmentHelper.class,
+                    "func_82782_a",
+                    "setEnchantments",
+                    Map.class,
+                    ItemStack.class
+            );
+            if (method == null) {
+                throw new NoSuchMethodException("EnchantmentHelper#setEnchantments/func_82782_a");
+            }
+            enchantmentHelperSetEnchantments = method;
+        }
+
+        method.invoke(null, enchantments, stack);
     }
 
     private static boolean booleanConfigValue(String className, String fieldName) throws ReflectiveOperationException, ClassNotFoundException {

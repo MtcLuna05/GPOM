@@ -14,8 +14,7 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
                     "drawScreen(IIF)V",
                     "func_73863_a(IIF)V"
             },
-            at = @At("HEAD"),
-            cancellable = true,
+            at = @At("RETURN"),
             require = 0
     )
     private void gpom$drawWorldLoadingWorkingScreen(int mouseX, int mouseY, float partialTicks, CallbackInfo ci) {
@@ -23,7 +22,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             return;
         }
         WorldLoadingProgress.safeRenderCurrentMinecraft(-1, false);
-        ci.cancel();
     }
 
     @Inject(
@@ -34,7 +32,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
                     "func_73721_b(Ljava/lang/String;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$setWorldLoadingWorkingTitle(String title, CallbackInfo ci) {
@@ -42,7 +39,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             return;
         }
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
-        ci.cancel();
     }
 
     @Inject(
@@ -51,7 +47,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
                     "func_73719_c(Ljava/lang/String;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$setWorldLoadingWorkingDetail(String detail, CallbackInfo ci) {
@@ -59,7 +54,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             return;
         }
         WorldLoadingProgress.updateFromVanilla(null, detail, -1);
-        ci.cancel();
     }
 
     @Inject(
@@ -68,7 +62,6 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
                     "func_73718_a(I)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
     private void gpom$setWorldLoadingWorkingProgress(int progress, CallbackInfo ci) {
@@ -76,6 +69,5 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             return;
         }
         WorldLoadingProgress.updateFromVanilla(null, null, progress);
-        ci.cancel();
     }
 }

@@ -1,13 +1,11 @@
 package com.l.gpom.mixin.client;
 
-import com.l.gpom.client.GpomWorldLoadingScreen;
 import com.l.gpom.client.WorldLoadingProgress;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDownloadTerrain;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiScreenWorking;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.multiplayer.WorldClient;
 import net.minecraft.world.WorldSettings;
 import org.spongepowered.asm.mixin.Mixin;
@@ -24,7 +22,6 @@ public abstract class MixinMinecraftWorldLoadingScreen {
     private static Field gpom$worldField;
     private static Field gpom$playerField;
     private static Field gpom$currentScreenField;
-    private static Method gpom$displayGuiScreenMethod;
     private static Method gpom$displaySavingStringMethod;
     private static Method gpom$displayLoadingStringMethod;
 
@@ -130,16 +127,11 @@ public abstract class MixinMinecraftWorldLoadingScreen {
                     "func_147108_a(Lnet/minecraft/client/gui/GuiScreen;)V"
             },
             at = @At("HEAD"),
-            cancellable = true,
             require = 0
     )
-    private void gpom$keepWorldLoadingScreenVisible(GuiScreen screen, CallbackInfo ci) {
-        if (WorldLoadingProgress.isActive()
-                && !(screen instanceof GpomWorldLoadingScreen)
-                && gpom$shouldReplaceScreen(screen)) {
-            gpom$installWorldLoadingScreen();
+    private void gpom$observeWorldLoadingScreenChange(GuiScreen screen, CallbackInfo ci) {
+        if (WorldLoadingProgress.isActive() && gpom$isVanillaWorldLoadingScreen(screen)) {
             gpom$drawImmediate("Loading world", "Preparing client handoff", -1);
-            ci.cancel();
             return;
         }
 
@@ -177,53 +169,8 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
     }
 
-    private void gpom$showWorldLoadingScreen() {
-        if (!WorldLoadingProgress.isActive()) {
-            return;
-        }
-
-        try {
-            GuiScreen current = gpom$getCurrentScreen();
-            if (current instanceof GpomWorldLoadingScreen) {
-                return;
-            }
-
-            Method method = gpom$displayGuiScreenMethod;
-            if (method == null) {
-                method = gpom$findMethod(Minecraft.class, new Class<?>[]{GuiScreen.class}, "func_147108_a", "displayGuiScreen");
-                gpom$displayGuiScreenMethod = method;
-            }
-            method.invoke(this, new GpomWorldLoadingScreen());
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private boolean gpom$shouldReplaceScreen(GuiScreen screen) {
-        if (screen instanceof GuiDownloadTerrain || screen instanceof GuiScreenWorking) {
-            return true;
-        }
-        return false;
-    }
-
-    private void gpom$installWorldLoadingScreen() {
-        try {
-            GuiScreen replacement = new GpomWorldLoadingScreen();
-            Field field = gpom$currentScreenField;
-            if (field == null) {
-                field = gpom$findMinecraftField("field_71462_r", "currentScreen");
-                gpom$currentScreenField = field;
-            }
-            field.set(this, replacement);
-
-            Minecraft minecraft = (Minecraft) (Object) this;
-            ScaledResolution resolution = new ScaledResolution(minecraft);
-            replacement.setWorldAndResolution(
-                    minecraft,
-                    Math.max(1, resolution.getScaledWidth()),
-                    Math.max(1, resolution.getScaledHeight())
-            );
-        } catch (Throwable ignored) {
-        }
+    private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {
+        return screen instanceof GuiDownloadTerrain || screen instanceof GuiScreenWorking;
     }
 
     private static void gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {

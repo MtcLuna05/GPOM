@@ -289,13 +289,19 @@ public final class WorldLoadingProgress {
         try {
             if (minecraft != null && minecraft.displayWidth > 0 && minecraft.displayHeight > 0) {
                 GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
+                GL11.glViewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
             }
-            GlStateManager.matrixMode(GL11.GL_PROJECTION);
-            GlStateManager.loadIdentity();
-            GlStateManager.ortho(0.0D, width, height, 0.0D, 100.0D, 300.0D);
-            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-            GlStateManager.loadIdentity();
-            GlStateManager.translate(0.0F, 0.0F, -200.0F);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glDisable(GL11.GL_FOG);
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glLoadIdentity();
+            GL11.glOrtho(0.0D, width, height, 0.0D, 100.0D, 300.0D);
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glLoadIdentity();
+            GL11.glTranslatef(0.0F, 0.0F, -200.0F);
             resetGuiColor();
         } catch (Throwable ignored) {
         }
@@ -313,9 +319,12 @@ public final class WorldLoadingProgress {
 
     private static void resetGuiColor() {
         try {
+            GlStateManager.enableTexture2D();
+            GlStateManager.disableDepth();
             GlStateManager.disableLighting();
             GlStateManager.disableFog();
             GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         } catch (Throwable ignored) {
         }
     }
