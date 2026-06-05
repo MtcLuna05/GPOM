@@ -32,6 +32,7 @@ public final class TargetedModVersions {
             "after:opencomputers@[1.8.7];" +
             "after:projecte@[1.12.2-PE1.4.1];" +
             "after:railcraft@[12.1.0-beta-8];" +
+            "after:redcore@[0.7];" +
             "after:reborncore@[3.19.5];" +
             "after:renderlib@[1.4.5];" +
             "after:smoothfont@[mc1.12.2-2.1.4];" +
@@ -143,6 +144,10 @@ public final class TargetedModVersions {
 
     public static boolean isRailcraftClass(String className) {
         return isClassFromSupportedJar(className, "railcraft-12.1.0-beta-8.jar");
+    }
+
+    public static boolean isRedCoreClass(Class<?> type) {
+        return isClassFromSupportedJar(type, "!Red-Core-MC-1.8-1.12-0.7.jar");
     }
 
     public static boolean isRebornCoreClass(String className) {

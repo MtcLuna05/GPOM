@@ -1,12 +1,10 @@
 package com.l.gpom.optimization;
 
-import com.google.common.collect.SetMultimap;
 import com.l.gpom.GPOM;
 import com.l.gpom.core.TargetedModVersions;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.discovery.ASMDataTable;
-import net.minecraftforge.fml.common.network.NetworkCheckHandler;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.versioning.VersionRange;
 
@@ -18,6 +16,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class ForgeNetworkConstructionOptimizations {
+    private static final String REDCORE_MOD_ID = "redcore";
+    private static final String REDCORE_MOD_CLASS = "dev.redstudio.redcore.asm.RedCorePlugin";
     private static final String SMOOTHFONT_MOD_ID = "smoothfont";
     private static final String SMOOTHFONT_MOD_CLASS = "bre.smoothfont.mod_SmoothFont";
     private static final String HOLDER_CLASS = "net.minecraftforge.fml.common.network.internal.NetworkModHolder";
@@ -73,29 +73,21 @@ public final class ForgeNetworkConstructionOptimizations {
         if (container == null || modClass == null || asmData == null) {
             return false;
         }
-        if (!SMOOTHFONT_MOD_ID.equals(container.getModId())
-                || !SMOOTHFONT_MOD_CLASS.equals(modClass.getName())
-                || !TargetedModVersions.isSmoothFontClass(modClass)) {
-            return false;
-        }
-        return !hasNetworkCheckHandler(asmData, container, modClass.getName());
+        // The slow Forge path is ASMDataTable.getAnnotationsFor(container), so exact no-checker
+        // targets must be proven by jar/class gates rather than re-reading ASM data here.
+        return isRedCoreTarget(container, modClass) || isSmoothFontTarget(container, modClass);
     }
 
-    private static boolean hasNetworkCheckHandler(ASMDataTable asmData, ModContainer container, String modClassName) {
-        SetMultimap<String, ASMDataTable.ASMData> annotations = asmData.getAnnotationsFor(container);
-        if (annotations == null) {
-            return true;
-        }
-        Set<ASMDataTable.ASMData> networkHandlers = annotations.get(NetworkCheckHandler.class.getName());
-        if (networkHandlers == null || networkHandlers.isEmpty()) {
-            return false;
-        }
-        for (ASMDataTable.ASMData data : networkHandlers) {
-            if (data != null && modClassName.equals(data.getClassName())) {
-                return true;
-            }
-        }
-        return true;
+    private static boolean isRedCoreTarget(ModContainer container, Class<?> modClass) {
+        return REDCORE_MOD_ID.equals(container.getModId())
+                && REDCORE_MOD_CLASS.equals(modClass.getName())
+                && TargetedModVersions.isRedCoreClass(modClass);
+    }
+
+    private static boolean isSmoothFontTarget(ModContainer container, Class<?> modClass) {
+        return SMOOTHFONT_MOD_ID.equals(container.getModId())
+                && SMOOTHFONT_MOD_CLASS.equals(modClass.getName())
+                && TargetedModVersions.isSmoothFontClass(modClass);
     }
 
     private static void configureChecker(Object holder, String acceptableRemoteVersions) throws Exception {
