@@ -4,8 +4,8 @@ import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.GpomCaches;
 import net.minecraft.block.Block;
+import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.init.Enchantments;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.IRecipe;
@@ -1225,6 +1225,11 @@ public final class HeiOptimizations {
             return 0;
         }
 
+        Enchantment mending = minecraftMendingEnchantment();
+        if (mending == null) {
+            return 0;
+        }
+
         List<ItemStack> damagedInputs = new ArrayList<>();
         List<ItemStack> repairedOutputs = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -1240,11 +1245,11 @@ public final class HeiOptimizations {
             }
 
             ItemStack enchanted = copyStack(stack);
-            if (EnchantmentHelper.getEnchantmentLevel(Enchantments.MENDING, enchanted) <= 0) {
-                if (!Enchantments.MENDING.canApply(enchanted)) {
+            if (EnchantmentHelper.getEnchantmentLevel(mending, enchanted) <= 0) {
+                if (!mending.canApply(enchanted)) {
                     continue;
                 }
-                EnchantmentHelper.setEnchantments(Collections.singletonMap(Enchantments.MENDING, 1), enchanted);
+                EnchantmentHelper.setEnchantments(Collections.singletonMap(mending, 1), enchanted);
             }
 
             ItemStack damaged = copyStack(enchanted);
@@ -1296,6 +1301,14 @@ public final class HeiOptimizations {
         }
         recipes.add(wrapper);
         return damagedInputs.size();
+    }
+
+    private static Enchantment minecraftMendingEnchantment() {
+        try {
+            return ForgeRegistries.ENCHANTMENTS.getValue(new ResourceLocation("minecraft", "mending"));
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static boolean booleanConfigValue(String className, String fieldName) throws ReflectiveOperationException, ClassNotFoundException {
