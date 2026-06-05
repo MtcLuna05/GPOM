@@ -163,17 +163,16 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         }
         WorldLoadingProgress.update(stage, detail, progress);
         LoadingScreenRenderer renderer = gpom$getLoadingScreen();
-        if (renderer != null) {
-            gpom$callLoadingScreen(renderer, stage, detail);
+        if (renderer == null || !gpom$callLoadingScreen(renderer, stage, detail)) {
+            WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
         }
-        WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
     }
 
     private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {
         return screen instanceof GuiDownloadTerrain || screen instanceof GuiScreenWorking;
     }
 
-    private static void gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {
+    private static boolean gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {
         try {
             Method method = gpom$displaySavingStringMethod;
             if (method == null) {
@@ -191,7 +190,9 @@ public abstract class MixinMinecraftWorldLoadingScreen {
                 gpom$displayLoadingStringMethod = method;
             }
             method.invoke(renderer, detail);
+            return true;
         } catch (Throwable ignored) {
+            return false;
         }
     }
 

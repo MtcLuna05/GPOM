@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.profiling.StartupProfiler;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,8 +63,23 @@ public final class FmlConstructionSafety {
                         group,
                         stage
                 );
+                StartupProfiler.endProbeAlways(stage + " serializedWait " + group, startedAt);
             }
-            action.run();
+            long actionStartedAt = System.nanoTime();
+            try {
+                action.run();
+            } finally {
+                long actionMillis = (System.nanoTime() - actionStartedAt) / 1_000_000L;
+                if (actionMillis >= 250L) {
+                    GPOM.LOGGER.info(
+                            "[FmlConstructionSafety] Ran serialized {} action for {} ms at {}",
+                            group,
+                            actionMillis,
+                            stage
+                    );
+                    StartupProfiler.endProbeAlways(stage + " serializedAction " + group, actionStartedAt);
+                }
+            }
         }
     }
 

@@ -3,6 +3,7 @@ package com.l.gpom.mixin.fml;
 import com.l.gpom.profiling.StartupProfiler;
 import com.l.gpom.optimization.AoAConfigSyncOptimizations;
 import com.l.gpom.optimization.FmlConstructionSafety;
+import com.l.gpom.optimization.ForgeNetworkConstructionOptimizations;
 import com.google.common.eventbus.EventBus;
 import net.minecraftforge.fml.common.FMLModContainer;
 import net.minecraftforge.fml.common.ILanguageAdapter;
@@ -197,7 +198,17 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
         try {
             FmlConstructionSafety.networkRegistration(
                     gpom$constructionStage("networkRegister"),
-                    () -> registry.register(container, modClass, acceptableRemoteVersions, asmData)
+                    () -> {
+                        if (!ForgeNetworkConstructionOptimizations.tryFastRegisterKnownNoNetworkChecker(
+                                registry,
+                                container,
+                                modClass,
+                                acceptableRemoteVersions,
+                                asmData
+                        )) {
+                            registry.register(container, modClass, acceptableRemoteVersions, asmData);
+                        }
+                    }
             );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("networkRegister"), startedAt);

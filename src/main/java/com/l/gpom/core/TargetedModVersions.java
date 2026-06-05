@@ -34,6 +34,7 @@ public final class TargetedModVersions {
             "after:railcraft@[12.1.0-beta-8];" +
             "after:reborncore@[3.19.5];" +
             "after:renderlib@[1.4.5];" +
+            "after:smoothfont@[mc1.12.2-2.1.4];" +
             "after:techreborn@[2.27.3.1084];" +
             "after:thaumcraft@[6.1.BETA26];" +
             "after:thebetweenlands@[3.8.1];" +
@@ -150,6 +151,10 @@ public final class TargetedModVersions {
 
     public static boolean isRenderLibClass(String className) {
         return isClassFromSupportedJar(className, "RenderLib-1.12.2-1.4.5.jar");
+    }
+
+    public static boolean isSmoothFontClass(Class<?> type) {
+        return isClassFromSupportedJar(type, "SmoothFont-mc1.12.2-2.1.4.jar");
     }
 
     public static boolean isTechRebornClass(String className) {
