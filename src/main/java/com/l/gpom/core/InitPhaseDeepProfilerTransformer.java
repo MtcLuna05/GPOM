@@ -805,6 +805,28 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         add(targets, ModTarget.AOA, "net.tslat.aoa3.hooks.jer.JerHooks",
                 "<clinit>", "init", "integrateWorldGen", "integrateCrops", "integrateDungeonLoot", "integrateMobDrops");
 
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.AstralSorcery",
+                "<clinit>", "<init>", "preInit", "init", "postInit");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.CommonProxy",
+                "<clinit>", "<init>", "setupConfiguration", "registerConfigDataRegistries", "preInit",
+                "registerCapabilities", "registerOreDictEntries", "init", "postInit");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.data.config.Config",
+                "<clinit>", "loadAndSetup", "addDynamicEntry", "addDataRegistry", "loadDataRegistries",
+                "loadConfigRegistries", "attemptLoad", "loadData", "fillDimGenWhitelist",
+                "fillWeakSkyRenders", "fillWhitelistIDs");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.registry.RegistryBlocks",
+                "<clinit>", "init", "registerFluids", "registerBlocks", "registerTileEntities",
+                "registerBlock", "registerTile");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.registry.RegistryItems",
+                "<clinit>", "setupDefaults", "init", "registerItems", "registerBlockItems",
+                "registerDispenseBehavior", "registerItem", "register");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.registry.RegistryPotions",
+                "<clinit>", "init", "registerPotion");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.registry.RegistryEnchantments",
+                "<clinit>", "init", "register");
+        add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.constellation.ConstellationRegistry",
+                "<clinit>", "registerConstellation", "resolve", "getAllConstellations");
+
         add(targets, ModTarget.PROJECTE, "moze_intel.projecte.PECore",
                 "preInit", "load", "postInit", "serverStarting", "serverStopping", "serverQuit",
                 "onIMCMessage", "refreshJEI");
@@ -1165,6 +1187,12 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             @Override
             boolean isAvailable(String className) {
                 return TargetedModVersions.isAbyssalCraftClass(className);
+            }
+        },
+        ASTRALSORCERY("ASTRAL") {
+            @Override
+            boolean isAvailable(String className) {
+                return TargetedModVersions.isAstralSorceryClass(className);
             }
         },
         OPENCOMPUTERS("OC") {

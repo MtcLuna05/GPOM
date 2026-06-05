@@ -13,6 +13,7 @@ public final class TargetedModVersions {
             "after:aoa3@[3.3.6];" +
             "after:abyssalcraft@[1.11.2];" +
             "after:aquaacrobatics@[1.15.4];" +
+            "after:astralsorcery@[1.10.27];" +
             "after:betterquesting@[4.3.1];" +
             "after:binniecore@[2.5.1.213];" +
             "after:buildcraftcore@[8.0.0];" +
@@ -58,6 +59,10 @@ public final class TargetedModVersions {
 
     public static boolean isAquaAcrobaticsClass(String className) {
         return isClassFromSupportedJar(className, "AquaAcrobatics-1.15.4.jar");
+    }
+
+    public static boolean isAstralSorceryClass(String className) {
+        return isClassFromSupportedJar(className, "astralsorcery-1.12.2-1.10.27.jar");
     }
 
     public static boolean isAbyssalCraftClass(String className) {
