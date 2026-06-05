@@ -1,5 +1,6 @@
 package com.l.gpom.optimization;
 
+import com.l.gpom.GPOM;
 import net.minecraftforge.client.event.ModelRegistryEvent;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.ModContainer;
@@ -14,6 +15,8 @@ import com.google.common.collect.SetMultimap;
 import net.minecraft.block.Block;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemBlock;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.SoundEvent;
 import net.minecraft.world.biome.Biome;
 import net.tslat.aoa3.client.render.entities.EntityRenders;
@@ -53,6 +56,27 @@ public final class AoAConstructionOptimizations {
     private static final String ENTITY_REGISTER = "net.tslat.aoa3.common.registration.EntityRegister";
     private static final String SOUNDS_REGISTER = "net.tslat.aoa3.common.registration.SoundsRegister";
     private static final EnumSet<Side> DEFAULT_SIDES = EnumSet.allOf(Side.class);
+    private static final String[] GRASS_REGISTRY_IDS = {
+            "abyss_grass",
+            "borean_grass",
+            "candyland_grass",
+            "celeve_grass",
+            "creeponia_grass",
+            "dustopia_grass",
+            "gardencia_grass",
+            "greckon_grass",
+            "haven_grass",
+            "iromine_grass",
+            "lelyetia_grass",
+            "lelyetia_down_grass",
+            "lunalyte_grass",
+            "lunasole_grass",
+            "mysterium_grass",
+            "precasia_grass",
+            "runic_grass",
+            "shyrelands_grass",
+            "toxic_grass"
+    };
 
     private AoAConstructionOptimizations() {
     }
@@ -75,6 +99,9 @@ public final class AoAConstructionOptimizations {
         }
 
         for (String className : classNames) {
+            if (!initializeSubscriberClass(className)) {
+                return false;
+            }
             registerByName(className, mod);
         }
         return true;
@@ -87,6 +114,9 @@ public final class AoAConstructionOptimizations {
 
         Class<?> targetClass = (Class<?>) target;
         if (!TargetedModVersions.isAdventOfAscensionClass(targetClass)) {
+            return false;
+        }
+        if (!initializeSubscriberClass(targetClass)) {
             return false;
         }
         if (ENTITY_RENDERS.equals(targetClass.getName())) {
@@ -176,15 +206,17 @@ public final class AoAConstructionOptimizations {
     }
 
     private static void registerEntityRenders(ModContainer owner) {
-        ModelRegistryEvent event = new ModelRegistryEvent();
-        event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
-            @Override
-            public void invoke(Event event) {
-                if (event instanceof IContextSetter) {
-                    ((IContextSetter) event).setModContainer(owner);
+        FmlConstructionSafety.subscriberRegistration("AoA subscriber register " + ENTITY_RENDERS, () -> {
+            ModelRegistryEvent event = new ModelRegistryEvent();
+            event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
+                @Override
+                public void invoke(Event event) {
+                    if (event instanceof IContextSetter) {
+                        ((IContextSetter) event).setModContainer(owner);
+                    }
+                    EntityRenders.registerEntityRenders((ModelRegistryEvent) event);
                 }
-                EntityRenders.registerEntityRenders((ModelRegistryEvent) event);
-            }
+            });
         });
     }
 
@@ -199,12 +231,15 @@ public final class AoAConstructionOptimizations {
             @Override
             public void invoke(RegistryEvent.Register event) {
                 BlockRegister.registerBlocks(event);
+                logGrassRegistryState("block", event.getRegistry());
             }
         });
         registerRegistry(owner, Item.class, new RegisterInvoker() {
             @Override
             public void invoke(RegistryEvent.Register event) {
                 BlockRegister.registerItemBlocks(event);
+                recoverMissingGrassItemBlocks(event.getRegistry());
+                logGrassRegistryState("item", event.getRegistry());
             }
         });
         registerMissingMappings(owner, Block.class, new MissingMappingsInvoker() {
@@ -306,49 +341,143 @@ public final class AoAConstructionOptimizations {
     }
 
     private static void registerModelRegistry(final ModContainer owner, final ModelRegistryInvoker invoker) {
-        ModelRegistryEvent event = new ModelRegistryEvent();
-        event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
-            @Override
-            public void invoke(Event event) {
-                setOwner(event, owner);
-                invoker.invoke((ModelRegistryEvent) event);
-            }
+        FmlConstructionSafety.subscriberRegistration("AoA subscriber register ModelRegistryEvent", () -> {
+            ModelRegistryEvent event = new ModelRegistryEvent();
+            event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
+                @Override
+                public void invoke(Event event) {
+                    setOwner(event, owner);
+                    invoker.invoke((ModelRegistryEvent) event);
+                }
+            });
         });
     }
 
     private static void registerRegistry(final ModContainer owner, final Class<?> registryType, final RegisterInvoker invoker) {
-        RegistryEvent.Register event = new RegistryEvent.Register(null, registryFor(registryType));
-        event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
-            @Override
-            public void invoke(Event event) {
-                RegistryEvent.Register registryEvent = (RegistryEvent.Register) event;
-                if (registryEvent.getRegistry() == null || registryEvent.getRegistry().getRegistrySuperType() != registryType) {
-                    return;
+        FmlConstructionSafety.subscriberRegistration("AoA subscriber register RegistryEvent.Register " + registryType.getName(), () -> {
+            RegistryEvent.Register event = new RegistryEvent.Register(null, registryFor(registryType));
+            event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
+                @Override
+                public void invoke(Event event) {
+                    RegistryEvent.Register registryEvent = (RegistryEvent.Register) event;
+                    if (registryEvent.getRegistry() == null || registryEvent.getRegistry().getRegistrySuperType() != registryType) {
+                        return;
+                    }
+                    setOwner(event, owner);
+                    invoker.invoke(registryEvent);
                 }
-                setOwner(event, owner);
-                invoker.invoke(registryEvent);
-            }
+            });
         });
     }
 
     private static void registerMissingMappings(final ModContainer owner, final Class<?> registryType, final MissingMappingsInvoker invoker) {
-        RegistryEvent.MissingMappings event = new RegistryEvent.MissingMappings(null, registryFor(registryType), java.util.Collections.emptyList());
-        event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
-            @Override
-            public void invoke(Event event) {
-                RegistryEvent.MissingMappings mappingEvent = (RegistryEvent.MissingMappings) event;
-                if (mappingEvent.getRegistry() == null || mappingEvent.getRegistry().getRegistrySuperType() != registryType) {
-                    return;
+        FmlConstructionSafety.subscriberRegistration("AoA subscriber register RegistryEvent.MissingMappings " + registryType.getName(), () -> {
+            RegistryEvent.MissingMappings event = new RegistryEvent.MissingMappings(null, registryFor(registryType), java.util.Collections.emptyList());
+            event.getListenerList().register(0, EventPriority.NORMAL, new IEventListener() {
+                @Override
+                public void invoke(Event event) {
+                    RegistryEvent.MissingMappings mappingEvent = (RegistryEvent.MissingMappings) event;
+                    if (mappingEvent.getRegistry() == null || mappingEvent.getRegistry().getRegistrySuperType() != registryType) {
+                        return;
+                    }
+                    setOwner(event, owner);
+                    invoker.invoke(mappingEvent);
                 }
-                setOwner(event, owner);
-                invoker.invoke(mappingEvent);
-            }
+            });
         });
     }
 
     private static void setOwner(Event event, ModContainer owner) {
         if (event instanceof IContextSetter) {
             ((IContextSetter) event).setModContainer(owner);
+        }
+    }
+
+    private static boolean initializeSubscriberClass(String className) {
+        try {
+            ClassLoader loader = Thread.currentThread().getContextClassLoader();
+            if (loader == null) {
+                loader = AoAConstructionOptimizations.class.getClassLoader();
+            }
+            Class.forName(className, true, loader);
+            return true;
+        } catch (ClassNotFoundException | LinkageError exception) {
+            GPOM.LOGGER.warn("[AoA Construction] Falling back to Forge subscriber injection; could not initialize {}", className, exception);
+            return false;
+        }
+    }
+
+    private static boolean initializeSubscriberClass(Class<?> targetClass) {
+        try {
+            Class.forName(targetClass.getName(), true, targetClass.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError exception) {
+            GPOM.LOGGER.warn("[AoA Construction] Falling back to Forge subscriber registration; could not initialize {}", targetClass.getName(), exception);
+            return false;
+        }
+    }
+
+    private static void logGrassRegistryState(String registryType, IForgeRegistry<?> registry) {
+        if (registry == null) {
+            GPOM.LOGGER.warn("[AoA Construction] Could not validate AoA grass {} registry: registry was null", registryType);
+            return;
+        }
+
+        StringBuilder missing = new StringBuilder();
+        int missingCount = 0;
+        for (String id : GRASS_REGISTRY_IDS) {
+            if (registry.getValue(new ResourceLocation("aoa3", id)) != null) {
+                continue;
+            }
+            if (missing.length() > 0) {
+                missing.append(',');
+            }
+            missing.append("aoa3:").append(id);
+            missingCount++;
+        }
+
+        if (missingCount == 0) {
+            GPOM.LOGGER.info("[AoA Construction] AoA grass {} registry validation passed for {} entries", registryType, GRASS_REGISTRY_IDS.length);
+        } else {
+            GPOM.LOGGER.warn("[AoA Construction] AoA grass {} registry missing {}/{} entries: {}",
+                    registryType,
+                    missingCount,
+                    GRASS_REGISTRY_IDS.length,
+                    missing);
+        }
+    }
+
+    public static void logFinalGrassRegistryState(String stage) {
+        logGrassRegistryState(stage + " block", ForgeRegistries.BLOCKS);
+        logGrassRegistryState(stage + " item", ForgeRegistries.ITEMS);
+    }
+
+    private static void recoverMissingGrassItemBlocks(IForgeRegistry<Item> itemRegistry) {
+        if (itemRegistry == null) {
+            return;
+        }
+
+        int recovered = 0;
+        for (String id : GRASS_REGISTRY_IDS) {
+            ResourceLocation registryName = new ResourceLocation("aoa3", id);
+            if (itemRegistry.getValue(registryName) != null) {
+                continue;
+            }
+
+            Block block = ForgeRegistries.BLOCKS.getValue(registryName);
+            if (block == null) {
+                GPOM.LOGGER.warn("[AoA Construction] Could not recover missing AoA grass item {}; block was also missing during item registration", registryName);
+                continue;
+            }
+
+            ItemBlock itemBlock = new ItemBlock(block);
+            itemBlock.setRegistryName(registryName);
+            itemRegistry.register(itemBlock);
+            recovered++;
+        }
+
+        if (recovered > 0) {
+            GPOM.LOGGER.warn("[AoA Construction] Recovered {} missing AoA grass item-block registrations from existing grass blocks", recovered);
         }
     }
 

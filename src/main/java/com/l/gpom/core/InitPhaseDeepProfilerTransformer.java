@@ -805,6 +805,41 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         add(targets, ModTarget.AOA, "net.tslat.aoa3.hooks.jer.JerHooks",
                 "<clinit>", "init", "integrateWorldGen", "integrateCrops", "integrateDungeonLoot", "integrateMobDrops");
 
+        add(targets, ModTarget.PROJECTE, "moze_intel.projecte.PECore",
+                "preInit", "load", "postInit", "serverStarting", "serverStopping", "serverQuit",
+                "onIMCMessage", "refreshJEI");
+        add(targets, ModTarget.PROJECTE, "moze_intel.projecte.emc.EMCMapper",
+                "<clinit>", "map", "filterEMCMap", "clearMaps", "mapContains", "getEmcValue");
+        add(targets, ModTarget.PROJECTE, "moze_intel.projecte.emc.FuelMapper",
+                "<clinit>", "loadMap", "addToMap", "isStackFuel", "isStackMaxFuel", "getFuelUpgrade");
+        add(targets, ModTarget.PROJECTE, "moze_intel.projecte.impl.ConversionProxyImpl",
+                "<clinit>", "<init>", "addConversion", "objectToNSS", "getActiveMod");
+        add(targets, ModTarget.PROJECTE, "moze_intel.projecte.impl.EMCProxyImpl",
+                "<clinit>", "registerCustomEMC", "hasValue", "getValue", "getSellValue");
+
+        add(targets, ModTarget.BETTERQUESTING, "betterquesting.core.BetterQuesting",
+                "preInit", "init", "postInit", "serverStart", "serverStop");
+        add(targets, ModTarget.BETTERQUESTING, "betterquesting.handlers.SaveLoadHandler",
+                "<clinit>", "<init>", "loadDatabases", "saveDatabases", "unloadDatabases",
+                "loadConfig", "attemptUpdate", "loadProgress", "loadParties", "loadNames", "loadLives",
+                "checkLegacyFiles", "getPlayerProgressFiles");
+        add(targets, ModTarget.BETTERQUESTING, "betterquesting.questing.QuestDatabase",
+                "<clinit>", "<init>", "readFromNBT", "readProgressFromNBT", "writeToNBT",
+                "writeProgressToNBT", "bulkLookupShared", "reset");
+        add(targets, ModTarget.BETTERQUESTING, "betterquesting.questing.QuestLineDatabase",
+                "<clinit>", "<init>", "readFromNBT", "writeToNBT", "getSortedEntries", "reset");
+        add(targets, ModTarget.BETTERQUESTING, "betterquesting.api2.utils.BQThreadedIO",
+                "<clinit>", "<init>", "init", "enqueue", "shutdown");
+
+        add(targets, ModTarget.FTBLIB, "com.feed_the_beast.ftblib.FTBLib",
+                "onPreInit", "onPostInit", "onServerAboutToStart", "onServerStarting", "onServerStarted",
+                "onServerStopping");
+        add(targets, ModTarget.FTBLIB, "com.feed_the_beast.ftblib.FTBLibCommon",
+                "<clinit>", "<init>", "preInit", "postInit");
+        add(targets, ModTarget.FTBLIB, "com.feed_the_beast.ftblib.lib.data.Universe",
+                "<clinit>", "<init>", "onServerAboutToStart", "onServerStarted", "onServerStopping",
+                "onPlayerLoggedIn", "load", "save", "clearCache", "getPlayer", "getTeam");
+
         add(targets, ModTarget.IMMERSIVEENGINEERING, "blusunrize.immersiveengineering.client.ClientProxy",
                 "postInit", "postInitEnd");
         add(targets, ModTarget.IMMERSIVEENGINEERING, "blusunrize.lib.manual.ManualInstance",
@@ -1096,6 +1131,26 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                     || methodName.equals("register") || methodName.equals("addMapper")
                     || methodName.equals("invoke");
         }
+        if (className.equals("moze_intel.projecte.PECore")) {
+            return methodName.equals("serverStarting") || methodName.equals("postInit") || methodName.equals("refreshJEI");
+        }
+        if (className.equals("moze_intel.projecte.emc.EMCMapper")) {
+            return methodName.equals("map") || methodName.equals("filterEMCMap");
+        }
+        if (className.equals("betterquesting.core.BetterQuesting")) {
+            return methodName.equals("serverStart") || methodName.equals("postInit");
+        }
+        if (className.equals("betterquesting.handlers.SaveLoadHandler")) {
+            return methodName.equals("loadDatabases") || methodName.equals("saveDatabases");
+        }
+        if (className.equals("com.feed_the_beast.ftblib.FTBLib")) {
+            return methodName.equals("onServerAboutToStart")
+                    || methodName.equals("onServerStarting")
+                    || methodName.equals("onServerStarted");
+        }
+        if (className.equals("com.feed_the_beast.ftblib.lib.data.Universe")) {
+            return methodName.equals("onServerStarted") || methodName.equals("load");
+        }
         return false;
     }
 
@@ -1116,6 +1171,24 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             @Override
             boolean isAvailable(String className) {
                 return TargetedModVersions.isOpenComputersClass(className);
+            }
+        },
+        PROJECTE("PE") {
+            @Override
+            boolean isAvailable(String className) {
+                return TargetedModVersions.isProjectEClass(className);
+            }
+        },
+        BETTERQUESTING("BQ") {
+            @Override
+            boolean isAvailable(String className) {
+                return TargetedModVersions.isBetterQuestingClass(className);
+            }
+        },
+        FTBLIB("FTB") {
+            @Override
+            boolean isAvailable(String className) {
+                return TargetedModVersions.isFTBLibClass(className);
             }
         },
         ENDERIO("EIO") {
@@ -1513,6 +1586,24 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             if (owner.startsWith("com/zeitheron/hammercore/lib/nashorn/")
                     || owner.startsWith("javax/script/")) {
                 return "EXPEQUIV script call " + className + '.' + name + desc;
+            }
+            if (owner.startsWith("moze_intel/projecte/emc/")
+                    || owner.startsWith("moze_intel/projecte/impl/")
+                    || owner.startsWith("moze_intel/projecte/api/")) {
+                return "PE call " + className + '.' + name + desc;
+            }
+            if (owner.startsWith("betterquesting/handlers/")
+                    || owner.startsWith("betterquesting/questing/")
+                    || owner.startsWith("betterquesting/api2/storage/")
+                    || owner.startsWith("betterquesting/api2/utils/")
+                    || owner.startsWith("betterquesting/network/handlers/")) {
+                return "BQ call " + className + '.' + name + desc;
+            }
+            if (owner.startsWith("com/feed_the_beast/ftblib/lib/data/")
+                    || owner.startsWith("com/feed_the_beast/ftblib/events/")
+                    || owner.startsWith("com/feed_the_beast/ftblib/lib/io/")
+                    || owner.startsWith("com/feed_the_beast/ftblib/lib/config/")) {
+                return "FTB call " + className + '.' + name + desc;
             }
             return null;
         }

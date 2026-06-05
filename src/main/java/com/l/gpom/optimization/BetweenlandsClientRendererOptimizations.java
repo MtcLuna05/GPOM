@@ -17,6 +17,7 @@ import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.client.registry.RenderingRegistry;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -150,6 +151,27 @@ public final class BetweenlandsClientRendererOptimizations {
     private BetweenlandsClientRendererOptimizations() {
     }
 
+    private static TileEntityRendererDispatcher resolveTileRendererDispatcher(TileEntityRendererDispatcher preferred) {
+        if (preferred != null) {
+            return preferred;
+        }
+        try {
+            for (String fieldName : new String[] {"instance", "field_147556_a"}) {
+                try {
+                    Field field = TileEntityRendererDispatcher.class.getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object value = field.get(null);
+                    if (value instanceof TileEntityRendererDispatcher) {
+                        return (TileEntityRendererDispatcher) value;
+                    }
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static void registerEntityRenderers() {
         long startedAt = StartupProfiler.beginProbe();
@@ -160,6 +182,9 @@ public final class BetweenlandsClientRendererOptimizations {
 
             ClassLoader loader = BetweenlandsClientRendererOptimizations.class.getClassLoader();
             for (String[] plan : ENTITY_RENDERERS) {
+                if (!isSafeBetweenlandsEntityClassName(plan[0]) || !isSafeBetweenlandsEntityRendererClassName(plan[1])) {
+                    throw new IllegalArgumentException("Unsafe Betweenlands entity renderer plan " + plan[0] + " -> " + plan[1]);
+                }
                 Class<?> entityClass = Class.forName(plan[0], false, loader);
                 RenderingRegistry.registerEntityRenderingHandler(
                         (Class<? extends Entity>) entityClass,
@@ -181,6 +206,9 @@ public final class BetweenlandsClientRendererOptimizations {
         }
 
         try {
+            if (!isSafeBetweenlandsTileClassName(tileClassName) || !isSafeBetweenlandsTileRendererClassName(rendererClassName)) {
+                throw new IllegalArgumentException("Unsafe Betweenlands tile renderer plan " + tileClassName + " -> " + rendererClassName);
+            }
             ClassLoader loader = BetweenlandsClientRendererOptimizations.class.getClassLoader();
             Class<?> tileClass = Class.forName(tileClassName, false, loader);
             ClientRegistry.bindTileEntitySpecialRenderer(
@@ -191,6 +219,47 @@ public final class BetweenlandsClientRendererOptimizations {
             GPOM.LOGGER.warn("[StartupProfiler] Betweenlands lazy tile renderer registration failed for {} -> {}", tileClassName, rendererClassName, throwable);
             throw new RuntimeException("Failed to register Betweenlands lazy tile renderer " + rendererClassName, throwable);
         }
+    }
+
+    private static boolean isSafeBetweenlandsEntityClassName(String className) {
+        return isSafeClassName(className, "thebetweenlands.common.entity.");
+    }
+
+    private static boolean isSafeBetweenlandsTileClassName(String className) {
+        return isSafeClassName(className, "thebetweenlands.common.tile.");
+    }
+
+    private static boolean isSafeBetweenlandsEntityRendererClassName(String className) {
+        return isSafeClassName(className, "thebetweenlands.client.render.entity.")
+                || "net.minecraft.client.renderer.entity.RenderXPOrb".equals(className);
+    }
+
+    private static boolean isSafeBetweenlandsTileRendererClassName(String className) {
+        return isSafeClassName(className, "thebetweenlands.client.render.tile.");
+    }
+
+    private static boolean isSafeClassName(String className, String allowedPrefix) {
+        return className != null
+                && className.startsWith(allowedPrefix)
+                && className.indexOf('/') < 0
+                && className.indexOf('\\') < 0
+                && className.indexOf("..") < 0;
+    }
+
+    private static Method findMethod(Class<?> type, String[] names, Class<?>... parameterTypes) {
+        Class<?> current = type;
+        while (current != null) {
+            for (String name : names) {
+                try {
+                    Method method = current.getDeclaredMethod(name, parameterTypes);
+                    method.setAccessible(true);
+                    return method;
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return null;
     }
 
     private static final class LazyRenderFactory implements IRenderFactory<Entity> {
@@ -265,6 +334,9 @@ public final class BetweenlandsClientRendererOptimizations {
 
         private Constructor<?> findConstructor() {
             try {
+                if (!isSafeBetweenlandsEntityRendererClassName(renderClassName)) {
+                    throw new IllegalArgumentException("Unsafe Betweenlands entity renderer class " + renderClassName);
+                }
                 Class<?> renderClass = Class.forName(renderClassName, true, loader);
                 Constructor<?> constructor = needsRenderItem
                         ? renderClass.getConstructor(RenderManager.class, RenderItem.class)
@@ -279,10 +351,15 @@ public final class BetweenlandsClientRendererOptimizations {
 
     private static final class LazyTileEntitySpecialRenderer extends TileEntitySpecialRenderer<TileEntity> {
         private static final ConcurrentHashMap<String, Constructor<?>> CONSTRUCTORS = new ConcurrentHashMap<>();
+        private static volatile Method setRendererDispatcherMethod;
+        private static final ConcurrentHashMap<Class<?>, Method> RENDER_METHODS = new ConcurrentHashMap<>();
+        private static final ConcurrentHashMap<Class<?>, Method> RENDER_FAST_METHODS = new ConcurrentHashMap<>();
+        private static final ConcurrentHashMap<Class<?>, Method> IS_GLOBAL_RENDERER_METHODS = new ConcurrentHashMap<>();
 
         private final String rendererClassName;
         private final ClassLoader loader;
         private volatile TileEntitySpecialRenderer<TileEntity> delegate;
+        private volatile TileEntityRendererDispatcher dispatcher;
 
         private LazyTileEntitySpecialRenderer(String rendererClassName, ClassLoader loader) {
             this.rendererClassName = rendererClassName;
@@ -291,26 +368,42 @@ public final class BetweenlandsClientRendererOptimizations {
 
         @Override
         public void setRendererDispatcher(TileEntityRendererDispatcher rendererDispatcherIn) {
-            super.setRendererDispatcher(rendererDispatcherIn);
+            setDispatcherLocal(rendererDispatcherIn);
+        }
+
+        public void func_147497_a(TileEntityRendererDispatcher rendererDispatcherIn) {
+            setDispatcherLocal(rendererDispatcherIn);
+        }
+
+        private void setDispatcherLocal(TileEntityRendererDispatcher rendererDispatcherIn) {
+            this.dispatcher = rendererDispatcherIn;
             TileEntitySpecialRenderer<TileEntity> current = delegate;
             if (current != null) {
-                current.setRendererDispatcher(rendererDispatcherIn);
+                invokeSetRendererDispatcher(current, rendererDispatcherIn);
             }
         }
 
         @Override
         public void render(TileEntity tileEntity, double x, double y, double z, float partialTicks, int destroyStage, float alpha) {
-            getDelegate().render(tileEntity, x, y, z, partialTicks, destroyStage, alpha);
+            invokeRender(getDelegate(), tileEntity, x, y, z, partialTicks, destroyStage, alpha);
+        }
+
+        public void func_192841_a(TileEntity tileEntity, double x, double y, double z, float partialTicks, int destroyStage, float alpha) {
+            invokeRender(getDelegate(), tileEntity, x, y, z, partialTicks, destroyStage, alpha);
         }
 
         @Override
         public void renderTileEntityFast(TileEntity tileEntity, double x, double y, double z, float partialTicks, int destroyStage, float alpha, BufferBuilder buffer) {
-            getDelegate().renderTileEntityFast(tileEntity, x, y, z, partialTicks, destroyStage, alpha, buffer);
+            invokeRenderFast(getDelegate(), tileEntity, x, y, z, partialTicks, destroyStage, alpha, buffer);
         }
 
         @Override
         public boolean isGlobalRenderer(TileEntity tileEntity) {
-            return getDelegate().isGlobalRenderer(tileEntity);
+            return invokeIsGlobalRenderer(getDelegate(), tileEntity);
+        }
+
+        public boolean func_188185_a(TileEntity tileEntity) {
+            return invokeIsGlobalRenderer(getDelegate(), tileEntity);
         }
 
         @SuppressWarnings("unchecked")
@@ -328,7 +421,10 @@ public final class BetweenlandsClientRendererOptimizations {
                 try {
                     Constructor<?> constructor = CONSTRUCTORS.computeIfAbsent(rendererClassName, ignored -> findConstructor());
                     current = (TileEntitySpecialRenderer<TileEntity>) constructor.newInstance();
-                    current.setRendererDispatcher(rendererDispatcher);
+                    TileEntityRendererDispatcher resolvedDispatcher = resolveTileRendererDispatcher(dispatcher);
+                    if (resolvedDispatcher != null) {
+                        invokeSetRendererDispatcher(current, resolvedDispatcher);
+                    }
                     delegate = current;
                     return current;
                 } catch (Throwable throwable) {
@@ -339,12 +435,72 @@ public final class BetweenlandsClientRendererOptimizations {
 
         private Constructor<?> findConstructor() {
             try {
+                if (!isSafeBetweenlandsTileRendererClassName(rendererClassName)) {
+                    throw new IllegalArgumentException("Unsafe Betweenlands tile renderer class " + rendererClassName);
+                }
                 Class<?> rendererClass = Class.forName(rendererClassName, true, loader);
                 Constructor<?> constructor = rendererClass.asSubclass(TileEntitySpecialRenderer.class).getConstructor();
                 constructor.setAccessible(true);
                 return constructor;
             } catch (Throwable throwable) {
                 throw new RuntimeException("Failed to resolve lazy Betweenlands tile renderer constructor " + rendererClassName, throwable);
+            }
+        }
+
+        private static void invokeSetRendererDispatcher(TileEntitySpecialRenderer<?> renderer, TileEntityRendererDispatcher dispatcher) {
+            if (renderer == null || dispatcher == null) {
+                return;
+            }
+            try {
+                Method method = setRendererDispatcherMethod;
+                if (method == null) {
+                    method = findMethod(TileEntitySpecialRenderer.class, new String[] {"func_147497_a", "setRendererDispatcher"}, TileEntityRendererDispatcher.class);
+                    setRendererDispatcherMethod = method;
+                }
+                if (method != null) {
+                    method.invoke(renderer, dispatcher);
+                }
+            } catch (Throwable throwable) {
+                throw new RuntimeException("Failed to attach dispatcher to lazy Betweenlands tile renderer " + renderer.getClass().getName(), throwable);
+            }
+        }
+
+        private static void invokeRender(TileEntitySpecialRenderer<?> renderer, TileEntity tileEntity, double x, double y, double z,
+                                         float partialTicks, int destroyStage, float alpha) {
+            try {
+                Method method = RENDER_METHODS.computeIfAbsent(renderer.getClass(), type ->
+                        findMethod(type, new String[] {"func_192841_a", "render"},
+                                TileEntity.class, double.class, double.class, double.class, float.class, int.class, float.class));
+                if (method == null) {
+                    throw new NoSuchMethodException(renderer.getClass().getName() + ".func_192841_a/render");
+                }
+                method.invoke(renderer, tileEntity, x, y, z, partialTicks, destroyStage, alpha);
+            } catch (Throwable throwable) {
+                throw new RuntimeException("Failed to render lazy Betweenlands tile renderer " + renderer.getClass().getName(), throwable);
+            }
+        }
+
+        private static void invokeRenderFast(TileEntitySpecialRenderer<?> renderer, TileEntity tileEntity, double x, double y, double z,
+                                             float partialTicks, int destroyStage, float alpha, BufferBuilder buffer) {
+            try {
+                Method method = RENDER_FAST_METHODS.computeIfAbsent(renderer.getClass(), type ->
+                        findMethod(type, new String[] {"renderTileEntityFast"},
+                                TileEntity.class, double.class, double.class, double.class, float.class, int.class, float.class, BufferBuilder.class));
+                if (method != null) {
+                    method.invoke(renderer, tileEntity, x, y, z, partialTicks, destroyStage, alpha, buffer);
+                }
+            } catch (Throwable throwable) {
+                throw new RuntimeException("Failed to fast-render lazy Betweenlands tile renderer " + renderer.getClass().getName(), throwable);
+            }
+        }
+
+        private static boolean invokeIsGlobalRenderer(TileEntitySpecialRenderer<?> renderer, TileEntity tileEntity) {
+            try {
+                Method method = IS_GLOBAL_RENDERER_METHODS.computeIfAbsent(renderer.getClass(), type ->
+                        findMethod(type, new String[] {"func_188185_a", "isGlobalRenderer"}, TileEntity.class));
+                return method != null && Boolean.TRUE.equals(method.invoke(renderer, tileEntity));
+            } catch (Throwable throwable) {
+                throw new RuntimeException("Failed to query lazy Betweenlands tile renderer " + renderer.getClass().getName(), throwable);
             }
         }
     }

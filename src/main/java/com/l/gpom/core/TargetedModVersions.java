@@ -13,16 +13,24 @@ public final class TargetedModVersions {
             "after:aoa3@[3.3.6];" +
             "after:abyssalcraft@[1.11.2];" +
             "after:aquaacrobatics@[1.15.4];" +
+            "after:betterquesting@[4.3.1];" +
+            "after:binniecore@[2.5.1.213];" +
             "after:buildcraftcore@[8.0.0];" +
             "after:buildcraftlib@[8.0.0];" +
             "after:citnbt@[0.3.2];" +
             "after:enderio@[5.3.72];" +
+            "after:environmentaltech@[1.12.2-2.0.20.1];" +
             "after:expequiv@[12.3.17];" +
+            "after:extrautils2@[1.0];" +
+            "after:extratrees@[2.5.1.213];" +
+            "after:forestry@[5.8.2.427];" +
+            "after:ftblib@[5.4.7.2];" +
             "after:jei@[4.28.1];" +
             "after:jeresources@[0.9.2.60];" +
             "after:libvulpes@[0.5.0];" +
             "after:modularmachinery@[2.3.2];" +
             "after:opencomputers@[1.8.7];" +
+            "after:projecte@[1.12.2-PE1.4.1];" +
             "after:railcraft@[12.1.0-beta-8];" +
             "after:reborncore@[3.19.5];" +
             "after:renderlib@[1.4.5];" +
@@ -56,6 +64,14 @@ public final class TargetedModVersions {
         return isClassFromSupportedJar(className, "TheBetweenlands-3.8.1-universal.jar");
     }
 
+    public static boolean isBetterQuestingClass(String className) {
+        return isClassFromSupportedJar(className, "BetterQuestingUnofficial-4.3.1.jar");
+    }
+
+    public static boolean isBinnieModsClass(String className) {
+        return isClassFromSupportedJar(className, "binnie-mods-1.12.2-2.5.1.213.jar");
+    }
+
     public static boolean isBuildCraftCoreClass(String className) {
         return isClassFromSupportedJar(className, "buildcraft-core-8.0.0.jar");
     }
@@ -76,8 +92,24 @@ public final class TargetedModVersions {
         return isClassFromSupportedJar(className, "EnderIO-1.12.2-5.3.72.jar");
     }
 
+    public static boolean isEnvironmentalTechClass(String className) {
+        return isClassFromSupportedJar(className, "environmentaltech-1.12.2-2.0.20.1.jar");
+    }
+
     public static boolean isExpandedEquivalenceClass(String className) {
         return isClassFromSupportedJar(className, "ExpandedEquivalence-1.12.2-12.3.17.jar");
+    }
+
+    public static boolean isExtraUtilities2Class(String className) {
+        return isClassFromSupportedJar(className, "extrautils2-1.12-1.9.9.jar");
+    }
+
+    public static boolean isForestryClass(String className) {
+        return isClassFromSupportedJar(className, "forestry_1.12.2-5.8.2.427.jar");
+    }
+
+    public static boolean isFTBLibClass(String className) {
+        return isClassFromSupportedJar(className, "FTBLib-5.4.7.2.jar");
     }
 
     public static boolean isHadEnoughItemsClass(String className) {
@@ -102,6 +134,10 @@ public final class TargetedModVersions {
 
     public static boolean isOpenComputersClass(String className) {
         return isClassFromSupportedJar(className, "OpenComputers-MC1.12.2-1.8.7+2502094.jar");
+    }
+
+    public static boolean isProjectEClass(String className) {
+        return isClassFromSupportedJar(className, "ProjectE-1.12.2-PE1.4.1.jar");
     }
 
     public static boolean isRailcraftClass(String className) {

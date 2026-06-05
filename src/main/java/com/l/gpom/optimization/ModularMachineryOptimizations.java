@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.util.GpomCaches;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -38,15 +39,15 @@ public final class ModularMachineryOptimizations {
         }
 
         try {
-            File minecraftDir = new File(".").getCanonicalFile();
+            File minecraftDir = GpomCaches.instanceDirectory();
             ManifestSnapshot snapshot = buildManifestSnapshot(minecraftDir);
-            File cacheDir = new File(minecraftDir, ".gpom");
-            File manifestFile = new File(cacheDir, "modularmachinery-manifest.txt");
+            File manifestFile = GpomCaches.file("modularmachinery", "modularmachinery-manifest.txt");
             String previous = readFirstLine(manifestFile);
             boolean hit = snapshot.signature.equals(previous);
+            File parent = manifestFile.getParentFile();
 
-            if (!cacheDir.isDirectory() && !cacheDir.mkdirs()) {
-                GPOM.LOGGER.info("[MM Optimizations] Could not create cache directory {}", cacheDir);
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                GPOM.LOGGER.info("[MM Optimizations] Could not create cache directory {}", parent);
             } else {
                 Files.write(manifestFile.toPath(), Collections.singletonList(snapshot.signature), StandardCharsets.UTF_8);
             }

@@ -2,6 +2,7 @@ package com.l.gpom.mixin.fml;
 
 import com.l.gpom.profiling.StartupProfiler;
 import com.l.gpom.optimization.AoAConfigSyncOptimizations;
+import com.l.gpom.optimization.FmlConstructionSafety;
 import com.google.common.eventbus.EventBus;
 import net.minecraftforge.fml.common.FMLModContainer;
 import net.minecraftforge.fml.common.ILanguageAdapter;
@@ -92,7 +93,7 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionAddFile(ModClassLoader loader, File file) throws MalformedURLException {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            loader.addFile(file);
+            FmlConstructionSafety.classloaderMutation(gpom$constructionStage("addFile"), () -> loader.addFile(file));
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("addFile"), startedAt);
         }
@@ -108,7 +109,10 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionClearNegativeCache(ModClassLoader loader, Set<String> classes) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            loader.clearNegativeCacheFor(classes);
+            FmlConstructionSafety.classloaderMutation(
+                    gpom$constructionStage("clearNegativeCacheFor"),
+                    () -> loader.clearNegativeCacheFor(classes)
+            );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("clearNegativeCacheFor"), startedAt);
         }
@@ -124,7 +128,10 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionPreloadCrashClasses(ASMDataTable asmData, String modId, Set<String> classes) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            MinecraftForge.preloadCrashClasses(asmData, modId, classes);
+            FmlConstructionSafety.forgeSharedMutation(
+                    gpom$constructionStage("preloadCrashClasses"),
+                    () -> MinecraftForge.preloadCrashClasses(asmData, modId, classes)
+            );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("preloadCrashClasses"), startedAt);
         }
@@ -188,7 +195,10 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionNetworkRegister(NetworkRegistry registry, ModContainer container, Class<?> modClass, String acceptableRemoteVersions, ASMDataTable asmData) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            registry.register(container, modClass, acceptableRemoteVersions, asmData);
+            FmlConstructionSafety.networkRegistration(
+                    gpom$constructionStage("networkRegister"),
+                    () -> registry.register(container, modClass, acceptableRemoteVersions, asmData)
+            );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("networkRegister"), startedAt);
         }
@@ -220,7 +230,10 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionProxyInject(ModContainer container, ASMDataTable asmData, Side side, ILanguageAdapter adapter) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            ProxyInjector.inject(container, asmData, side, adapter);
+            FmlConstructionSafety.proxyInjection(
+                    gpom$constructionStage("proxyInject"),
+                    () -> ProxyInjector.inject(container, asmData, side, adapter)
+            );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("proxyInject"), startedAt);
         }
@@ -252,9 +265,11 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionConfigSync(String modId, Config.Type type) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            if (!AoAConfigSyncOptimizations.tryFastSync(modId, type)) {
-                ConfigManager.sync(modId, type);
-            }
+            FmlConstructionSafety.configSync(gpom$constructionStage("configSync"), () -> {
+                if (!AoAConfigSyncOptimizations.tryFastSync(modId, type)) {
+                    ConfigManager.sync(modId, type);
+                }
+            });
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("configSync"), startedAt);
         }
@@ -270,7 +285,10 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionProcessFieldAnnotations(FMLModContainer container, ASMDataTable asmData) throws IllegalAccessException {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            processFieldAnnotations(asmData);
+            FmlConstructionSafety.annotationProcessing(
+                    gpom$constructionStage("processFieldAnnotations"),
+                    () -> processFieldAnnotations(asmData)
+            );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("processFieldAnnotations"), startedAt);
         }

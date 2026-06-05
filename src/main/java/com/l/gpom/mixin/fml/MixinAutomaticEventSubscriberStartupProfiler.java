@@ -2,6 +2,7 @@ package com.l.gpom.mixin.fml;
 
 import com.l.gpom.optimization.AoAConstructionOptimizations;
 import com.l.gpom.optimization.EnderIOConstructionOptimizations;
+import com.l.gpom.optimization.FmlConstructionSafety;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.AutomaticEventSubscriber;
 import net.minecraftforge.fml.common.ModContainer;
@@ -69,10 +70,12 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
         try {
             String modId = gpom$currentModId.get();
             ModContainer owner = gpom$currentMod.get();
-            if (!EnderIOConstructionOptimizations.tryRegisterAutomaticSubscriber(eventBus, modId, target, owner)
-                    && !AoAConstructionOptimizations.tryRegisterAutomaticSubscriber(modId, target, owner)) {
-                eventBus.register(target);
-            }
+            FmlConstructionSafety.subscriberRegistration("automatic subscriber register " + modId + " " + subscriberName(target), () -> {
+                if (!EnderIOConstructionOptimizations.tryRegisterAutomaticSubscriber(eventBus, modId, target, owner)
+                        && !AoAConstructionOptimizations.tryRegisterAutomaticSubscriber(modId, target, owner)) {
+                    eventBus.register(target);
+                }
+            });
         } finally {
             StartupProfiler.endAutomaticSubscriberRegister(gpom$currentModId.get(), subscriberName(target), startedAt);
         }

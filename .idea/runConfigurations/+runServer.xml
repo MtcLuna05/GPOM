@@ -14,7 +14,7 @@
             <env name="FORGE_SPEC" value="2"></env>
         </envs>
         <option name="MAIN_CLASS_NAME" value="com.cleanroommc.boot.MainServer"></option>
-        <module name="CleanroomOptimizations.main"></module>
+        <module name="GPOM.main"></module>
         <classpathModifications>
             <entry path="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/classes/java/main" exclude="true"></entry>
             <entry path="/home/luna/Scrivania/Roba/Intellij/CleanroomOptimizations/build/resources/main" exclude="true"></entry>

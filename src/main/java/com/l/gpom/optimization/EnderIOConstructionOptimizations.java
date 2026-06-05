@@ -274,7 +274,7 @@ public final class EnderIOConstructionOptimizations {
                 registerResolved(eventBus, mod, subscriber.targetClass, subscriber.handlers);
             }
             return true;
-        } catch (ClassNotFoundException | IllegalAccessException | InvocationTargetException | LinkageError | RuntimeException e) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
             logFallbackOnce(mod.getModId() + "-whole-inject", "EnderIO whole automatic subscriber fast path failed for " + mod.getModId() + "; falling back to Forge registration", e);
             return false;
         }
@@ -307,7 +307,7 @@ public final class EnderIOConstructionOptimizations {
             }
             registerResolved(eventBus, owner, targetClass, handlers);
             return true;
-        } catch (IllegalAccessException | InvocationTargetException | LinkageError | RuntimeException e) {
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException e) {
             logFallbackOnce(targetClass.getName(), "EnderIO automatic subscriber fast path failed for " + targetClass.getName() + "; falling back to Forge registration", e);
             return false;
         }
@@ -373,20 +373,22 @@ public final class EnderIOConstructionOptimizations {
     }
 
     private static void registerResolved(EventBus eventBus, ModContainer owner, Class<?> targetClass, ResolvedHandler[] handlers)
-            throws InvocationTargetException, IllegalAccessException {
-        Map<Object, ModContainer> listenerOwners = listenerOwners(eventBus);
-        if (listenerOwners != null) {
-            listenerOwners.put(targetClass, owner);
-        }
+            throws ReflectiveOperationException {
+        FmlConstructionSafety.subscriberRegistration("EnderIO subscriber register " + targetClass.getName(), () -> {
+            Map<Object, ModContainer> listenerOwners = listenerOwners(eventBus);
+            if (listenerOwners != null) {
+                listenerOwners.put(targetClass, owner);
+            }
 
-        Map<Object, ?> listeners = listeners(eventBus);
-        if (listeners != null && listeners.containsKey(targetClass)) {
-            return;
-        }
+            Map<Object, ?> listeners = listeners(eventBus);
+            if (listeners != null && listeners.containsKey(targetClass)) {
+                return;
+            }
 
-        for (ResolvedHandler handler : handlers) {
-            EVENT_BUS_REGISTER_METHOD.invoke(eventBus, handler.eventType, targetClass, handler.method, owner);
-        }
+            for (ResolvedHandler handler : handlers) {
+                EVENT_BUS_REGISTER_METHOD.invoke(eventBus, handler.eventType, targetClass, handler.method, owner);
+            }
+        });
     }
 
     private static ResolvedHandler[] resolveHandlers(Class<?> targetClass, SubscriberPlan plan) {

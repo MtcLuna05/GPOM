@@ -31,6 +31,7 @@ public final class StartupProfiler {
     private static final int TOP_COUNT = intProperty("gpom.startupProfiler.topCount", 40);
     private static final int PHASE_DIGEST_COUNT = intProperty("gpom.startupProfiler.phaseDigestCount", 3);
     private static final int RESOURCE_LOAD_ORDER_TOP_COUNT = intProperty("gpom.resourceLoadOrder.topCount", 12);
+    private static final long BOOT_STARTED_AT = longProperty("gpom.bootStartNanos", System.nanoTime());
 
     private static final Object LOCK = new Object();
     private static final Map<String, PhaseData> PHASES = new LinkedHashMap<>();
@@ -188,6 +189,15 @@ public final class StartupProfiler {
         return System.nanoTime();
     }
 
+    public static void markBoot(String label) {
+        if (!ENABLED || label == null) {
+            return;
+        }
+        GPOM.LOGGER.info("[StartupProfiler] [Boot] {} at {} ms since GPOM core init",
+                label,
+                formatMillis(System.nanoTime() - BOOT_STARTED_AT));
+    }
+
     public static void endProbe(String probeName, long startedAt) {
         endProbe(probeName, startedAt, PROBE_THRESHOLD_NANOS);
     }
@@ -290,10 +300,13 @@ public final class StartupProfiler {
         }
         if (probeName.startsWith("ABYSS ")
                 || probeName.startsWith("AOA ")
+                || probeName.startsWith("BQ ")
                 || probeName.startsWith("HEI ")
                 || probeName.startsWith("BL ")
                 || probeName.startsWith("MM ")
                 || probeName.startsWith("OC ")
+                || probeName.startsWith("PE ")
+                || probeName.startsWith("FTB ")
                 || probeName.startsWith("RC ")
                 || probeName.startsWith("EIO ")
                 || probeName.startsWith("CT ")
@@ -383,6 +396,15 @@ public final class StartupProfiler {
         if (probeName.startsWith("HEI ")) {
             return "GPOM HEI";
         }
+        if (probeName.startsWith("BQ ")) {
+            return "GPOM BQ";
+        }
+        if (probeName.startsWith("PE ")) {
+            return "GPOM ProjectE";
+        }
+        if (probeName.startsWith("FTB ")) {
+            return "GPOM FTBLib";
+        }
         if (probeName.startsWith("MM ")) {
             return "GPOM Modular Machinery";
         }
@@ -402,6 +424,12 @@ public final class StartupProfiler {
         }
         if (probeName.startsWith("HEI ")) {
             probeName = probeName.substring(4);
+        } else if (probeName.startsWith("BQ ")) {
+            probeName = probeName.substring(3);
+        } else if (probeName.startsWith("PE ")) {
+            probeName = probeName.substring(3);
+        } else if (probeName.startsWith("FTB ")) {
+            probeName = probeName.substring(4);
         } else if (probeName.startsWith("MM ")) {
             probeName = probeName.substring(3);
         } else if (probeName.startsWith("RC ")) {
@@ -420,6 +448,12 @@ public final class StartupProfiler {
         String className = classDot >= 0 ? probeName.substring(classDot + 1, lastDot) : probeName.substring(0, lastDot);
         String prefix = probeName.startsWith("thaumcraft.")
                 ? "GPOM Thaum: "
+                : probeName.startsWith("betterquesting.")
+                ? "GPOM BQ: "
+                : probeName.startsWith("moze_intel.projecte.")
+                ? "GPOM PE: "
+                : probeName.startsWith("com.feed_the_beast.ftblib.")
+                ? "GPOM FTB: "
                 : probeName.startsWith("hellfirepvp.modularmachinery.")
                 ? "GPOM MM: "
                 : probeName.startsWith("mods.railcraft.")
@@ -722,6 +756,14 @@ public final class StartupProfiler {
     private static int intProperty(String key, int fallback) {
         try {
             return Math.max(0, Integer.parseInt(System.getProperty(key, Integer.toString(fallback))));
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static long longProperty(String key, long fallback) {
+        try {
+            return Long.parseLong(System.getProperty(key, Long.toString(fallback)));
         } catch (NumberFormatException ignored) {
             return fallback;
         }
