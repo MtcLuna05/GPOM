@@ -25,9 +25,11 @@ public final class TargetedModVersions {
             "after:extratrees@[2.5.1.213];" +
             "after:forestry@[5.8.2.427];" +
             "after:ftblib@[5.4.7.2];" +
+            "after:itemblacklist@[1.4.3];" +
             "after:jei@[4.28.1];" +
             "after:jeresources@[0.9.2.60];" +
             "after:libvulpes@[0.5.0];" +
+            "after:concheckrmd@[1.9.5];" +
             "after:modularmachinery@[2.3.2];" +
             "after:opencomputers@[1.8.7];" +
             "after:projecte@[1.12.2-PE1.4.1];" +
@@ -118,6 +120,10 @@ public final class TargetedModVersions {
         return isClassFromSupportedJar(className, "HadEnoughItems_1.12.2-4.28.1.jar");
     }
 
+    public static boolean isItemBlacklistClass(Class<?> type) {
+        return isClassFromSupportedJar(type, "ItemBlacklist-1.4.3.jar");
+    }
+
     public static boolean isImmersiveEngineeringClass(String className) {
         return isClassFromSupportedJar(className, "ImmersiveEngineering-0.12-98.jar");
     }
@@ -140,6 +146,10 @@ public final class TargetedModVersions {
 
     public static boolean isProjectEClass(String className) {
         return isClassFromSupportedJar(className, "ProjectE-1.12.2-PE1.4.1.jar");
+    }
+
+    public static boolean isModpackConfigCheckerClass(Class<?> type) {
+        return isClassFromSupportedJar(type, "Modpack Configuration Checker-1.12.2-v1.9.5.jar");
     }
 
     public static boolean isRailcraftClass(String className) {

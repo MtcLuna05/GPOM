@@ -243,7 +243,15 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
         try {
             FmlConstructionSafety.proxyInjection(
                     gpom$constructionStage("proxyInject"),
-                    () -> ProxyInjector.inject(container, asmData, side, adapter)
+                    () -> {
+                        if (!ForgeNetworkConstructionOptimizations.tryFastInjectKnownProxy(
+                                container,
+                                side,
+                                adapter
+                        )) {
+                            ProxyInjector.inject(container, asmData, side, adapter);
+                        }
+                    }
             );
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("proxyInject"), startedAt);
