@@ -43,6 +43,12 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static volatile Method recipeIngredientsMethod;
     private static volatile Method itemStackIsEmptyMethod;
     private static volatile Method itemStackGetItemMethod;
+    private static volatile Method ingredientMatchingStacksMethod;
+    private static volatile Method ingredientApplyMethod;
+    private static volatile ItemStack emptyStack;
+    private static volatile boolean emptyStackResolved;
+    private static volatile Ingredient emptyIngredient;
+    private static volatile boolean emptyIngredientResolved;
     private static volatile RecipeIndex recipeIndex;
     private static volatile boolean fallbackLogged;
 
@@ -324,7 +330,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             return matchesItem((ItemStack) candidate, expected);
         }
         if (candidate instanceof Ingredient) {
-            ItemStack[] stacks = ((Ingredient) candidate).getMatchingStacks();
+            ItemStack[] stacks = matchingStacks((Ingredient) candidate);
             return stacks.length > 0 && matchesItem(stacks[0], expected);
         }
         return false;
@@ -438,11 +444,11 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     }
 
     private static ItemStack firstIngredientStack(Ingredient ingredient) {
-        if (ingredient == null || ingredient == Ingredient.EMPTY || ingredient.apply(ItemStack.EMPTY)) {
-            return ItemStack.EMPTY;
+        if (isEmptyIngredient(ingredient)) {
+            return emptyStack();
         }
-        ItemStack[] stacks = ingredient.getMatchingStacks();
-        return stacks.length == 0 ? ItemStack.EMPTY : stacks[0];
+        ItemStack[] stacks = matchingStacks(ingredient);
+        return stacks.length == 0 ? emptyStack() : stacks[0];
     }
 
     @SuppressWarnings("unchecked")
@@ -462,15 +468,15 @@ public final class CraftTweakerRecipeRemovalOptimizations {
 
     private static ItemStack recipeOutput(IRecipe recipe) {
         if (recipe == null) {
-            return ItemStack.EMPTY;
+            return emptyStack();
         }
         try {
             Method method = recipeOutputMethod();
             Object value = method == null ? null : method.invoke(recipe);
-            return value instanceof ItemStack ? (ItemStack) value : ItemStack.EMPTY;
+            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
         } catch (Throwable throwable) {
             logFallback("CraftTweaker IRecipe.getRecipeOutput bridge failed", throwable);
-            return ItemStack.EMPTY;
+            return emptyStack();
         }
     }
 
@@ -547,6 +553,43 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         }
         itemStackGetItemMethod = method;
         return method;
+    }
+
+    private static Method ingredientMatchingStacksMethod() {
+        Method method = ingredientMatchingStacksMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(Ingredient.class, "func_193365_a");
+        if (method == null) {
+            method = findMethod(Ingredient.class, "getMatchingStacks");
+        }
+        ingredientMatchingStacksMethod = method;
+        return method;
+    }
+
+    private static Method ingredientApplyMethod() {
+        Method method = ingredientApplyMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(Ingredient.class, "apply", ItemStack.class);
+        ingredientApplyMethod = method;
+        return method;
+    }
+
+    private static ItemStack[] matchingStacks(Ingredient ingredient) {
+        if (ingredient == null) {
+            return new ItemStack[0];
+        }
+        try {
+            Method method = ingredientMatchingStacksMethod();
+            Object value = method == null ? null : method.invoke(ingredient);
+            return value instanceof ItemStack[] ? (ItemStack[]) value : new ItemStack[0];
+        } catch (Throwable throwable) {
+            logFallback("CraftTweaker Ingredient.getMatchingStacks bridge failed", throwable);
+            return new ItemStack[0];
+        }
     }
 
     private static boolean invokeBoolean(Method method, Object target, Object argument) {
@@ -739,7 +782,8 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     }
 
     private static boolean isEmpty(ItemStack stack) {
-        if (stack == null || stack == ItemStack.EMPTY) {
+        ItemStack empty = emptyStack();
+        if (stack == null || (empty != null && stack == empty)) {
             return true;
         }
         try {
@@ -756,13 +800,79 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     }
 
     private static Item item(ItemStack stack) {
-        if (stack == null || stack == ItemStack.EMPTY) {
+        ItemStack empty = emptyStack();
+        if (stack == null || (empty != null && stack == empty)) {
             return null;
         }
         try {
             Method method = itemStackGetItemMethod();
             Object value = method == null ? null : method.invoke(stack);
             return value instanceof Item ? (Item) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isEmptyIngredient(Ingredient ingredient) {
+        if (ingredient == null) {
+            return true;
+        }
+        Ingredient empty = emptyIngredient();
+        if (empty != null && ingredient == empty) {
+            return true;
+        }
+        ItemStack stack = emptyStack();
+        if (stack == null) {
+            return false;
+        }
+        try {
+            Method method = ingredientApplyMethod();
+            Object value = method == null ? null : method.invoke(ingredient, stack);
+            return value instanceof Boolean && (Boolean) value;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static ItemStack emptyStack() {
+        if (emptyStackResolved) {
+            return emptyStack;
+        }
+        synchronized (CraftTweakerRecipeRemovalOptimizations.class) {
+            if (emptyStackResolved) {
+                return emptyStack;
+            }
+            emptyStack = staticField(ItemStack.class, "field_190927_a", "EMPTY", ItemStack.class);
+            emptyStackResolved = true;
+            return emptyStack;
+        }
+    }
+
+    private static Ingredient emptyIngredient() {
+        if (emptyIngredientResolved) {
+            return emptyIngredient;
+        }
+        synchronized (CraftTweakerRecipeRemovalOptimizations.class) {
+            if (emptyIngredientResolved) {
+                return emptyIngredient;
+            }
+            emptyIngredient = staticField(Ingredient.class, "field_193370_a", "EMPTY", Ingredient.class);
+            emptyIngredientResolved = true;
+            return emptyIngredient;
+        }
+    }
+
+    private static <T> T staticField(Class<?> type, String srgName, String mcpName, Class<T> expectedType) {
+        Field field = findField(type, srgName);
+        if (field == null) {
+            field = findField(type, mcpName);
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            Object value = field.get(null);
+            return expectedType.isInstance(value) ? expectedType.cast(value) : null;
         } catch (Throwable ignored) {
             return null;
         }

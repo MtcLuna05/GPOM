@@ -2,6 +2,8 @@ package com.l.gpom.mixin.fml;
 
 import com.l.gpom.profiling.StartupProfiler;
 import com.l.gpom.optimization.EventBusRegistrationOptimizations;
+import net.minecraftforge.event.RegistryEvent;
+import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.EventBus;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -9,11 +11,20 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.lang.reflect.Method;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 @Mixin(value = EventBus.class, remap = false)
 public abstract class MixinEventBusStartupProfiler {
+    @Unique
+    private static final ThreadLocal<Deque<Long>> gpom$postStarts = ThreadLocal.withInitial(ArrayDeque::new);
+
+    @Unique
+    private static final ThreadLocal<Deque<String>> gpom$postNames = ThreadLocal.withInitial(ArrayDeque::new);
+
     @Inject(method = "register(Ljava/lang/Object;)V", at = @At("HEAD"), cancellable = true)
     private void gpom$tryLazyStaticRegistration(Object target, CallbackInfo ci) {
         if (EventBusRegistrationOptimizations.tryRegisterLazyStaticSubscribers((EventBus) (Object) this, target)) {
@@ -35,11 +46,49 @@ public abstract class MixinEventBusStartupProfiler {
         return methods;
     }
 
+    @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("HEAD"))
+    private void gpom$beginPost(Event event, CallbackInfoReturnable<Boolean> cir) {
+        if (!StartupProfiler.isPostPreInitTransitionActive()) {
+            gpom$postStarts.get().push(0L);
+            gpom$postNames.get().push("");
+            return;
+        }
+        gpom$postStarts.get().push(StartupProfiler.beginProbe());
+        gpom$postNames.get().push(gpom$eventName(event));
+    }
+
+    @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("RETURN"))
+    private void gpom$endPost(Event event, CallbackInfoReturnable<Boolean> cir) {
+        Deque<Long> starts = gpom$postStarts.get();
+        Deque<String> names = gpom$postNames.get();
+        long startedAt = starts.isEmpty() ? 0L : starts.pop();
+        String eventName = names.isEmpty() ? gpom$eventName(event) : names.pop();
+        if (startedAt == 0L) {
+            return;
+        }
+        StartupProfiler.endProbeAlways("Forge EventBus.post " + eventName, startedAt);
+    }
+
     @Unique
     private static String gpom$targetName(Object target) {
         if (target instanceof Class) {
             return ((Class<?>) target).getName();
         }
         return target == null ? null : target.getClass().getName();
+    }
+
+    @Unique
+    private static String gpom$eventName(Event event) {
+        if (event == null) {
+            return "<null>";
+        }
+        String name = event.getClass().getName();
+        if (event instanceof RegistryEvent.Register) {
+            Object registryName = ((RegistryEvent.Register<?>) event).getName();
+            if (registryName != null) {
+                return name + " " + registryName;
+            }
+        }
+        return name;
     }
 }

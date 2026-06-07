@@ -45,6 +45,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.construct.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.construct.denylist", "");
         DEFAULTS.setProperty("fml.parallel.construct.continueOnModError", "false");
+        DEFAULTS.setProperty("fml.parallel.construct.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.preInit.denylist", "");
         DEFAULTS.setProperty("fml.parallel.preInit.continueOnModError", "false");
@@ -52,13 +53,17 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.init.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.init.denylist", "");
         DEFAULTS.setProperty("fml.parallel.init.continueOnModError", "false");
+        DEFAULTS.setProperty("fml.parallel.init.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft,topaddons,thaumicaugmentation");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft,topaddons,thaumicaugmentation,smoothfont");
         DEFAULTS.setProperty("fml.parallel.postInit.continueOnModError", "false");
+        DEFAULTS.setProperty("fml.parallel.postInit.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "");
         DEFAULTS.setProperty("fml.parallel.loadComplete.continueOnModError", "false");
+        DEFAULTS.setProperty("fml.parallel.loadComplete.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.registrySerialization.enabled", "true");
+        DEFAULTS.setProperty("fml.parallel.clientLifecycleOpenGlScan.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.includeRelatedMods", "true");
         DEFAULTS.setProperty("gpom.logging.enabled", "true");
@@ -126,7 +131,11 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.erebus.deferOreConfigs", "true");
         DEFAULTS.setProperty("gpom.enderio.fastSpawnerEntityValidation", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.lazyItemList", "true");
+        DEFAULTS.setProperty("gpom.nuclearcraft.fastManufactoryMetalRecipes", "false");
+        DEFAULTS.setProperty("gpom.nuclearcraft.cacheManufactoryLogCraftingResults", "true");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "true");
+        DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "true");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.stepSize", "256");
         DEFAULTS.setProperty("gpom.hei.searchWorkers", "0");
@@ -136,6 +145,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.denylist", "");
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.samples", "32");
+        DEFAULTS.setProperty("gpom.hei.jerLootDropCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.fastForestryBottler.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.forestryBottlerRecipeCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.fastEnderIOTank.enabled", "true");
@@ -217,6 +227,10 @@ public final class GpomEarlyConfig {
         return booleanValue("fml.parallel.construct.continueOnModError");
     }
 
+    public static boolean parallelConstructDagEnabled() {
+        return booleanValue("fml.parallel.construct.dag.enabled");
+    }
+
     public static Set<String> parallelPreInitDenylist() {
         return setValue("fml.parallel.preInit.denylist");
     }
@@ -249,6 +263,10 @@ public final class GpomEarlyConfig {
         return booleanValue("fml.parallel.init.continueOnModError");
     }
 
+    public static boolean parallelInitDagEnabled() {
+        return booleanValue("fml.parallel.init.dag.enabled");
+    }
+
     public static Set<String> parallelPostInitAllowlist() {
         return setValue("fml.parallel.postInit.allowlist");
     }
@@ -261,6 +279,10 @@ public final class GpomEarlyConfig {
         return booleanValue("fml.parallel.postInit.continueOnModError");
     }
 
+    public static boolean parallelPostInitDagEnabled() {
+        return booleanValue("fml.parallel.postInit.dag.enabled");
+    }
+
     public static Set<String> parallelLoadCompleteAllowlist() {
         return setValue("fml.parallel.loadComplete.allowlist");
     }
@@ -271,6 +293,10 @@ public final class GpomEarlyConfig {
 
     public static boolean parallelLoadCompleteContinueOnModError() {
         return booleanValue("fml.parallel.loadComplete.continueOnModError");
+    }
+
+    public static boolean parallelLoadCompleteDagEnabled() {
+        return booleanValue("fml.parallel.loadComplete.dag.enabled");
     }
 
     private static void load() {
@@ -320,7 +346,8 @@ public final class GpomEarlyConfig {
                 "fml.parallel.construct.workers",
                 "fml.parallel.construct.allowlist",
                 "fml.parallel.construct.denylist",
-                "fml.parallel.construct.continueOnModError"
+                "fml.parallel.construct.continueOnModError",
+                "fml.parallel.construct.dag.enabled"
         );
         writeSection(writer, "PreInit Parallelism", "Controls FMLPreInitializationEvent worker dispatch. This phase touches registries, model loaders, configs, and client resource setup, so use tested allowlists.",
                 "fml.parallel.preInit.enabled",
@@ -335,24 +362,28 @@ public final class GpomEarlyConfig {
                 "fml.parallel.init.workers",
                 "fml.parallel.init.allowlist",
                 "fml.parallel.init.denylist",
-                "fml.parallel.init.continueOnModError"
+                "fml.parallel.init.continueOnModError",
+                "fml.parallel.init.dag.enabled"
         );
         writeSection(writer, "PostInit Parallelism", "Controls FMLPostInitializationEvent worker dispatch. Usually safer than PreInit/Init, but recipe mutation and render integration still need pack validation.",
                 "fml.parallel.postInit.enabled",
                 "fml.parallel.postInit.workers",
                 "fml.parallel.postInit.allowlist",
                 "fml.parallel.postInit.denylist",
-                "fml.parallel.postInit.continueOnModError"
+                "fml.parallel.postInit.continueOnModError",
+                "fml.parallel.postInit.dag.enabled"
         );
         writeSection(writer, "LoadComplete Parallelism", "Controls FMLLoadCompleteEvent worker dispatch. This is the safest lifecycle phase, but HEI/JER and client-global mods can still serialize the wall time.",
                 "fml.parallel.loadComplete.enabled",
                 "fml.parallel.loadComplete.workers",
                 "fml.parallel.loadComplete.allowlist",
                 "fml.parallel.loadComplete.denylist",
-                "fml.parallel.loadComplete.continueOnModError"
+                "fml.parallel.loadComplete.continueOnModError",
+                "fml.parallel.loadComplete.dag.enabled"
         );
         writeSection(writer, "Thread Safety Guards", "Global safety switches used by the lifecycle scheduler while phases are running in workers.",
                 "fml.parallel.registrySerialization.enabled",
+                "fml.parallel.clientLifecycleOpenGlScan.enabled",
                 "fml.parallel.autoQuarantineGlErrors.enabled",
                 "fml.parallel.autoQuarantineGlErrors.includeRelatedMods"
         );
@@ -419,7 +450,11 @@ public final class GpomEarlyConfig {
                 "gpom.erebus.deferOreConfigs",
                 "gpom.enderio.fastSpawnerEntityValidation",
                 "gpom.crafttweaker.fastZenRegister",
-                "gpom.preInitHighSinkCallProfiler"
+                "gpom.crafttweaker.lazyItemList",
+                "gpom.nuclearcraft.fastManufactoryMetalRecipes",
+                "gpom.nuclearcraft.cacheManufactoryLogCraftingResults",
+                "gpom.preInitHighSinkCallProfiler",
+                "gpom.postPreInitTopCallProfiler"
         );
         writeSection(writer, "PreInit Class Prewarm", "Optional sidecar class definition/linking during PreInit. Static initialization is disabled by default because it can execute mod code early.",
                 "gpom.preInitClassPrewarm.enabled",
@@ -452,6 +487,7 @@ public final class GpomEarlyConfig {
         writeSection(writer, "HEI Recipe Optimizations", "Exact-version HEI recipe/category fast paths and persistent wrapper caches. Caches validate input signatures before reuse.",
                 "gpom.hei.jerVillagerTradeCache.enabled",
                 "gpom.hei.jerVillagerTradeCache.samples",
+                "gpom.hei.jerLootDropCache.enabled",
                 "gpom.hei.fastForestryBottler.enabled",
                 "gpom.hei.forestryBottlerRecipeCache.enabled",
                 "gpom.hei.fastEnderIOTank.enabled",
@@ -509,6 +545,8 @@ public final class GpomEarlyConfig {
                 return "Comma-separated mod ids forced back to the main thread during construction; entries here override the allowlist.";
             case "fml.parallel.construct.continueOnModError":
                 return "Diagnostic-only mode that records a construction failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.construct.dag.enabled":
+                return "Uses dependency-aware scheduling for Construction. Serial construction handlers remain list-order barriers for safety.";
             case "fml.parallel.preInit.allowlist":
                 return "Comma-separated mod ids allowed to run PreInit off-thread; '*' allows every loaded mod before denylist filtering.";
             case "fml.parallel.preInit.denylist":
@@ -523,20 +561,28 @@ public final class GpomEarlyConfig {
                 return "Comma-separated mod ids forced back to the main thread during Init; entries here override the allowlist.";
             case "fml.parallel.init.continueOnModError":
                 return "Diagnostic-only mode that records an Init failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.init.dag.enabled":
+                return "Uses dependency-aware scheduling for Init instead of strict list order, while keeping denied handlers on the main thread.";
             case "fml.parallel.postInit.allowlist":
                 return "Comma-separated mod ids allowed to run PostInit off-thread; '*' allows every loaded mod before denylist filtering.";
             case "fml.parallel.postInit.denylist":
                 return "Comma-separated mod ids forced back to the main thread during PostInit; entries here override the allowlist.";
             case "fml.parallel.postInit.continueOnModError":
                 return "Diagnostic-only mode that records a PostInit failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.postInit.dag.enabled":
+                return "Uses dependency-aware scheduling for PostInit so independent later handlers can run while main-thread-only handlers execute.";
             case "fml.parallel.loadComplete.allowlist":
                 return "Comma-separated mod ids allowed to run LoadComplete off-thread; '*' allows every loaded mod before denylist filtering.";
             case "fml.parallel.loadComplete.denylist":
                 return "Comma-separated mod ids forced back to the main thread during LoadComplete; entries here override the allowlist.";
             case "fml.parallel.loadComplete.continueOnModError":
                 return "Diagnostic-only mode that records a LoadComplete failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.loadComplete.dag.enabled":
+                return "Uses dependency-aware scheduling for LoadComplete, including independent lookahead around long main-thread handlers such as HEI.";
             case "fml.parallel.registrySerialization.enabled":
                 return "Serializes Forge registry writes while lifecycle workers are active to avoid HashBiMap and ForgeRegistry concurrent mutation.";
+            case "fml.parallel.clientLifecycleOpenGlScan.enabled":
+                return "Keeps Init/PostInit/LoadComplete handlers on the main thread when their mod jar references LWJGL/OpenGL bytecode. This preserves GL context thread affinity without editing denylists.";
             case "fml.parallel.autoQuarantineGlErrors.enabled":
                 return "Diagnostic helper that appends catchable OpenGL thread offenders to the relevant phase denylist for the next launch.";
             case "fml.parallel.autoQuarantineGlErrors.includeRelatedMods":
@@ -671,8 +717,16 @@ public final class GpomEarlyConfig {
                 return "Caches EnderIO powered-spawner XML entity validation during core recipe loading.";
             case "gpom.crafttweaker.fastZenRegister":
                 return "Uses ASMData to register CraftTweaker ZenRegister classes without reflective annotation scans.";
+            case "gpom.crafttweaker.lazyItemList":
+                return "Defers CraftTweaker's regex item-list build until the regex item APIs are actually used.";
+            case "gpom.nuclearcraft.fastManufactoryMetalRecipes":
+                return "Uses a cached ore-name set for NuclearCraft Manufactory metal recipe registration with stock fallback.";
+            case "gpom.nuclearcraft.cacheManufactoryLogCraftingResults":
+                return "Caches NuclearCraft Manufactory log-to-plank crafting lookups and narrows misses to one-slot recipes before stock fallback.";
             case "gpom.preInitHighSinkCallProfiler":
                 return "Enables exact-version deep PreInit profilers for current high-sink mods.";
+            case "gpom.postPreInitTopCallProfiler":
+                return "Enables exact-version deep post-PreInit registry-transition profilers for current high-sink handlers.";
             case "gpom.hei.recipeProgressBar.enabled":
                 return "Shows a coarse GPOM progress bar while HEI consumes parsed recipes into its registry.";
             case "gpom.hei.recipeProgressBar.stepSize":
@@ -691,6 +745,8 @@ public final class GpomEarlyConfig {
                 return "Replaces JER's repeated random trade simulations with a reduced deterministic display cache.";
             case "gpom.hei.jerVillagerTradeCache.samples":
                 return "Number of simulated villager-trade samples retained for JER display range approximation.";
+            case "gpom.hei.jerLootDropCache.enabled":
+                return "Caches JER loot-table drop conversion results during HEI startup and returns fresh list copies to callers.";
             case "gpom.hei.fastForestryBottler.enabled":
                 return "Uses Forestry's exact-version Bottler HEI fast path and skips redundant full-fluid-container fill loops.";
             case "gpom.hei.forestryBottlerRecipeCache.enabled":
@@ -747,7 +803,11 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.erebus.deferOreConfigs");
         copySystemPropertyIfAbsent("gpom.enderio.fastSpawnerEntityValidation");
         copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.lazyItemList");
+        copySystemPropertyIfAbsent("gpom.nuclearcraft.fastManufactoryMetalRecipes");
+        copySystemPropertyIfAbsent("gpom.nuclearcraft.cacheManufactoryLogCraftingResults");
         copySystemPropertyIfAbsent("gpom.preInitHighSinkCallProfiler");
+        copySystemPropertyIfAbsent("gpom.postPreInitTopCallProfiler");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
@@ -773,6 +833,10 @@ public final class GpomEarlyConfig {
 
     public static boolean parallelRegistrySerializationEnabled() {
         return booleanValue("fml.parallel.registrySerialization.enabled");
+    }
+
+    public static boolean parallelClientLifecycleOpenGlScanEnabled() {
+        return booleanValue("fml.parallel.clientLifecycleOpenGlScan.enabled");
     }
 
     public static boolean gpomLoggingEnabled() {
@@ -992,6 +1056,22 @@ public final class GpomEarlyConfig {
 
     public static int heiJerVillagerTradeCacheSamples() {
         return Math.max(1, Math.min(100, intValue("gpom.hei.jerVillagerTradeCache.samples", 32)));
+    }
+
+    public static boolean heiJerLootDropCacheEnabled() {
+        return booleanValue("gpom.hei.jerLootDropCache.enabled");
+    }
+
+    public static boolean nuclearCraftFastManufactoryMetalRecipesEnabled() {
+        return booleanValue("gpom.nuclearcraft.fastManufactoryMetalRecipes");
+    }
+
+    public static boolean nuclearCraftCacheManufactoryLogCraftingResultsEnabled() {
+        return booleanValue("gpom.nuclearcraft.cacheManufactoryLogCraftingResults");
+    }
+
+    public static boolean craftTweakerLazyItemListEnabled() {
+        return booleanValue("gpom.crafttweaker.lazyItemList");
     }
 
     public static boolean heiFastForestryBottlerEnabled() {

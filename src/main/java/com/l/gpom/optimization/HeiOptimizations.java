@@ -13,6 +13,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.entity.IMerchant;
 import net.minecraft.village.MerchantRecipe;
 import net.minecraft.village.MerchantRecipeList;
+import net.minecraft.world.storage.loot.LootTable;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
@@ -110,6 +111,7 @@ public final class HeiOptimizations {
     private static Constructor<?> jerTradeConstructor;
     private static Object jerFakeMerchant;
     private static final ConcurrentMap<String, Field> JER_PRIVATE_FIELDS = new ConcurrentHashMap<>();
+    private static final Map<Object, List<?>> JER_LOOT_DROP_CACHE = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final ConcurrentMap<String, CachedJerTrade> JER_VILLAGER_TRADE_CACHE = new ConcurrentHashMap<>();
     private static final Set<String> JER_FAILED_GENERATORS = ConcurrentHashMap.newKeySet();
     private static final Map<Object, Byte> HEI_FALLBACK_SUBTYPE_STATE = Collections.synchronizedMap(new IdentityHashMap<>());
@@ -3487,6 +3489,30 @@ public final class HeiOptimizations {
         } catch (Throwable ignored) {
             return jerGetPrivateValue(target, fieldName);
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List cachedJerLootTableDrops(LootTable lootTable) {
+        if (!GpomEarlyConfig.heiJerLootDropCacheEnabled() || lootTable == null) {
+            return null;
+        }
+        synchronized (JER_LOOT_DROP_CACHE) {
+            List cached = (List) JER_LOOT_DROP_CACHE.get(lootTable);
+            return cached == null ? null : new ArrayList(cached);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List cacheJerLootTableDrops(LootTable lootTable, List drops) {
+        if (!GpomEarlyConfig.heiJerLootDropCacheEnabled() || lootTable == null || drops == null) {
+            return drops;
+        }
+        synchronized (JER_LOOT_DROP_CACHE) {
+            if (!JER_LOOT_DROP_CACHE.containsKey(lootTable)) {
+                JER_LOOT_DROP_CACHE.put(lootTable, Collections.unmodifiableList(new ArrayList(drops)));
+            }
+        }
+        return drops;
     }
 
     private static Method findMethod(Class<?> type, String... names) {

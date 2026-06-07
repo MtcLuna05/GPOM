@@ -106,6 +106,9 @@ public abstract class MixinLoadControllerStartupProfiler {
                     }
                 } finally {
                     StartupProfiler.endPhase(event.getEventType());
+                    if (event instanceof FMLPreInitializationEvent) {
+                        StartupProfiler.beginPostPreInitTransition();
+                    }
                 }
                 ci.cancel();
             }
@@ -120,6 +123,9 @@ public abstract class MixinLoadControllerStartupProfiler {
                 EarlySplashWindow.close("Forge LoadComplete finished");
             }
             StartupProfiler.endPhase(event.getEventType());
+            if (event instanceof FMLPreInitializationEvent) {
+                StartupProfiler.beginPostPreInitTransition();
+            }
         }
     }
 

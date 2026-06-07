@@ -21,12 +21,14 @@ import java.util.Map;
 public final class ChickenAsmConcurrencyTransformer implements IClassTransformer {
     private static final String CLASS_HIERARCHY_MANAGER = "codechicken.asm.ClassHierarchyManager";
     private static final String SUPER_CACHE = "codechicken.asm.ClassHierarchyManager$SuperCache";
+    private static final String OBF_MAPPING = "codechicken.asm.ObfMapping";
     private static final String MULTIPART_REGISTRY = "codechicken.multipart.MultiPartRegistry$";
     private static final String HASH_MAP = "java/util/HashMap";
     private static final String HASH_SET = "java/util/HashSet";
     private static final String SYNC_HASH_MAP = "com/l/gpom/util/SynchronizedHashMap";
     private static final String SYNC_HASH_SET = "com/l/gpom/util/SynchronizedHashSet";
     private static volatile boolean runtimeCachesHardened;
+    private static volatile boolean obfMappingPreloaded;
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -76,6 +78,28 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             } catch (Throwable throwable) {
                 if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
                     GPOM.LOGGER.warn("[FmlParallelLoading] Failed to harden ChickenASM runtime cache; continuing with existing cache", throwable);
+                }
+            }
+        }
+    }
+
+    public static void preloadObfMapping() {
+        if (obfMappingPreloaded) {
+            return;
+        }
+        synchronized (ChickenAsmConcurrencyTransformer.class) {
+            if (obfMappingPreloaded) {
+                return;
+            }
+            try {
+                Class.forName(OBF_MAPPING, true, ChickenAsmConcurrencyTransformer.class.getClassLoader());
+                obfMappingPreloaded = true;
+                if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+                    GPOM.LOGGER.info("[FmlParallelLoading] Preloaded ChickenASM ObfMapping on the main thread");
+                }
+            } catch (Throwable throwable) {
+                if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+                    GPOM.LOGGER.warn("[FmlParallelLoading] Failed to preload ChickenASM ObfMapping; it may initialize lazily", throwable);
                 }
             }
         }

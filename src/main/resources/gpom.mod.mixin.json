@@ -6,10 +6,12 @@
   "mixins": [
     "fml.MixinAutomaticEventSubscriberStartupProfiler",
     "fml.MixinASMDataTableAnnotationCache",
+    "fml.MixinASMEventHandlerStartupProfiler",
     "fml.MixinEventBusStartupProfiler",
     "fml.MixinFMLContainerConstructionProfiler",
     "fml.MixinFMLCommonHandlerBranding",
     "fml.MixinFMLModContainerStartupProfiler",
+    "fml.MixinGameDataStartupProfiler",
     "fml.MixinForgeModContainerConstructionProfiler",
     "fml.MixinLoadControllerStartupProfiler"
   ],

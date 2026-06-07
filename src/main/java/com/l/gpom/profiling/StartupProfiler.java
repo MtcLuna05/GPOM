@@ -19,6 +19,8 @@ import java.util.Map;
 import java.util.Set;
 
 public final class StartupProfiler {
+    public static final String POST_PREINIT_TRANSITION_PHASE = "POST_PREINIT_TRANSITION";
+
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler", "true"));
     private static final boolean PROBE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerProbeLogsEnabled()
             && Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.probeLogs", "true"));
@@ -98,6 +100,19 @@ public final class StartupProfiler {
                 activePhase = null;
                 activePhaseStartedAt = 0L;
             }
+        }
+    }
+
+    public static void beginPostPreInitTransition() {
+        beginPhase(POST_PREINIT_TRANSITION_PHASE);
+    }
+
+    public static boolean isPostPreInitTransitionActive() {
+        if (!ENABLED) {
+            return false;
+        }
+        synchronized (LOCK) {
+            return POST_PREINIT_TRANSITION_PHASE.equals(activePhase);
         }
     }
 

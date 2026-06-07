@@ -694,6 +694,48 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
             ClassNode node = readNode(basicClass);
             boolean changed = false;
             for (MethodNode method : node.methods) {
+                if ("toDrops".equals(method.name)
+                        && "(Lnet/minecraft/world/storage/loot/LootTable;)Ljava/util/List;".equals(method.desc)) {
+                    LabelNode original = new LabelNode();
+                    InsnNode cachedReturn = new InsnNode(Opcodes.ARETURN);
+                    int cacheLocal = method.maxLocals;
+                    InsnList cacheCheck = new InsnList();
+                    cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    cacheCheck.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "cachedJerLootTableDrops",
+                            "(Lnet/minecraft/world/storage/loot/LootTable;)Ljava/util/List;",
+                            false
+                    ));
+                    cacheCheck.add(new VarInsnNode(Opcodes.ASTORE, cacheLocal));
+                    cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, cacheLocal));
+                    cacheCheck.add(new JumpInsnNode(Opcodes.IFNULL, original));
+                    cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, cacheLocal));
+                    cacheCheck.add(cachedReturn);
+                    cacheCheck.add(original);
+                    cacheCheck.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                    method.instructions.insert(cacheCheck);
+                    method.maxLocals = Math.max(method.maxLocals, cacheLocal + 1);
+                    changed = true;
+
+                    for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                        if (insn == cachedReturn || insn.getOpcode() != Opcodes.ARETURN) {
+                            continue;
+                        }
+                        InsnList cacheStore = new InsnList();
+                        cacheStore.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                        cacheStore.add(new InsnNode(Opcodes.SWAP));
+                        cacheStore.add(new MethodInsnNode(
+                                Opcodes.INVOKESTATIC,
+                                "com/l/gpom/optimization/HeiOptimizations",
+                                "cacheJerLootTableDrops",
+                                "(Lnet/minecraft/world/storage/loot/LootTable;Ljava/util/List;)Ljava/util/List;",
+                                false
+                        ));
+                        method.instructions.insertBefore(insn, cacheStore);
+                    }
+                }
                 for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
                     if (insn.getOpcode() != Opcodes.INVOKESTATIC) {
                         continue;

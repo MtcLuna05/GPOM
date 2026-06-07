@@ -48,12 +48,16 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
     private static final boolean ENDERIO_FAST_SPAWNER_ENTITY_VALIDATION = Boolean.parseBoolean(System.getProperty("gpom.enderio.fastSpawnerEntityValidation", "true"));
     private static final boolean CRAFTTWEAKER_FAST_RECIPE_REMOVAL = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastRecipeRemoval", "true"));
     private static final boolean CRAFTTWEAKER_FAST_ZEN_REGISTER = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastZenRegister", "false"));
+    private static final boolean CRAFTTWEAKER_LAZY_ITEM_LIST = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.lazyItemList", "true"));
+    private static final boolean NUCLEARCRAFT_FAST_MANUFACTORY_METAL_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.nuclearcraft.fastManufactoryMetalRecipes", "false"));
+    private static final boolean NUCLEARCRAFT_CACHE_MANUFACTORY_LOG_CRAFTING_RESULTS = Boolean.parseBoolean(System.getProperty("gpom.nuclearcraft.cacheManufactoryLogCraftingResults", "true"));
     private static final boolean THERMAL_EXPANSION_FAST_SAWMILL_CRAFTING_RESULT = Boolean.parseBoolean(System.getProperty("gpom.thermalexpansion.fastSawmillCraftingResult", "true"));
     private static final boolean AGRICRAFT_FAST_JSON_IO = Boolean.parseBoolean(System.getProperty("gpom.agricraft.fastJsonIo", "true"));
     private static final boolean BUILDCRAFT_DEFER_GUIDE_RELOAD = Boolean.parseBoolean(System.getProperty("gpom.buildcraft.deferGuideReload", "true"));
     private static final boolean IMMERSIVE_ENGINEERING_DEFER_MANUAL_INDEX = Boolean.parseBoolean(System.getProperty("gpom.immersiveengineering.deferManualIndex", "true"));
     private static final boolean IMMERSIVE_ENGINEERING_LAZY_MANUAL_CRAFTING_PAGES = Boolean.parseBoolean(System.getProperty("gpom.immersiveengineering.lazyManualCraftingPages", "true"));
     private static final boolean PREINIT_HIGH_SINK_CALL_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.preInitHighSinkCallProfiler", "true"));
+    private static final boolean POST_PREINIT_TOP_CALL_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.postPreInitTopCallProfiler", "true"));
     private static final boolean POST_INIT_TOP_MOD_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.postInitTopModProfiler", "true"));
     private static final boolean POST_INIT_TOP_CALL_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.postInitTopCallProfiler", "true"));
     private static final Map<String, Target> TARGETS = createTargets();
@@ -139,6 +143,21 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 && "crafttweaker.mc1120.CraftTweaker".equals(className)
                 && TargetedModVersions.isCraftTweakerClass(className)) {
             basicClass = patchCraftTweakerZenRegister(basicClass);
+        }
+        if (CRAFTTWEAKER_LAZY_ITEM_LIST
+                && "crafttweaker.mc1120.brackets.BracketHandlerItem".equals(className)
+                && TargetedModVersions.isCraftTweakerClass(className)) {
+            basicClass = patchCraftTweakerBracketHandlerItem(basicClass);
+        }
+        if (CRAFTTWEAKER_LAZY_ITEM_LIST
+                && "crafttweaker.mc1120.item.MCItemUtils".equals(className)
+                && TargetedModVersions.isCraftTweakerClass(className)) {
+            basicClass = patchCraftTweakerItemUtils(basicClass);
+        }
+        if ((NUCLEARCRAFT_FAST_MANUFACTORY_METAL_RECIPES || NUCLEARCRAFT_CACHE_MANUFACTORY_LOG_CRAFTING_RESULTS)
+                && "nc.recipe.processor.ManufactoryRecipes".equals(className)
+                && TargetedModVersions.isNuclearCraftClass(className)) {
+            basicClass = patchNuclearCraftManufactoryRecipes(basicClass);
         }
         if (THERMAL_EXPANSION_FAST_SAWMILL_CRAFTING_RESULT
                 && "cofh.thermalexpansion.util.managers.machine.SawmillManager".equals(className)
@@ -1304,6 +1323,131 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         }
     }
 
+    private static byte[] patchNuclearCraftManufactoryRecipes(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (NUCLEARCRAFT_FAST_MANUFACTORY_METAL_RECIPES
+                        && "addMetalProcessingRecipes".equals(method.name)
+                        && "()V".equals(method.desc)) {
+                    org.objectweb.asm.tree.LabelNode fallback = new org.objectweb.asm.tree.LabelNode();
+                    InsnList prefix = new InsnList();
+                    prefix.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    prefix.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/NuclearCraftRecipeOptimizations",
+                            "addManufactoryMetalProcessingRecipes",
+                            "(Ljava/lang/Object;)Z",
+                            false
+                    ));
+                    prefix.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFEQ, fallback));
+                    prefix.add(new InsnNode(Opcodes.RETURN));
+                    prefix.add(fallback);
+                    method.instructions.insert(prefix);
+                    changed = true;
+                }
+
+                if (NUCLEARCRAFT_CACHE_MANUFACTORY_LOG_CRAFTING_RESULTS
+                        && "addLogRecipes".equals(method.name)
+                        && "()V".equals(method.desc)) {
+                    for (org.objectweb.asm.tree.AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                        if (!(insn instanceof MethodInsnNode)) {
+                            continue;
+                        }
+                        MethodInsnNode call = (MethodInsnNode) insn;
+                        if (call.getOpcode() == Opcodes.INVOKESTATIC
+                                && "net/minecraft/item/crafting/CraftingManager".equals(call.owner)
+                                && ("func_82787_a".equals(call.name) || "findMatchingResult".equals(call.name))
+                                && "(Lnet/minecraft/inventory/InventoryCrafting;Lnet/minecraft/world/World;)Lnet/minecraft/item/ItemStack;".equals(call.desc)) {
+                            call.owner = "com/l/gpom/optimization/NuclearCraftRecipeOptimizations";
+                            call.name = "getManufactoryLogCraftingResult";
+                            call.itf = false;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = frameComputingWriter();
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static byte[] patchCraftTweakerBracketHandlerItem(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"rebuildItemRegistry".equals(method.name) || !"()V".equals(method.desc)) {
+                    continue;
+                }
+                for (org.objectweb.asm.tree.AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (!(insn instanceof MethodInsnNode)) {
+                        continue;
+                    }
+                    MethodInsnNode call = (MethodInsnNode) insn;
+                    if (call.getOpcode() == Opcodes.INVOKESTATIC
+                            && "crafttweaker/mc1120/item/MCItemUtils".equals(call.owner)
+                            && "createItemList".equals(call.name)
+                            && "()V".equals(call.desc)) {
+                        call.owner = "com/l/gpom/optimization/CraftTweakerItemRegistryOptimizations";
+                        call.name = "deferItemListBuild";
+                        call.itf = false;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static byte[] patchCraftTweakerItemUtils(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (("getItemsByRegexRegistryName".equals(method.name) || "getItemsByRegexUnlocalizedName".equals(method.name))
+                        && "(Ljava/lang/String;)[Lcrafttweaker/api/item/IItemStack;".equals(method.desc)) {
+                    InsnList prefix = new InsnList();
+                    prefix.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/CraftTweakerItemRegistryOptimizations",
+                            "ensureItemListBuilt",
+                            "()V",
+                            false
+                    ));
+                    method.instructions.insert(prefix);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
     private static byte[] patchThermalExpansionSawmillManager(byte[] basicClass) {
         try {
             ClassNode node = new ClassNode();
@@ -1892,6 +2036,12 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         add(targets, ModTarget.NUCLEARCRAFT, "nc.proxy.CommonProxy", "<clinit>", "<init>", "preInit", "registerHandlers");
         add(targets, ModTarget.NUCLEARCRAFT, "nc.proxy.ClientProxy", "<clinit>", "<init>", "preInit", "registerHandlers");
         add(targets, ModTarget.NUCLEARCRAFT, "nc.util.RegistryHelper", "<clinit>", "<init>", "register", "registerTile");
+        add(targets, ModTarget.NUCLEARCRAFT, "nc.recipe.NCRecipes", "registerRecipes");
+        add(targets, ModTarget.NUCLEARCRAFT, "nc.recipe.processor.ManufactoryRecipes",
+                "addRecipes", "addMetalProcessingRecipes", "addLogRecipes");
+
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.mc1120.events.CommonEventHandler", "registerRecipes");
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.mc1120.brackets.BracketHandlerItem", "rebuildItemRegistry");
 
         add(targets, ModTarget.RANDOMTHINGS, "lumien.randomthings.RandomThings", "<clinit>", "<init>", "preInit");
         add(targets, ModTarget.RANDOMTHINGS, "lumien.randomthings.config.ModConfiguration", "<clinit>", "<init>", "preInit");
@@ -2178,6 +2328,19 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             return methodName.equals("preInit") || methodName.equals("setupConfig")
                     || methodName.equals("setupModCompat") || methodName.equals("setupCapabilities")
                     || methodName.equals("reflect");
+        }
+        return false;
+    }
+
+    private static boolean isPostPreInitTopCallDetailMethod(String className, String methodName) {
+        if (className == null || methodName == null) {
+            return false;
+        }
+        if (className.equals("crafttweaker.mc1120.events.CommonEventHandler")) {
+            return methodName.equals("registerRecipes");
+        }
+        if (className.equals("nc.recipe.NCRecipes")) {
+            return methodName.equals("registerRecipes");
         }
         return false;
     }
@@ -2484,6 +2647,8 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                     || className.equals("crazypants.enderio.base.recipe.alloysmelter.AlloyRecipeManager"));
             boolean profilePreInitHighSinkCalls = PREINIT_HIGH_SINK_CALL_DETAIL
                     && isPreInitHighSinkCallDetailMethod(className, name);
+            boolean profilePostPreInitTopCalls = POST_PREINIT_TOP_CALL_DETAIL
+                    && isPostPreInitTopCallDetailMethod(className, name);
             boolean profilePostInitTopCalls = POST_INIT_TOP_CALL_DETAIL && isPostInitTopCallDetailMethod(className, name);
             return new TimedMethodVisitor(
                     visitor,
@@ -2497,6 +2662,7 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                     profileEnderIOImcCalls,
                     profileEnderIOAlloyCalls,
                     profilePreInitHighSinkCalls,
+                    profilePostPreInitTopCalls,
                     profilePostInitTopCalls);
         }
 
@@ -2525,9 +2691,11 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         private final boolean profileEnderIOImcCalls;
         private final boolean profileEnderIOAlloyCalls;
         private final boolean profilePreInitHighSinkCalls;
+        private final boolean profilePostPreInitTopCalls;
         private final boolean profilePostInitTopCalls;
         private boolean entered;
         private String pendingAoAStructureType;
+        private String pendingPostPreInitInstantiationType;
 
         private TimedMethodVisitor(
                 MethodVisitor delegate,
@@ -2541,6 +2709,7 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 boolean profileEnderIOImcCalls,
                 boolean profileEnderIOAlloyCalls,
                 boolean profilePreInitHighSinkCalls,
+                boolean profilePostPreInitTopCalls,
                 boolean profilePostInitTopCalls) {
             super(Opcodes.ASM9, delegate);
             this.labels = labels;
@@ -2553,6 +2722,7 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             this.profileEnderIOImcCalls = profileEnderIOImcCalls;
             this.profileEnderIOAlloyCalls = profileEnderIOAlloyCalls;
             this.profilePreInitHighSinkCalls = profilePreInitHighSinkCalls;
+            this.profilePostPreInitTopCalls = profilePostPreInitTopCalls;
             this.profilePostInitTopCalls = profilePostInitTopCalls;
         }
 
@@ -2629,6 +2799,13 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 endLabel(callLabel);
                 return;
             }
+            callLabel = postPreInitTopCallLabel(owner, name, desc);
+            if (callLabel != null) {
+                beginLabel(callLabel);
+                super.visitMethodInsn(opcode, owner, name, desc, itf);
+                endLabel(callLabel);
+                return;
+            }
             callLabel = postInitTopCallLabel(owner, name, desc);
             if (callLabel != null) {
                 beginLabel(callLabel);
@@ -2643,6 +2820,13 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 pendingAoAStructureType = null;
                 return;
             }
+            String[] postPreInitInstantiationLabels = postPreInitInstantiationLabels(opcode, owner, name);
+            if (postPreInitInstantiationLabels != null) {
+                super.visitMethodInsn(opcode, owner, name, desc, itf);
+                endLabels(postPreInitInstantiationLabels);
+                pendingPostPreInitInstantiationType = null;
+                return;
+            }
             super.visitMethodInsn(opcode, owner, name, desc, itf);
         }
 
@@ -2651,6 +2835,9 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             if (profileAoAStructureInstantiations && opcode == Opcodes.NEW && isAoAStructureInternalName(type)) {
                 pendingAoAStructureType = type;
                 beginLabels(aoaStructureInstantiationLabels(type));
+            } else if (profilePostPreInitTopCalls && opcode == Opcodes.NEW && isNuclearCraftRecipeRegistrationType(type)) {
+                pendingPostPreInitInstantiationType = type;
+                beginLabels(postPreInitInstantiationLabels(type));
             }
             super.visitTypeInsn(opcode, type);
         }
@@ -2790,6 +2977,34 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                     || owner.equals("net/minecraftforge/common/capabilities/CapabilityManager")
                     || owner.equals("net/minecraftforge/fml/common/registry/GameRegistry")) {
                 return "PreInit high-sink call " + className + '.' + name + desc;
+            }
+            return null;
+        }
+
+        private String postPreInitTopCallLabel(String owner, String name, String desc) {
+            if (!profilePostPreInitTopCalls || owner == null || name == null) {
+                return null;
+            }
+            String className = owner.replace('/', '.');
+            if (owner.startsWith("crafttweaker/mc1120/brackets/")
+                    && (name.startsWith("rebuild") || name.equals("updateEnchantmentRegistry"))) {
+                return "POSTPRE CT bracket " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/runtime/ITweaker")
+                    && (name.equals("getOrCreateLoader") || name.equals("loadScript"))) {
+                return "POSTPRE CT script " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/runtime/ScriptLoader") && name.equals("setMainName")) {
+                return "POSTPRE CT script " + className + '.' + name + desc;
+            }
+            if (owner.equals("net/minecraftforge/fml/common/eventhandler/EventBus") && name.equals("post")) {
+                return "POSTPRE CT event " + className + '.' + name + desc;
+            }
+            if (owner.equals("nc/recipe/vanilla/CraftingRecipeHandler")
+                    || owner.equals("nc/recipe/vanilla/FurnaceRecipeHandler")
+                    || owner.equals("nc/radiation/RadSources")
+                    || owner.equals("net/minecraftforge/fml/common/registry/GameRegistry")) {
+                return "POSTPRE NC call " + className + '.' + name + desc;
             }
             return null;
         }
@@ -3067,6 +3282,35 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 return null;
             }
             return aoaStructureInstantiationLabels(owner);
+        }
+
+        private String[] postPreInitInstantiationLabels(int opcode, String owner, String name) {
+            if (!profilePostPreInitTopCalls
+                    || opcode != Opcodes.INVOKESPECIAL
+                    || pendingPostPreInitInstantiationType == null
+                    || owner == null
+                    || !owner.equals(pendingPostPreInitInstantiationType)
+                    || !"<init>".equals(name)) {
+                return null;
+            }
+            return postPreInitInstantiationLabels(owner);
+        }
+
+        private static boolean isNuclearCraftRecipeRegistrationType(String type) {
+            return type != null
+                    && (type.startsWith("nc/recipe/processor/")
+                    || type.startsWith("nc/recipe/other/")
+                    || type.startsWith("nc/recipe/generator/")
+                    || type.startsWith("nc/recipe/multiblock/")
+                    || type.equals("nc/recipe/vanilla/FurnaceFuelHandler")
+                    || type.equals("nc/radiation/RadBlockEffects"));
+        }
+
+        private static String[] postPreInitInstantiationLabels(String internalName) {
+            return new String[] {
+                    "POSTPRE NC recipe handler construction all",
+                    "POSTPRE NC instantiate " + internalName.replace('/', '.')
+            };
         }
 
         private static boolean isAoAStructureInternalName(String type) {
