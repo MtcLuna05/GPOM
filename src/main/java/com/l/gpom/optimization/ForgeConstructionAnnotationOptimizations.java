@@ -958,7 +958,7 @@ public final class ForgeConstructionAnnotationOptimizations {
 
         private MethodHandle createHandler() {
             try {
-                Method method = subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
+                Method method = findSubscriberMethod();
                 method.setAccessible(true);
                 return MethodHandles.lookup()
                         .unreflect(method)
@@ -975,6 +975,39 @@ public final class ForgeConstructionAnnotationOptimizations {
                         throwable
                 );
             }
+        }
+
+        private Method findSubscriberMethod() throws NoSuchMethodException {
+            try {
+                return subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
+            } catch (NoSuchMethodException ignored) {
+            }
+
+            Method sameNamedFallback = null;
+            for (Method method : subscriberClass.getDeclaredMethods()) {
+                if (!spec.methodName.equals(method.getName())
+                        || method.getParameterTypes().length != 1
+                        || !Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
+
+                Class<?> parameterType = method.getParameterTypes()[0];
+                if (parameterType == spec.eventType
+                        || parameterType.isAssignableFrom(spec.eventType)
+                        || spec.eventType.isAssignableFrom(parameterType)
+                        || parameterType.getName().equals(spec.eventType.getName())) {
+                    return method;
+                }
+
+                if (sameNamedFallback == null && Event.class.isAssignableFrom(parameterType)) {
+                    sameNamedFallback = method;
+                }
+            }
+
+            if (sameNamedFallback != null) {
+                return sameNamedFallback;
+            }
+            throw new NoSuchMethodException(subscriberClass.getName() + '#' + spec.methodName + '(' + spec.eventType.getName() + ')');
         }
 
         @Override

@@ -562,7 +562,7 @@ public final class WorldLoadingProgress {
             return false;
         }
         GuiScreen screen = currentScreen(minecraft);
-        return screen == null || screen instanceof GuiScreenWorking || screen instanceof GuiDownloadTerrain;
+        return active || screen == null || screen instanceof GuiScreenWorking || screen instanceof GuiDownloadTerrain;
     }
 
     private static GuiScreen currentScreen(Minecraft minecraft) {
