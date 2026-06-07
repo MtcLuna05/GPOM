@@ -1,7 +1,7 @@
 package com.l.gpom.optimization;
 
-import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.profiling.AsyncProbeLogger;
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
 import net.minecraft.item.Item;
@@ -114,7 +114,7 @@ public final class BetweenlandsOptimizations {
         if (block == null) {
             DIRECT_BLOCK_NULL_COUNTS.computeIfAbsent(key, ignored -> new LongAdder()).increment();
             if (GpomEarlyConfig.startupProfilerProbeLogsEnabled()) {
-                GPOM.LOGGER.error("[StartupProfiler] [Probe] BL direct BlockRegistry preInit resolved null for {}", key);
+                AsyncProbeLogger.error("[StartupProfiler] [Probe] BL direct BlockRegistry preInit resolved null for {}", key);
             }
         }
         return block;
@@ -151,7 +151,7 @@ public final class BetweenlandsOptimizations {
         if (item == null) {
             DIRECT_ITEM_NULL_COUNTS.computeIfAbsent(fieldName, ignored -> new LongAdder()).increment();
             if (GpomEarlyConfig.startupProfilerProbeLogsEnabled()) {
-                GPOM.LOGGER.error("[StartupProfiler] [Probe] BL direct ItemRegistry preInit resolved null for {}", fieldName);
+                AsyncProbeLogger.error("[StartupProfiler] [Probe] BL direct ItemRegistry preInit resolved null for {}", fieldName);
             }
         }
         return item;
@@ -214,7 +214,7 @@ public final class BetweenlandsOptimizations {
         }
         int total = sum(DIRECT_ITEM_REGISTRATION_COUNTS);
         int nulls = sum(DIRECT_ITEM_NULL_COUNTS);
-        GPOM.LOGGER.info(
+        AsyncProbeLogger.info(
                 "[StartupProfiler] [Probe] BL direct ItemRegistry preInit generated registrations={} expected={} nulls={}",
                 total,
                 expectedDirectItemRegistrations,
@@ -231,7 +231,7 @@ public final class BetweenlandsOptimizations {
         }
         int total = sum(DIRECT_BLOCK_REGISTRATION_COUNTS);
         int nulls = sum(DIRECT_BLOCK_NULL_COUNTS);
-        GPOM.LOGGER.info(
+        AsyncProbeLogger.info(
                 "[StartupProfiler] [Probe] BL direct BlockRegistry preInit generated registrations={} expected={} nulls={}",
                 total,
                 expectedDirectBlockRegistrations,
@@ -248,11 +248,11 @@ public final class BetweenlandsOptimizations {
         }
         int total = sum(BLOCK_FIELD_COUNTS);
         if (total == 0) {
-            GPOM.LOGGER.info("[StartupProfiler] [Probe] BL lazy-field feasibility saw no BlockRegistry field reads during pre-init");
+            AsyncProbeLogger.info("[StartupProfiler] [Probe] BL lazy-field feasibility saw no BlockRegistry field reads during pre-init");
             return;
         }
 
-        GPOM.LOGGER.info(
+        AsyncProbeLogger.info(
                 "[StartupProfiler] [Probe] BL lazy-field feasibility BlockRegistry field reads total={} uniqueFields={} uniqueContexts={}",
                 total,
                 BLOCK_FIELD_COUNTS.size(),
@@ -446,7 +446,7 @@ public final class BetweenlandsOptimizations {
         int limit = Math.min(FIELD_ACCESS_SUMMARY_LIMIT, entries.size());
         for (int index = 0; index < limit; index++) {
             Map.Entry<String, LongAdder> entry = entries.get(index);
-            GPOM.LOGGER.info(
+            AsyncProbeLogger.info(
                     "[StartupProfiler] [Probe] BL lazy-field feasibility top {} #{} count={} - {}",
                     label,
                     index + 1,
@@ -462,11 +462,11 @@ public final class BetweenlandsOptimizations {
         }
         int total = sum(LAZY_BLOCK_FIELD_COUNTS);
         if (total == 0) {
-            GPOM.LOGGER.info("[StartupProfiler] [Probe] BL lazy block accessors were not used during pre-init");
+            AsyncProbeLogger.info("[StartupProfiler] [Probe] BL lazy block accessors were not used during pre-init");
             return;
         }
 
-        GPOM.LOGGER.info(
+        AsyncProbeLogger.info(
                 "[StartupProfiler] [Probe] BL lazy block accessors resolved total={} uniqueFields={}",
                 total,
                 LAZY_BLOCK_FIELD_COUNTS.size()

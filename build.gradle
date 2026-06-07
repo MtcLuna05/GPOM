@@ -8,7 +8,7 @@ version = property('mod_version')
 group = property('root_package')
 
 base {
-    archivesName = property('mod_id')
+    archivesName = 'GPOM'
 }
 
 java {

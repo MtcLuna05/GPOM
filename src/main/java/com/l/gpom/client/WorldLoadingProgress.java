@@ -25,6 +25,9 @@ public final class WorldLoadingProgress {
     private static volatile String detail = "";
     private static volatile int progress = -1;
     private static volatile long startedAt;
+    private static volatile boolean suppressTerrainStartUntilScreenClears;
+    private static volatile boolean waitingForFirstWorldRender;
+    private static volatile long waitingForFirstWorldRenderAt;
     private static volatile boolean firstFrameLogged;
     private static volatile boolean disabledAfterFailure;
     private static volatile Field fontRendererField;
@@ -69,6 +72,9 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
         title = "Loading world";
         worldName = clean(displayName);
         if (worldName.isEmpty()) {
@@ -87,7 +93,13 @@ public final class WorldLoadingProgress {
             return;
         }
         if (!active) {
+            if (!shouldStartTerrainOverlay()) {
+                return;
+            }
             active = true;
+            suppressTerrainStartUntilScreenClears = false;
+            waitingForFirstWorldRender = false;
+            waitingForFirstWorldRenderAt = 0L;
             title = "Loading terrain";
             worldName = "";
             startedAt = System.nanoTime();
@@ -97,11 +109,32 @@ public final class WorldLoadingProgress {
         update("Receiving terrain", "Waiting for initial chunks", 88);
     }
 
+    public static void beginDimensionSwitch(String fromWorld, String toWorld) {
+        if (!enabled()) {
+            return;
+        }
+        active = true;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        title = "Changing dimension";
+        worldName = dimensionSwitchLabel(fromWorld, toWorld);
+        stage = "Preparing client world";
+        detail = "Waiting for dimension handoff";
+        progress = 48;
+        startedAt = System.nanoTime();
+        firstFrameLogged = false;
+        GPOM.LOGGER.info("[WorldLoadingScreen] Started dimension switch overlay ({})", worldName.isEmpty() ? "unknown target" : worldName);
+    }
+
     public static void beginLeaving(String message) {
         if (!enabled()) {
             return;
         }
         active = true;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
         title = "Leaving world";
         worldName = "";
         stage = "Saving and disconnecting";
@@ -156,7 +189,66 @@ public final class WorldLoadingProgress {
         detail = "Handing control to the client";
         progress = 100;
         active = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        suppressTerrainStartUntilScreenClears = true;
         GPOM.LOGGER.info("[WorldLoadingScreen] World loading finished after {} ms ({})", elapsedMs, reason == null ? "unknown" : reason);
+    }
+
+    public static void markWaitingForFirstWorldRender() {
+        if (!enabled() || !active) {
+            return;
+        }
+        if (!waitingForFirstWorldRender) {
+            waitingForFirstWorldRender = true;
+            waitingForFirstWorldRenderAt = System.nanoTime();
+            GPOM.LOGGER.info("[WorldLoadingScreen] Waiting for first rendered world frame");
+        }
+        update("Rendering terrain", "Waiting for first terrain frame", 99);
+    }
+
+    public static void finishAfterFirstWorldRender(String reason) {
+        if (!enabled() || !active || !waitingForFirstWorldRender) {
+            return;
+        }
+        finish(reason);
+    }
+
+    public static boolean finishIfFirstWorldRenderTimedOut(long timeoutMs) {
+        if (!enabled() || !active || !waitingForFirstWorldRender || timeoutMs <= 0L) {
+            return false;
+        }
+        long waitingStartedAt = waitingForFirstWorldRenderAt;
+        if (waitingStartedAt == 0L) {
+            return false;
+        }
+        long elapsedMs = Math.max(0L, (System.nanoTime() - waitingStartedAt) / 1_000_000L);
+        if (elapsedMs < timeoutMs) {
+            return false;
+        }
+        finish("first world render timeout after " + elapsedMs + " ms");
+        return true;
+    }
+
+    public static boolean shouldStartTerrainOverlay() {
+        if (!enabled()) {
+            return false;
+        }
+        if (!suppressTerrainStartUntilScreenClears) {
+            return true;
+        }
+        Minecraft minecraft;
+        try {
+            minecraft = currentMinecraft();
+        } catch (Throwable ignored) {
+            return false;
+        }
+        GuiScreen screen = currentScreen(minecraft);
+        if (screen instanceof GuiDownloadTerrain || screen instanceof GuiScreenWorking) {
+            return false;
+        }
+        suppressTerrainStartUntilScreenClears = false;
+        return true;
     }
 
     public static boolean render(Minecraft minecraft, int width, int height, int progressOverride) {
@@ -702,6 +794,24 @@ public final class WorldLoadingProgress {
 
     private static String clean(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String dimensionSwitchLabel(String fromWorld, String toWorld) {
+        String from = compact(clean(fromWorld), 42);
+        String to = compact(clean(toWorld), 42);
+        if (from.isEmpty() && to.isEmpty()) {
+            return "";
+        }
+        if (from.isEmpty()) {
+            return to;
+        }
+        if (to.isEmpty()) {
+            return from;
+        }
+        if (from.equals(to)) {
+            return to;
+        }
+        return from + " -> " + to;
     }
 
     private static String compact(String value, int max) {

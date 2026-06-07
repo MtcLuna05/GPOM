@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.client;
 
 import com.l.gpom.client.WorldLoadingProgress;
+import com.l.gpom.profiling.WorldLifecycleProfiler;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDownloadTerrain;
@@ -72,11 +73,19 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadWorldStarted(WorldClient worldClient, String message, CallbackInfo ci) {
+        WorldClient previousWorld = gpom$getWorld();
+        WorldLifecycleProfiler.beginLoadWorld((Minecraft) (Object) this, previousWorld, worldClient, message);
         if (worldClient == null) {
             if (!WorldLoadingProgress.isActive()) {
                 WorldLoadingProgress.beginLeaving(message);
             }
             gpom$drawImmediate("Closing previous world", "Clearing old client world", 18);
+            return;
+        }
+
+        if (previousWorld != null && previousWorld != worldClient && !WorldLoadingProgress.isActive()) {
+            WorldLoadingProgress.beginDimensionSwitch(gpom$worldLabel(previousWorld), gpom$worldLabel(worldClient));
+            gpom$drawImmediate("Changing dimension", "Preparing client handoff", 54);
             return;
         }
 
@@ -122,8 +131,10 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadWorldFinished(WorldClient worldClient, String message, CallbackInfo ci) {
+        WorldLifecycleProfiler.endLoadWorld((Minecraft) (Object) this, gpom$getWorld(), gpom$getPlayer(), gpom$getCurrentScreen());
         if (worldClient != null) {
             gpom$drawImmediate("Entering world", "Waiting for first client frame", 96);
+            WorldLoadingProgress.markWaitingForFirstWorldRender();
         }
     }
 
@@ -149,6 +160,7 @@ public abstract class MixinMinecraftWorldLoadingScreen {
 
         if (screen == null && WorldLoadingProgress.isActive() && gpom$getWorld() != null) {
             gpom$drawImmediate("Entering world", "Waiting for first client frame", 98);
+            WorldLoadingProgress.markWaitingForFirstWorldRender();
         }
     }
 
@@ -161,11 +173,18 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$finishWorldLoadingAfterClientTick(CallbackInfo ci) {
+        WorldLifecycleProfiler.clientTick((Minecraft) (Object) this);
         if (WorldLoadingProgress.isActive()
                 && gpom$getWorld() != null
                 && gpom$getPlayer() != null
                 && gpom$getCurrentScreen() == null) {
-            WorldLoadingProgress.finish("client tick has world and player");
+            WorldLoadingProgress.markWaitingForFirstWorldRender();
+            if (WorldLoadingProgress.finishIfFirstWorldRenderTimedOut(15_000L)) {
+                return;
+            }
+        }
+        if (WorldLoadingProgress.isActive()) {
+            WorldLoadingProgress.safeRenderCurrentMinecraft(-1, false);
         }
     }
 
@@ -267,6 +286,17 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return (GuiScreen) field.get(this);
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    private String gpom$worldLabel(WorldClient world) {
+        if (world == null) {
+            return "";
+        }
+        try {
+            return "Dimension " + world.provider.getDimension();
+        } catch (Throwable ignored) {
+            return world.getClass().getSimpleName();
         }
     }
 

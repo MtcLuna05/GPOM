@@ -234,7 +234,7 @@ public final class StartupProfiler {
     public static String mainMenuStartupTimeText() {
         long reachedAt = mainMenuReachedAt;
         long elapsed = (reachedAt == 0L ? System.nanoTime() : reachedAt) - BOOT_STARTED_AT;
-        return "GPOM last startup: " + formatSeconds(elapsed);
+        return "Latest Startup Time: " + formatMinutesSeconds(elapsed);
     }
 
     public static String startupBrandingText() {
@@ -335,7 +335,7 @@ public final class StartupProfiler {
             PHASES.computeIfAbsent(phaseName, PhaseData::new).addProbe(probeName, elapsed);
         }
         if (PROBE_LOGS_ENABLED && elapsed >= thresholdNanos) {
-            GPOM.LOGGER.info(
+            AsyncProbeLogger.info(
                     "[StartupProfiler] [Probe] {} took {} ms",
                     probeName,
                     formatMillis(elapsed)
@@ -648,7 +648,7 @@ public final class StartupProfiler {
             int probeLimit = Math.min(TOP_COUNT, probes.size());
             for (int i = 0; i < probeLimit; i++) {
                 ProbeTiming probe = probes.get(i);
-                GPOM.LOGGER.info(
+                AsyncProbeLogger.info(
                         "[StartupProfiler]   probe #{} {} ms total, {} ms max, count={} - {}",
                         i + 1,
                         formatMillis(probe.totalNanos),
@@ -706,7 +706,7 @@ public final class StartupProfiler {
             int probeLimit = Math.min(PHASE_DIGEST_COUNT, probes.size());
             for (int i = 0; i < probeLimit; i++) {
                 ProbeTiming probe = probes.get(i);
-                GPOM.LOGGER.info(
+                AsyncProbeLogger.info(
                         "[StartupProfiler]   digest probe #{} phase={} {} ms total, {} ms max, count={} - {}",
                         i + 1,
                         phase.name,
@@ -737,7 +737,7 @@ public final class StartupProfiler {
             if (!filter.accept(probe.name)) {
                 continue;
             }
-            GPOM.LOGGER.info(
+            AsyncProbeLogger.info(
                     "[StartupProfiler]   {} #{} phase={} {} ms max, {} ms total, count={} - {}",
                     label,
                     emitted + 1,
@@ -861,6 +861,16 @@ public final class StartupProfiler {
 
     private static String formatSeconds(long nanos) {
         return String.format(Locale.ROOT, "%.3f s", nanos / 1_000_000_000.0D);
+    }
+
+    private static String formatMinutesSeconds(long nanos) {
+        long totalSeconds = Math.max(0L, Math.round(nanos / 1_000_000_000.0D));
+        long minutes = totalSeconds / 60L;
+        long seconds = totalSeconds % 60L;
+        if (minutes <= 0L) {
+            return seconds + "s";
+        }
+        return String.format(Locale.ROOT, "%dm %02ds", minutes, seconds);
     }
 
     private static String formatMib(long bytes) {

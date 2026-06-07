@@ -65,6 +65,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.logging.fmlScheduler.enabled", "true");
         DEFAULTS.setProperty("gpom.logging.optimizationInfo.enabled", "true");
         DEFAULTS.setProperty("gpom.logging.cacheInfo.enabled", "true");
+        DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.enabled", "true");
+        DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.queueSize", "8192");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.enabled", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.boot.enabled", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseLifecycle.enabled", "true");
@@ -82,7 +84,13 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "false");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "Minecraft");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "false");
+        DEFAULTS.setProperty("gpom.worldLifecycleProfiler.enabled", "false");
+        DEFAULTS.setProperty("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots", "false");
+        DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
+        DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.enabled", "false");
+        DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", "8");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
+        DEFAULTS.setProperty("gpom.loliasm.threadSafeStatefulRegistry", "true");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleIC2Containers", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleContainers", "false");
@@ -301,244 +309,408 @@ public final class GpomEarlyConfig {
     }
 
     private static void writeDefaultFile(PrintWriter writer) {
-        writer.println("# General Purpose Optimization Mod early-loading config");
-        writer.println("#");
-        writer.println("# This file is read before Forge's normal config system is available.");
-        writer.println("# Worker values use 0 for automatic sizing based on CPU and total physical memory.");
-        writer.println("# Allowlist accepts comma-separated mod ids or * for every loaded mod.");
-        writer.println("# Denylist always wins over allowlist.");
-        writer.println("# continueOnModError=true is diagnostic-only: GPOM marks the failed mod errored and continues");
-        writer.println("# so the next unsafe mod can be found. Use false for normal play once a phase is stable.");
+        writeComment(writer, "General Purpose Optimization Mod early-loading config.");
+        writeComment(writer, "Generated comments describe each section and each value; delete and relaunch to regenerate this file with current defaults.");
         writer.println();
+        writeSection(writer, "File Format", "This file is loaded before Forge's normal config system exists. Comma lists accept mod ids unless noted; '*' means every candidate; denylist entries always win.",
+                "fml.parallel.workers"
+        );
+        writeSection(writer, "Construction Parallelism", "Controls FMLConstructionEvent worker dispatch. This is the most fragile phase because mod instances, proxies, and automatic subscribers are created here.",
+                "fml.parallel.construct.enabled",
+                "fml.parallel.construct.workers",
+                "fml.parallel.construct.allowlist",
+                "fml.parallel.construct.denylist",
+                "fml.parallel.construct.continueOnModError"
+        );
+        writeSection(writer, "PreInit Parallelism", "Controls FMLPreInitializationEvent worker dispatch. This phase touches registries, model loaders, configs, and client resource setup, so use tested allowlists.",
+                "fml.parallel.preInit.enabled",
+                "fml.parallel.preInit.workers",
+                "fml.parallel.preInit.allowlist",
+                "fml.parallel.preInit.denylist",
+                "fml.parallel.preInit.continueOnModError",
+                "fml.parallel.preInit.dag.enabled"
+        );
+        writeSection(writer, "Init Parallelism", "Controls FMLInitializationEvent worker dispatch. Mods that create OpenGL objects, textures, shaders, or shared global state should stay denied.",
+                "fml.parallel.init.enabled",
+                "fml.parallel.init.workers",
+                "fml.parallel.init.allowlist",
+                "fml.parallel.init.denylist",
+                "fml.parallel.init.continueOnModError"
+        );
+        writeSection(writer, "PostInit Parallelism", "Controls FMLPostInitializationEvent worker dispatch. Usually safer than PreInit/Init, but recipe mutation and render integration still need pack validation.",
+                "fml.parallel.postInit.enabled",
+                "fml.parallel.postInit.workers",
+                "fml.parallel.postInit.allowlist",
+                "fml.parallel.postInit.denylist",
+                "fml.parallel.postInit.continueOnModError"
+        );
+        writeSection(writer, "LoadComplete Parallelism", "Controls FMLLoadCompleteEvent worker dispatch. This is the safest lifecycle phase, but HEI/JER and client-global mods can still serialize the wall time.",
+                "fml.parallel.loadComplete.enabled",
+                "fml.parallel.loadComplete.workers",
+                "fml.parallel.loadComplete.allowlist",
+                "fml.parallel.loadComplete.denylist",
+                "fml.parallel.loadComplete.continueOnModError"
+        );
+        writeSection(writer, "Thread Safety Guards", "Global safety switches used by the lifecycle scheduler while phases are running in workers.",
+                "fml.parallel.registrySerialization.enabled",
+                "fml.parallel.autoQuarantineGlErrors.enabled",
+                "fml.parallel.autoQuarantineGlErrors.includeRelatedMods"
+        );
+        writeSection(writer, "GPOM Logging", "Controls GPOM's own logger and high-volume categories. Keep the root logger enabled when diagnostics such as world lifecycle snapshots are needed.",
+                "gpom.logging.enabled",
+                "gpom.logging.fmlScheduler.enabled",
+                "gpom.logging.optimizationInfo.enabled",
+                "gpom.logging.cacheInfo.enabled",
+                "gpom.logging.asyncProbeLogs.enabled",
+                "gpom.logging.asyncProbeLogs.queueSize"
+        );
+        writeSection(writer, "Startup Profiler Logs", "Controls how much startup timing data GPOM emits. Disabling logs does not disable the underlying optimized code paths.",
+                "gpom.startupProfiler.logs.enabled",
+                "gpom.startupProfiler.logs.boot.enabled",
+                "gpom.startupProfiler.logs.phaseLifecycle.enabled",
+                "gpom.startupProfiler.logs.modDetails.enabled",
+                "gpom.startupProfiler.logs.phaseSummary.enabled",
+                "gpom.startupProfiler.logs.phaseDigest.enabled",
+                "gpom.startupProfiler.logs.memoryDetails.enabled",
+                "gpom.startupProfiler.logs.probes.enabled",
+                "gpom.startupProfiler.logs.probeSummary.enabled",
+                "gpom.startupProfiler.logs.wallDiagnostics.enabled",
+                "gpom.startupProfiler.logs.stackSamples.enabled",
+                "gpom.startupProfiler.logs.resourceLoadOrder.enabled",
+                "gpom.startupProfiler.probeLogs.enabled",
+                "gpom.startupProfiler.topCount"
+        );
+        writeSection(writer, "Client Loading UI", "Optional client-only UI additions for early startup, world entry, and the main menu startup time display.",
+                "gpom.earlySplash.enabled",
+                "gpom.earlySplash.packName",
+                "gpom.worldLoadingScreen.enabled",
+                "gpom.mainMenuStartupTime.enabled"
+        );
+        writeSection(writer, "World Lifecycle Profiling", "World load, unload, and dimension-switch diagnostics for tracking retained client state and memory leaks.",
+                "gpom.worldLifecycleProfiler.enabled",
+                "gpom.worldLifecycleProfiler.forceGcBeforeSnapshots",
+                "gpom.worldLifecycleProfiler.delayedSnapshotMillis",
+                "gpom.worldLifecycleProfiler.deepAttribution.enabled",
+                "gpom.worldLifecycleProfiler.deepAttribution.maxEntries"
+        );
+        writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
+                "gpom.loliasm.threadSafeStatefulRegistry"
+        );
+        writeSection(writer, "Railcraft Deferrals", "Exact-version startup deferrals for Railcraft 12.1.0-beta-8 module/container initialization.",
+                "gpom.railcraftLazyItemConditions",
+                "gpom.railcraft.deferModuleIC2Containers",
+                "gpom.railcraft.deferModuleContainers",
+                "gpom.railcraft.deferSelectedModuleContainers",
+                "gpom.railcraft.deferModuleContainerAllowlist",
+                "gpom.railcraft.lazyCartConfig"
+        );
+        writeSection(writer, "General Startup Optimizations", "Exact-version or input-validated startup shortcuts outside HEI. Disable a key to fall back to the original mod behavior.",
+                "gpom.astralSorcery.deferAssetLibraryReload",
+                "gpom.agricraft.fastJsonIo",
+                "gpom.agricraft.fastResourceScan",
+                "gpom.agricraft.skipJsonWriteback",
+                "gpom.openComputersSettingsCache",
+                "gpom.openComputers.fastLuaSelection",
+                "gpom.openComputersCallProfiler",
+                "gpom.openComputersIntegrationProfiler",
+                "gpom.gendustryConfigCache",
+                "gpom.gendustryCallProfiler",
+                "gpom.erebus.deferComposterRegistry",
+                "gpom.erebus.deferOreConfigs",
+                "gpom.enderio.fastSpawnerEntityValidation",
+                "gpom.crafttweaker.fastZenRegister",
+                "gpom.preInitHighSinkCallProfiler"
+        );
+        writeSection(writer, "PreInit Class Prewarm", "Optional sidecar class definition/linking during PreInit. Static initialization is disabled by default because it can execute mod code early.",
+                "gpom.preInitClassPrewarm.enabled",
+                "gpom.preInitClassPrewarm.allowlist",
+                "gpom.preInitClassPrewarm.workers",
+                "gpom.preInitClassPrewarm.deferMinCompletedHandlers",
+                "gpom.preInitClassPrewarm.deferUntilSerialMillis",
+                "gpom.preInitClassPrewarm.pauseDuringSerialHandlers",
+                "gpom.preInitClassPrewarm.pauseDuringBlockingWaits",
+                "gpom.preInitClassPrewarm.maxClassesPerMod",
+                "gpom.preInitClassPrewarm.chunkSize",
+                "gpom.preInitClassPrewarm.includeAnonClasses",
+                "gpom.preInitClassPrewarm.extraPrefixes",
+                "gpom.preInitClassPrewarm.noInitAllowlist",
+                "gpom.preInitClassPrewarm.noInitPrefixes",
+                "gpom.preInitClassPrewarm.initializeClasses",
+                "gpom.preInitClassPrewarm.explicitClasses"
+        );
+        writeSection(writer, "HEI Progress And Search", "HEI client startup helpers that keep recipe ingestion visible and replace the single search worker with a bounded pool.",
+                "gpom.hei.recipeProgressBar.enabled",
+                "gpom.hei.recipeProgressBar.stepSize",
+                "gpom.hei.searchWorkers"
+        );
+        writeSection(writer, "HEI Plugin Parallelism", "Experimental worker dispatch for allowlisted HEI plugin registration calls. Empty allowlist means no plugin registration is threaded.",
+                "gpom.hei.parallelPluginRegistration.enabled",
+                "gpom.hei.parallelPluginRegistration.workers",
+                "gpom.hei.parallelPluginRegistration.allowlist",
+                "gpom.hei.parallelPluginRegistration.denylist"
+        );
+        writeSection(writer, "HEI Recipe Optimizations", "Exact-version HEI recipe/category fast paths and persistent wrapper caches. Caches validate input signatures before reuse.",
+                "gpom.hei.jerVillagerTradeCache.enabled",
+                "gpom.hei.jerVillagerTradeCache.samples",
+                "gpom.hei.fastForestryBottler.enabled",
+                "gpom.hei.forestryBottlerRecipeCache.enabled",
+                "gpom.hei.fastEnderIOTank.enabled",
+                "gpom.hei.extraTreesLumbermillRecipeCache.enabled",
+                "gpom.hei.fastThermalTransposerContainers.enabled",
+                "gpom.hei.thermalTransposerContainerCache.enabled"
+        );
+    }
 
-        writer.println("# Shared worker fallback. Per-phase worker values of 0 inherit this.");
-        writeProperty(writer, "fml.parallel.workers");
+    private static void writeSection(PrintWriter writer, String title, String description, String... keys) {
+        writeComment(writer, "== " + title + " ==");
+        writeComment(writer, description);
+        for (String key : keys) {
+            writeProperty(writer, key);
+        }
         writer.println();
-
-        writer.println("# FMLConstructionEvent: most invasive lifecycle phase.");
-        writer.println("# Mod instances, proxies, classloader state, and automatic event subscribers are created here.");
-        writer.println("# Keep disabled unless testing a narrow allowlist; broad * construction threading is unsafe.");
-        writeProperty(writer, "fml.parallel.construct.enabled");
-        writeProperty(writer, "fml.parallel.construct.workers");
-        writeProperty(writer, "fml.parallel.construct.allowlist");
-        writeProperty(writer, "fml.parallel.construct.denylist");
-        writeProperty(writer, "fml.parallel.construct.continueOnModError");
-        writer.println();
-
-        writer.println("# FMLPreInitializationEvent: highest-risk lifecycle phase.");
-        writer.println("# Many mods register blocks, items, entities, model loaders, and client resources here.");
-        writer.println("# Shipped default is disabled and empty; pack profiles should add a tested allowlist/denylist.");
-        writeProperty(writer, "fml.parallel.preInit.enabled");
-        writeProperty(writer, "fml.parallel.preInit.workers");
-        writeProperty(writer, "fml.parallel.preInit.allowlist");
-        writeProperty(writer, "fml.parallel.preInit.denylist");
-        writeProperty(writer, "fml.parallel.preInit.continueOnModError");
-        writeProperty(writer, "fml.parallel.preInit.dag.enabled");
-        writer.println();
-
-        writer.println("# FMLInitializationEvent: still client/global-state sensitive.");
-        writer.println("# Mods that create OpenGL resources, textures, shaders, or global registries must stay denied.");
-        writeProperty(writer, "fml.parallel.init.enabled");
-        writeProperty(writer, "fml.parallel.init.workers");
-        writeProperty(writer, "fml.parallel.init.allowlist");
-        writeProperty(writer, "fml.parallel.init.denylist");
-        writeProperty(writer, "fml.parallel.init.continueOnModError");
-        writer.println();
-
-        writer.println("# FMLPostInitializationEvent: safer than PreInit/Init, but recipe/global registry mutations");
-        writer.println("# and client render setup still need per-pack denylist validation.");
-        writeProperty(writer, "fml.parallel.postInit.enabled");
-        writeProperty(writer, "fml.parallel.postInit.workers");
-        writeProperty(writer, "fml.parallel.postInit.allowlist");
-        writeProperty(writer, "fml.parallel.postInit.denylist");
-        writeProperty(writer, "fml.parallel.postInit.continueOnModError");
-        writer.println();
-
-        writer.println("# FMLLoadCompleteEvent: safest lifecycle phase for broad parallel dispatch.");
-        writer.println("# HEI/JER and other mods with global client state should remain denied unless explicitly tested.");
-        writeProperty(writer, "fml.parallel.loadComplete.enabled");
-        writeProperty(writer, "fml.parallel.loadComplete.workers");
-        writeProperty(writer, "fml.parallel.loadComplete.allowlist");
-        writeProperty(writer, "fml.parallel.loadComplete.denylist");
-        writeProperty(writer, "fml.parallel.loadComplete.continueOnModError");
-        writer.println();
-
-        writer.println("# Registry serialization: keeps Forge registry mutation single-writer while threaded");
-        writer.println("# lifecycle handlers run. This is required for broad PreInit/Init experiments because");
-        writer.println("# ForgeRegistry/HashBiMap internals are not concurrent writers.");
-        writeProperty(writer, "fml.parallel.registrySerialization.enabled");
-        writer.println();
-
-        writer.println("# Parallel GL auto-quarantine: diagnostic-only helper for broad threading experiments.");
-        writer.println("# Catchable OpenGL thread violations append the failing mod to the phase denylist and abort");
-        writer.println("# so the next launch can retry that mod on the main thread. The retry wrapper can also use");
-        writer.println("# GPOM's last-threaded breadcrumb after hard JVM exits.");
-        writeProperty(writer, "fml.parallel.autoQuarantineGlErrors.enabled");
-        writeProperty(writer, "fml.parallel.autoQuarantineGlErrors.includeRelatedMods");
-        writer.println();
-
-        writer.println("# GPOM logging: gpom.logging.enabled=false silences all logs emitted through GPOM's logger.");
-        writer.println("# Other switches silence specific high-volume GPOM categories while keeping warnings/errors elsewhere.");
-        writeProperty(writer, "gpom.logging.enabled");
-        writeProperty(writer, "gpom.logging.fmlScheduler.enabled");
-        writeProperty(writer, "gpom.logging.optimizationInfo.enabled");
-        writeProperty(writer, "gpom.logging.cacheInfo.enabled");
-        writer.println();
-
-        writer.println("# Startup profiler log volume. Timings are still collected when these are disabled,");
-        writer.println("# but selected raw/detail/summary lines are not emitted.");
-        writeProperty(writer, "gpom.startupProfiler.logs.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.boot.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.phaseLifecycle.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.modDetails.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.phaseSummary.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.phaseDigest.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.memoryDetails.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.probes.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.probeSummary.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.wallDiagnostics.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.stackSamples.enabled");
-        writeProperty(writer, "gpom.startupProfiler.logs.resourceLoadOrder.enabled");
-        writer.println("# Compatibility alias for older configs; false also disables raw [Probe] lines.");
-        writeProperty(writer, "gpom.startupProfiler.probeLogs.enabled");
-        writer.println("# Number of top mods/probes logged in each phase summary.");
-        writeProperty(writer, "gpom.startupProfiler.topCount");
-        writer.println();
-
-        writer.println("# Early splash: experimental isolated AWT/Swing window shown before Minecraft creates its own display.");
-        writer.println("# Shipped default is disabled. Enable only in client profiles being tested.");
-        writer.println("# packName is only a display label for the splash footer; leave as Minecraft for generic use.");
-        writeProperty(writer, "gpom.earlySplash.enabled");
-        writeProperty(writer, "gpom.earlySplash.packName");
-        writer.println();
-
-        writer.println("# World loading screen: passive/fail-closed overlay for the blank/early-0% world join wait.");
-        writer.println("# Shipped default is disabled until pack-specific world-entry validation is clean.");
-        writeProperty(writer, "gpom.worldLoadingScreen.enabled");
-        writer.println("# Main menu startup time: draws the last startup duration on vanilla or CustomMainMenu screens.");
-        writeProperty(writer, "gpom.mainMenuStartupTime.enabled");
-        writer.println();
-
-        writer.println("# Railcraft startup deferrals: exact-version options for Railcraft 12.1.0-beta-8.");
-        writer.println("# These avoid forcing large Railcraft enum/container initialization during module discovery.");
-        writeProperty(writer, "gpom.railcraftLazyItemConditions");
-        writeProperty(writer, "gpom.railcraft.deferModuleIC2Containers");
-        writeProperty(writer, "gpom.railcraft.deferModuleContainers");
-        writeProperty(writer, "gpom.railcraft.deferSelectedModuleContainers");
-        writeProperty(writer, "gpom.railcraft.deferModuleContainerAllowlist");
-        writeProperty(writer, "gpom.railcraft.lazyCartConfig");
-        writer.println();
-
-        writer.println("# Deep PreInit profilers: diagnostic-only exact-version probes for current high sinks.");
-        writer.println("# These add nested method/call timings to the StartupProfiler summary; leave false for normal play.");
-        writer.println("# Astral Sorcery: append AssetLibrary's reload listener during PreInit without running immediate texture preload.");
-        writeProperty(writer, "gpom.astralSorcery.deferAssetLibraryReload");
-        writer.println("# AgriCraft: exact-version JSON IO fast path; parses current JSON but skips redundant default/writeback rewrites.");
-        writeProperty(writer, "gpom.agricraft.fastJsonIo");
-        writeProperty(writer, "gpom.agricraft.fastResourceScan");
-        writeProperty(writer, "gpom.agricraft.skipJsonWriteback");
-        writer.println("# Exact-input cache for OpenComputers settings construction. Invalidates on bundled/user config bytes.");
-        writeProperty(writer, "gpom.openComputersSettingsCache");
-        writer.println("# OpenComputers: avoid probing disabled Lua native backends before architecture registration.");
-        writeProperty(writer, "gpom.openComputers.fastLuaSelection");
-        writeProperty(writer, "gpom.openComputersCallProfiler");
-        writeProperty(writer, "gpom.openComputersIntegrationProfiler");
-        writer.println("# PreInit class prewarm: async sidecar class definition/linking. Static initialization is opt-in and risky.");
-        writer.println("# allowlist accepts mod ids or *; extraPrefixes accepts modid:internal/prefix|other/prefix;modid2:prefix.");
-        writer.println("# noInitAllowlist accepts mod ids or * and uses the built-in prefix table with Class.forName(..., false).");
-        writer.println("# noInitPrefixes accepts extra modid:internal/prefix|other/prefix entries and also always uses Class.forName(..., false).");
-        writer.println("# explicitClasses accepts modid:pkg.Class|other.Class;modid2:pkg.Class and is the intended form for initializeClasses=true.");
-        writeProperty(writer, "gpom.preInitClassPrewarm.enabled");
-        writeProperty(writer, "gpom.preInitClassPrewarm.allowlist");
-        writeProperty(writer, "gpom.preInitClassPrewarm.workers");
-        writeProperty(writer, "gpom.preInitClassPrewarm.deferMinCompletedHandlers");
-        writeProperty(writer, "gpom.preInitClassPrewarm.deferUntilSerialMillis");
-        writeProperty(writer, "gpom.preInitClassPrewarm.pauseDuringSerialHandlers");
-        writeProperty(writer, "gpom.preInitClassPrewarm.pauseDuringBlockingWaits");
-        writeProperty(writer, "gpom.preInitClassPrewarm.maxClassesPerMod");
-        writeProperty(writer, "gpom.preInitClassPrewarm.chunkSize");
-        writeProperty(writer, "gpom.preInitClassPrewarm.includeAnonClasses");
-        writeProperty(writer, "gpom.preInitClassPrewarm.extraPrefixes");
-        writeProperty(writer, "gpom.preInitClassPrewarm.noInitAllowlist");
-        writeProperty(writer, "gpom.preInitClassPrewarm.noInitPrefixes");
-        writeProperty(writer, "gpom.preInitClassPrewarm.initializeClasses");
-        writeProperty(writer, "gpom.preInitClassPrewarm.explicitClasses");
-        writer.println("# Exact-input cache for Gendustry tuning/config parsing. Invalidates on bundled/user config bytes.");
-        writeProperty(writer, "gpom.gendustryConfigCache");
-        writeProperty(writer, "gpom.gendustryCallProfiler");
-        writer.println("# Erebus: defer composter registry materialization until the first compostability query.");
-        writeProperty(writer, "gpom.erebus.deferComposterRegistry");
-        writer.println("# Erebus: defer ore config enum materialization until first ore-setting use.");
-        writeProperty(writer, "gpom.erebus.deferOreConfigs");
-        writer.println("# EnderIO: cache powered-spawner XML entity validation during core recipe loading.");
-        writeProperty(writer, "gpom.enderio.fastSpawnerEntityValidation");
-        writer.println("# CraftTweaker: use ASMData to register ZenRegister classes without scanning class annotations reflectively.");
-        writeProperty(writer, "gpom.crafttweaker.fastZenRegister");
-        writeProperty(writer, "gpom.preInitHighSinkCallProfiler");
-        writer.println();
-
-        writer.println("# HEI recipe progress: keeps GPOM's optimized no-per-recipe HEI path, but adds a coarse");
-        writer.println("# progress bar while HEI consumes already-parsed recipes into its recipe registry.");
-        writeProperty(writer, "gpom.hei.recipeProgressBar.enabled");
-        writeProperty(writer, "gpom.hei.recipeProgressBar.stepSize");
-        writer.println();
-
-        writer.println("# HEI search workers: GPOM replaces HEI's single async search worker with a bounded pool.");
-        writer.println("# 0 picks an automatic value from CPU count. Search semantics are unchanged.");
-        writeProperty(writer, "gpom.hei.searchWorkers");
-        writer.println();
-
-        writer.println("# HEI plugin threading: experimental. GPOM synchronizes HEI's mutable ModRegistry surface,");
-        writer.println("# then optionally runs exact allowlisted IModPlugin.register calls in workers.");
-        writer.println("# Empty allowlist means no plugin is threaded; denylist wins. Use full plugin class names or *.");
-        writeProperty(writer, "gpom.hei.parallelPluginRegistration.enabled");
-        writeProperty(writer, "gpom.hei.parallelPluginRegistration.workers");
-        writeProperty(writer, "gpom.hei.parallelPluginRegistration.allowlist");
-        writeProperty(writer, "gpom.hei.parallelPluginRegistration.denylist");
-        writer.println();
-
-        writer.println("# JER villager trade cache: replaces JER's 100 random trade simulations per trade");
-        writer.println("# with a reduced deterministic sample and stores the reduced display trade result.");
-        writer.println("# Set samples=100 for closer vanilla JER display ranges, or disable to use stock JER.");
-        writeProperty(writer, "gpom.hei.jerVillagerTradeCache.enabled");
-        writeProperty(writer, "gpom.hei.jerVillagerTradeCache.samples");
-        writer.println();
-
-        writer.println("# Forestry Bottler HEI fast path: exact-version optimization for Forestry 5.8.2.427.");
-        writer.println("# Skips the per-fluid fill loop for fluid containers that are already full, while falling");
-        writer.println("# back to Forestry's original recipe generator if this path is disabled or fails.");
-        writeProperty(writer, "gpom.hei.fastForestryBottler.enabled");
-        writer.println("# Stores the generated Bottler HEI wrapper inputs/outputs as compressed NBT tuples after");
-        writer.println("# a full build, then reconstructs wrappers directly when the item/fluid signature matches.");
-        writeProperty(writer, "gpom.hei.forestryBottlerRecipeCache.enabled");
-        writer.println();
-
-        writer.println("# EnderIO Tank HEI fast path: exact-version optimization for EnderIO 5.3.72.");
-        writer.println("# Uses the cached fluid-handler subset for fluid IO recipes, while preserving");
-        writer.println("# the full HEI item list for EnderIO's mending recipe display.");
-        writeProperty(writer, "gpom.hei.fastEnderIOTank.enabled");
-        writer.println();
-
-        writer.println("# ExtraTrees Lumbermill HEI cache: exact-version optimization for Binnie Mods 2.5.1.213.");
-        writer.println("# Stores Lumbermill input/output wrapper tuples after the full logWood recipe scan, then");
-        writer.println("# reconstructs wrappers directly when the item/recipe/log signatures match.");
-        writeProperty(writer, "gpom.hei.extraTreesLumbermillRecipeCache.enabled");
-        writer.println();
-
-        writer.println("# Thermal Expansion Transposer HEI fast path: exact-version optimization for TE 5.5.7.1.");
-        writer.println("# Replaces the expensive fluid-container wrapper constructor with GPOM's equivalent builder,");
-        writer.println("# reuses identical animated drawables, and can persist fill/drain simulation results.");
-        writeProperty(writer, "gpom.hei.fastThermalTransposerContainers.enabled");
-        writer.println("# Stores generated Transposer container wrapper item/fluid lists as compressed NBT tuples.");
-        writer.println("# First launch populates the cache; matching later launches reconstruct wrappers directly.");
-        writeProperty(writer, "gpom.hei.thermalTransposerContainerCache.enabled");
     }
 
     private static void writeProperty(PrintWriter writer, String key) {
+        writeComment(writer, key + " - " + propertyDescription(key));
         writer.println(key + "=" + DEFAULTS.getProperty(key, ""));
     }
 
+    private static void writeComment(PrintWriter writer, String comment) {
+        writer.println("# " + comment);
+    }
+
+    private static String propertyDescription(String key) {
+        switch (key) {
+            case "fml.parallel.preInit.enabled":
+                return "Enables worker dispatch for FMLPreInitializationEvent handlers that pass the allowlist and denylist filters.";
+            case "fml.parallel.construct.enabled":
+                return "Enables worker dispatch for FMLConstructionEvent handlers that pass the allowlist and denylist filters.";
+            case "fml.parallel.postInit.enabled":
+                return "Enables worker dispatch for FMLPostInitializationEvent handlers that pass the allowlist and denylist filters.";
+            case "fml.parallel.init.enabled":
+                return "Enables worker dispatch for FMLInitializationEvent handlers that pass the allowlist and denylist filters.";
+            case "fml.parallel.loadComplete.enabled":
+                return "Enables worker dispatch for FMLLoadCompleteEvent handlers that pass the allowlist and denylist filters.";
+            case "fml.parallel.workers":
+                return "Shared worker-count fallback for all threaded FML phases. 0 lets GPOM choose a bounded value from CPU and memory.";
+            case "fml.parallel.preInit.workers":
+                return "Worker count for PreInit. 0 inherits fml.parallel.workers, then automatic sizing if the shared value is also 0.";
+            case "fml.parallel.construct.workers":
+                return "Worker count for construction. 0 inherits fml.parallel.workers, then automatic sizing if the shared value is also 0.";
+            case "fml.parallel.postInit.workers":
+                return "Worker count for PostInit. 0 inherits fml.parallel.workers, then automatic sizing if the shared value is also 0.";
+            case "fml.parallel.init.workers":
+                return "Worker count for Init. 0 inherits fml.parallel.workers, then automatic sizing if the shared value is also 0.";
+            case "fml.parallel.loadComplete.workers":
+                return "Worker count for LoadComplete. 0 inherits fml.parallel.workers, then automatic sizing if the shared value is also 0.";
+            case "fml.parallel.construct.allowlist":
+                return "Comma-separated mod ids allowed to run construction off-thread; '*' allows every loaded mod before denylist filtering.";
+            case "fml.parallel.construct.denylist":
+                return "Comma-separated mod ids forced back to the main thread during construction; entries here override the allowlist.";
+            case "fml.parallel.construct.continueOnModError":
+                return "Diagnostic-only mode that records a construction failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.preInit.allowlist":
+                return "Comma-separated mod ids allowed to run PreInit off-thread; '*' allows every loaded mod before denylist filtering.";
+            case "fml.parallel.preInit.denylist":
+                return "Comma-separated mod ids forced back to the main thread during PreInit; entries here override the allowlist.";
+            case "fml.parallel.preInit.continueOnModError":
+                return "Diagnostic-only mode that records a PreInit failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.preInit.dag.enabled":
+                return "Uses dependency-aware scheduling for PreInit instead of strict list order. Experimental until missing-registry behavior is retested.";
+            case "fml.parallel.init.allowlist":
+                return "Comma-separated mod ids allowed to run Init off-thread; '*' allows every loaded mod before denylist filtering.";
+            case "fml.parallel.init.denylist":
+                return "Comma-separated mod ids forced back to the main thread during Init; entries here override the allowlist.";
+            case "fml.parallel.init.continueOnModError":
+                return "Diagnostic-only mode that records an Init failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.postInit.allowlist":
+                return "Comma-separated mod ids allowed to run PostInit off-thread; '*' allows every loaded mod before denylist filtering.";
+            case "fml.parallel.postInit.denylist":
+                return "Comma-separated mod ids forced back to the main thread during PostInit; entries here override the allowlist.";
+            case "fml.parallel.postInit.continueOnModError":
+                return "Diagnostic-only mode that records a PostInit failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.loadComplete.allowlist":
+                return "Comma-separated mod ids allowed to run LoadComplete off-thread; '*' allows every loaded mod before denylist filtering.";
+            case "fml.parallel.loadComplete.denylist":
+                return "Comma-separated mod ids forced back to the main thread during LoadComplete; entries here override the allowlist.";
+            case "fml.parallel.loadComplete.continueOnModError":
+                return "Diagnostic-only mode that records a LoadComplete failure and keeps scheduling later mods. Use false for normal play.";
+            case "fml.parallel.registrySerialization.enabled":
+                return "Serializes Forge registry writes while lifecycle workers are active to avoid HashBiMap and ForgeRegistry concurrent mutation.";
+            case "fml.parallel.autoQuarantineGlErrors.enabled":
+                return "Diagnostic helper that appends catchable OpenGL thread offenders to the relevant phase denylist for the next launch.";
+            case "fml.parallel.autoQuarantineGlErrors.includeRelatedMods":
+                return "When auto-quarantining, also deny likely dependent/related mods so the next launch moves the whole cluster back to main thread.";
+            case "gpom.logging.enabled":
+                return "Master switch for GPOM's own logger. If false, GPOM diagnostics including WorldLifecycle lines are suppressed.";
+            case "gpom.logging.fmlScheduler.enabled":
+                return "Enables lifecycle scheduler status lines such as worker waits, phase transitions, and serialized fallback notices.";
+            case "gpom.logging.optimizationInfo.enabled":
+                return "Enables one-time informational lines from optimization installers and exact-version fast paths.";
+            case "gpom.logging.cacheInfo.enabled":
+                return "Enables cache hit, miss, invalidation, and persistence lines for GPOM input-validated caches.";
+            case "gpom.logging.asyncProbeLogs.enabled":
+                return "Moves high-volume GPOM probe/profiler log writes onto a bounded daemon thread so console/file IO does not stall gameplay.";
+            case "gpom.logging.asyncProbeLogs.queueSize":
+                return "Maximum queued GPOM probe log lines before excess probe logs are dropped instead of blocking the caller.";
+            case "gpom.startupProfiler.logs.enabled":
+                return "Master switch for startup profiler log output. Timings may still be collected for UI or summaries.";
+            case "gpom.startupProfiler.logs.boot.enabled":
+                return "Logs early boot/profiler setup markers.";
+            case "gpom.startupProfiler.logs.phaseLifecycle.enabled":
+                return "Logs lifecycle phase start, end, and wall-time markers.";
+            case "gpom.startupProfiler.logs.modDetails.enabled":
+                return "Logs per-mod lifecycle timings and wait attribution details.";
+            case "gpom.startupProfiler.logs.phaseSummary.enabled":
+                return "Logs per-phase top sink summaries.";
+            case "gpom.startupProfiler.logs.phaseDigest.enabled":
+                return "Logs compact phase digest lines intended for quick comparison between launches.";
+            case "gpom.startupProfiler.logs.memoryDetails.enabled":
+                return "Logs memory snapshots attached to startup phases and selected probes.";
+            case "gpom.startupProfiler.logs.probes.enabled":
+                return "Logs raw high-volume probe events from targeted deep profilers.";
+            case "gpom.startupProfiler.logs.probeSummary.enabled":
+                return "Logs aggregated probe summaries without the full raw probe stream.";
+            case "gpom.startupProfiler.logs.wallDiagnostics.enabled":
+                return "Logs wall-clock diagnostics that explain dead time, waits, and scheduler under-utilization.";
+            case "gpom.startupProfiler.logs.stackSamples.enabled":
+                return "Logs stack-sample diagnostics for long-running startup sinks.";
+            case "gpom.startupProfiler.logs.resourceLoadOrder.enabled":
+                return "Logs resource/model load-order diagnostics used to locate client-side loading stalls.";
+            case "gpom.startupProfiler.probeLogs.enabled":
+                return "Compatibility alias for older configs; false also disables raw [Probe] startup lines.";
+            case "gpom.startupProfiler.topCount":
+                return "Number of top mods/probes included in startup profiler summaries.";
+            case "gpom.earlySplash.enabled":
+                return "Shows GPOM's isolated early splash window before Minecraft creates its own display.";
+            case "gpom.earlySplash.packName":
+                return "Display label shown on the early splash window footer.";
+            case "gpom.worldLoadingScreen.enabled":
+                return "Shows GPOM's passive world-entry overlay during blank or early-0% world join periods.";
+            case "gpom.worldLifecycleProfiler.enabled":
+                return "Logs client world load, unload, and dimension-switch memory/state snapshots.";
+            case "gpom.worldLifecycleProfiler.forceGcBeforeSnapshots":
+                return "Runs System.gc() before delayed world lifecycle snapshots to make retained-memory trends easier to see.";
+            case "gpom.worldLifecycleProfiler.delayedSnapshotMillis":
+                return "Comma-separated delayed snapshot times after each world transition; include values below 30000 for fast switch testing.";
+            case "gpom.worldLifecycleProfiler.deepAttribution.enabled":
+                return "Logs detailed texture, resource-manager, and renderer ownership summaries for world memory leak attribution.";
+            case "gpom.worldLifecycleProfiler.deepAttribution.maxEntries":
+                return "Maximum entries shown in each WorldLifecycleDeep top-list; higher values increase log volume.";
+            case "gpom.mainMenuStartupTime.enabled":
+                return "Draws the last measured startup duration in the top-right corner of the main menu.";
+            case "gpom.loliasm.threadSafeStatefulRegistry":
+                return "Replaces LoliASM's crash-state registry with a concurrent set and prunes cleared weak references from BufferBuilder churn.";
+            case "gpom.railcraftLazyItemConditions":
+                return "Defers Railcraft item condition initialization until first use instead of during module setup.";
+            case "gpom.railcraft.deferModuleIC2Containers":
+                return "Defers Railcraft IC2 container setup that otherwise forces expensive cross-mod class initialization.";
+            case "gpom.railcraft.deferModuleContainers":
+                return "Defers broad Railcraft module container creation until the containers are actually requested.";
+            case "gpom.railcraft.deferSelectedModuleContainers":
+                return "Defers only module containers listed in gpom.railcraft.deferModuleContainerAllowlist.";
+            case "gpom.railcraft.deferModuleContainerAllowlist":
+                return "Comma-separated Railcraft module class names eligible for selected container deferral.";
+            case "gpom.railcraft.lazyCartConfig":
+                return "Defers Railcraft cart config materialization until cart settings are first queried.";
+            case "gpom.astralSorcery.deferAssetLibraryReload":
+                return "Registers Astral Sorcery's asset reload listener without forcing immediate texture preload during PreInit.";
+            case "gpom.agricraft.fastJsonIo":
+                return "Uses the AgriCraft exact-version fast JSON IO path while preserving parsed content.";
+            case "gpom.agricraft.fastResourceScan":
+                return "Avoids redundant AgriCraft resource scans when the same candidate set has already been resolved.";
+            case "gpom.agricraft.skipJsonWriteback":
+                return "Skips AgriCraft's startup rewrite of unchanged/default JSON files.";
+            case "gpom.openComputersSettingsCache":
+                return "Caches OpenComputers settings construction and invalidates on bundled/user config byte changes.";
+            case "gpom.openComputers.fastLuaSelection":
+                return "Avoids probing disabled Lua native backends before OpenComputers architecture registration.";
+            case "gpom.openComputersCallProfiler":
+                return "Enables targeted OpenComputers call timing probes for startup investigation.";
+            case "gpom.openComputersIntegrationProfiler":
+                return "Enables targeted OpenComputers integration timing probes for startup investigation.";
+            case "gpom.preInitClassPrewarm.enabled":
+                return "Starts the optional PreInit class prewarm sidecar for allowlisted mods.";
+            case "gpom.preInitClassPrewarm.allowlist":
+                return "Comma-separated mod ids allowed to prewarm classes; '*' allows every mod before other limits apply.";
+            case "gpom.preInitClassPrewarm.workers":
+                return "Number of sidecar class-prewarm workers. Values below 1 are clamped to 1.";
+            case "gpom.preInitClassPrewarm.deferMinCompletedHandlers":
+                return "Minimum completed PreInit handlers before the sidecar may begin deferred work.";
+            case "gpom.preInitClassPrewarm.deferUntilSerialMillis":
+                return "Minimum serial PreInit elapsed time before deferred class prewarming can start.";
+            case "gpom.preInitClassPrewarm.pauseDuringSerialHandlers":
+                return "Pauses sidecar prewarming while main-thread serial PreInit handlers are running.";
+            case "gpom.preInitClassPrewarm.pauseDuringBlockingWaits":
+                return "Pauses sidecar prewarming while the scheduler is blocked waiting for unsafe or serialized work.";
+            case "gpom.preInitClassPrewarm.maxClassesPerMod":
+                return "Maximum class names GPOM will consider per mod for prewarming.";
+            case "gpom.preInitClassPrewarm.chunkSize":
+                return "Number of class names processed per prewarm work chunk.";
+            case "gpom.preInitClassPrewarm.includeAnonClasses":
+                return "Includes anonymous and synthetic-looking classes in the prewarm candidate list.";
+            case "gpom.preInitClassPrewarm.extraPrefixes":
+                return "Extra prewarm package prefixes, formatted modid:internal/prefix|other/prefix;modid2:prefix.";
+            case "gpom.preInitClassPrewarm.noInitAllowlist":
+                return "Mod ids that use Class.forName(..., false) with the built-in no-static-init prefix table.";
+            case "gpom.preInitClassPrewarm.noInitPrefixes":
+                return "Extra no-static-init prefixes, formatted modid:internal/prefix|other/prefix;modid2:prefix.";
+            case "gpom.preInitClassPrewarm.initializeClasses":
+                return "Allows static initializers during explicit class prewarm. Risky; keep false unless testing a precise class list.";
+            case "gpom.preInitClassPrewarm.explicitClasses":
+                return "Explicit class names to prewarm, formatted modid:pkg.Class|other.Class;modid2:pkg.Class.";
+            case "gpom.gendustryConfigCache":
+                return "Caches Gendustry tuning/config parsing and invalidates when bundled or user config bytes change.";
+            case "gpom.gendustryCallProfiler":
+                return "Enables targeted Gendustry startup timing probes.";
+            case "gpom.erebus.deferComposterRegistry":
+                return "Defers Erebus composter registry materialization until first compostability query.";
+            case "gpom.erebus.deferOreConfigs":
+                return "Defers Erebus ore config enum materialization until an ore setting is first used.";
+            case "gpom.enderio.fastSpawnerEntityValidation":
+                return "Caches EnderIO powered-spawner XML entity validation during core recipe loading.";
+            case "gpom.crafttweaker.fastZenRegister":
+                return "Uses ASMData to register CraftTweaker ZenRegister classes without reflective annotation scans.";
+            case "gpom.preInitHighSinkCallProfiler":
+                return "Enables exact-version deep PreInit profilers for current high-sink mods.";
+            case "gpom.hei.recipeProgressBar.enabled":
+                return "Shows a coarse GPOM progress bar while HEI consumes parsed recipes into its registry.";
+            case "gpom.hei.recipeProgressBar.stepSize":
+                return "Number of HEI recipe registrations between progress updates.";
+            case "gpom.hei.searchWorkers":
+                return "Worker count for HEI search indexing. 0 lets GPOM choose an automatic bounded pool size.";
+            case "gpom.hei.parallelPluginRegistration.enabled":
+                return "Enables experimental worker dispatch for HEI IModPlugin.register calls that match the allowlist.";
+            case "gpom.hei.parallelPluginRegistration.workers":
+                return "Worker count for HEI plugin registration. 0 lets GPOM choose an automatic bounded pool size.";
+            case "gpom.hei.parallelPluginRegistration.allowlist":
+                return "Comma-separated HEI plugin class names allowed to register off-thread; '*' allows all before denylist filtering.";
+            case "gpom.hei.parallelPluginRegistration.denylist":
+                return "Comma-separated HEI plugin class names forced to register on the main thread; entries override the allowlist.";
+            case "gpom.hei.jerVillagerTradeCache.enabled":
+                return "Replaces JER's repeated random trade simulations with a reduced deterministic display cache.";
+            case "gpom.hei.jerVillagerTradeCache.samples":
+                return "Number of simulated villager-trade samples retained for JER display range approximation.";
+            case "gpom.hei.fastForestryBottler.enabled":
+                return "Uses Forestry's exact-version Bottler HEI fast path and skips redundant full-fluid-container fill loops.";
+            case "gpom.hei.forestryBottlerRecipeCache.enabled":
+                return "Persists Forestry Bottler HEI wrapper inputs/outputs and reuses them when item/fluid signatures match.";
+            case "gpom.hei.fastEnderIOTank.enabled":
+                return "Uses EnderIO's exact-version tank HEI fast path while preserving the full item list for mending recipes.";
+            case "gpom.hei.extraTreesLumbermillRecipeCache.enabled":
+                return "Persists ExtraTrees Lumbermill wrapper tuples and reuses them when item/recipe/log signatures match.";
+            case "gpom.hei.fastThermalTransposerContainers.enabled":
+                return "Uses Thermal Expansion's exact-version Transposer container fast builder and drawable reuse path.";
+            case "gpom.hei.thermalTransposerContainerCache.enabled":
+                return "Persists Thermal Transposer fill/drain wrapper lists and reuses them when container/fluid signatures match.";
+            default:
+                return "No description is available for this key; keep the default unless you are testing this option.";
+        }
+    }
+
     private static void applyEarlySystemProperties() {
+        copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.enabled");
+        copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.queueSize");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
         copySystemPropertyIfAbsent("gpom.railcraftLazyItemConditions");
         copySystemPropertyIfAbsent("gpom.railcraft.deferModuleIC2Containers");
@@ -576,6 +748,12 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.enderio.fastSpawnerEntityValidation");
         copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister");
         copySystemPropertyIfAbsent("gpom.preInitHighSinkCallProfiler");
+        copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
+        copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
+        copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
+        copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.enabled");
+        copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.maxEntries");
+        copySystemPropertyIfAbsent("gpom.loliasm.threadSafeStatefulRegistry");
     }
 
     private static void copySystemPropertyIfAbsent(String key) {
@@ -620,6 +798,14 @@ public final class GpomEarlyConfig {
 
     public static boolean cacheInfoLogsEnabled() {
         return gpomLoggingEnabled() && booleanValue("gpom.logging.cacheInfo.enabled");
+    }
+
+    public static boolean asyncProbeLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.logging.asyncProbeLogs.enabled");
+    }
+
+    public static int asyncProbeLogQueueSize() {
+        return intValue("gpom.logging.asyncProbeLogs.queueSize", 8192);
     }
 
     public static boolean startupProfilerLogsEnabled() {
@@ -684,8 +870,32 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.worldLoadingScreen.enabled");
     }
 
+    public static boolean worldLifecycleProfilerEnabled() {
+        return booleanValue("gpom.worldLifecycleProfiler.enabled");
+    }
+
+    public static boolean worldLifecycleProfilerForceGcBeforeSnapshots() {
+        return booleanValue("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
+    }
+
+    public static String worldLifecycleProfilerDelayedSnapshotMillis() {
+        return stringValue("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
+    }
+
+    public static boolean worldLifecycleProfilerDeepAttributionEnabled() {
+        return booleanValue("gpom.worldLifecycleProfiler.deepAttribution.enabled");
+    }
+
+    public static int worldLifecycleProfilerDeepAttributionMaxEntries() {
+        return intValue("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", 8);
+    }
+
     public static boolean mainMenuStartupTimeEnabled() {
         return booleanValue("gpom.mainMenuStartupTime.enabled");
+    }
+
+    public static boolean loliAsmThreadSafeStatefulRegistryEnabled() {
+        return booleanValue("gpom.loliasm.threadSafeStatefulRegistry");
     }
 
     public static boolean preInitClassPrewarmEnabled() {

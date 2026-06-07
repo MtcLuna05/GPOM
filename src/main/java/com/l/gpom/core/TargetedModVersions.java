@@ -460,6 +460,10 @@ public final class TargetedModVersions {
         return isClassFromSupportedJar(type, "libvulpes-0.5.1.jar");
     }
 
+    public static boolean isLoliAsmClass(String className) {
+        return isClassFromSupportedJar(className, "loliasm-5.31.jar");
+    }
+
     public static boolean isMantleClass(Class<?> type) {
         return isClassFromSupportedJar(type, "Mantle-1.12-1.3.3.55.jar");
     }

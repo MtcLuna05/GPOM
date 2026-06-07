@@ -18,12 +18,19 @@ import org.objectweb.asm.tree.MethodNode;
 
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class AoAStructureOptimizations {
     private static final boolean LAZY_STRUCTURES = Boolean.parseBoolean(System.getProperty("gpom.aoa3.lazyStructures", "true"));
     private static final ConcurrentHashMap<String, AoAStructure> DELEGATES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Class<?>, Method> BUILD_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Class<?>, Method> POST_BUILD_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Class<?>, Method> SPAWN_ENTITIES_METHODS = new ConcurrentHashMap<>();
+    private static volatile Field isWorldGenField;
     private static volatile boolean fallbackLogged;
 
     private AoAStructureOptimizations() {
@@ -115,6 +122,71 @@ public final class AoAStructureOptimizations {
         }
     }
 
+    private static void invokeStructureMethod(AoAStructure structure, String methodName, ConcurrentHashMap<Class<?>, Method> cache,
+                                              World world, Random random, BlockPos position) {
+        try {
+            structureMethod(structure.getClass(), methodName, cache).invoke(structure, world, random, position);
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new RuntimeException("Unable to run AoA3 structure build for " + structure.getClass().getName(), cause);
+        } catch (ReflectiveOperationException exception) {
+            throw new RuntimeException("Unable to run AoA3 structure build for " + structure.getClass().getName(), exception);
+        }
+    }
+
+    private static Method structureMethod(Class<?> type, String methodName, ConcurrentHashMap<Class<?>, Method> cache) {
+        Method existing = cache.get(type);
+        if (existing != null) {
+            return existing;
+        }
+        Class<?> current = type;
+        while (current != null && AoAStructure.class.isAssignableFrom(current)) {
+            try {
+                Method method = current.getDeclaredMethod(methodName, World.class, Random.class, BlockPos.class);
+                method.setAccessible(true);
+                Method previous = cache.putIfAbsent(type, method);
+                return previous == null ? method : previous;
+            } catch (NoSuchMethodException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        throw new IllegalStateException("Unable to find AoA3 structure " + methodName + " method for " + type.getName());
+    }
+
+    private static void copyWorldGenFlag(AoAStructure source, AoAStructure target) {
+        try {
+            boolean value = worldGenField().getBoolean(source);
+            worldGenField().setBoolean(target, value);
+        } catch (ReflectiveOperationException exception) {
+            throw new RuntimeException("Unable to copy AoA3 structure worldgen flag", exception);
+        }
+    }
+
+    private static void setWorldGenFlag(AoAStructure structure, boolean value) {
+        try {
+            worldGenField().setBoolean(structure, value);
+        } catch (ReflectiveOperationException exception) {
+            throw new RuntimeException("Unable to set AoA3 structure worldgen flag", exception);
+        }
+    }
+
+    private static Field worldGenField() throws NoSuchFieldException {
+        Field field = isWorldGenField;
+        if (field != null) {
+            return field;
+        }
+        field = AoAStructure.class.getDeclaredField("isWorldGen");
+        field.setAccessible(true);
+        isWorldGenField = field;
+        return field;
+    }
+
     private static final class LazyStructure extends AoAStructure {
         private final String className;
 
@@ -125,12 +197,36 @@ public final class AoAStructureOptimizations {
 
         @Override
         public boolean generate(World world, Random random, BlockPos position) {
-            return delegate().generate(world, random, position);
+            boolean worldGen = random != null;
+            Random effectiveRandom = worldGen ? random : new Random();
+            setWorldGenFlag(this, worldGen);
+            AoAStructure structure = delegate();
+            setWorldGenFlag(structure, worldGen);
+            invokeStructureMethod(structure, "build", BUILD_METHODS, world, effectiveRandom, new BlockPos.MutableBlockPos(position));
+            invokeStructureMethod(structure, "doPostBuildOps", POST_BUILD_METHODS, world, effectiveRandom, position);
+            invokeStructureMethod(structure, "spawnEntities", SPAWN_ENTITIES_METHODS, world, effectiveRandom, position);
+            return true;
         }
 
         @Override
         protected void build(World world, Random random, BlockPos position) {
-            delegate().generate(world, random, position);
+            AoAStructure structure = delegate();
+            copyWorldGenFlag(this, structure);
+            invokeStructureMethod(structure, "build", BUILD_METHODS, world, random, position);
+        }
+
+        @Override
+        protected void doPostBuildOps(World world, Random random, BlockPos position) {
+            AoAStructure structure = delegate();
+            copyWorldGenFlag(this, structure);
+            invokeStructureMethod(structure, "doPostBuildOps", POST_BUILD_METHODS, world, random, position);
+        }
+
+        @Override
+        protected void spawnEntities(World world, Random random, BlockPos position) {
+            AoAStructure structure = delegate();
+            copyWorldGenFlag(this, structure);
+            invokeStructureMethod(structure, "spawnEntities", SPAWN_ENTITIES_METHODS, world, random, position);
         }
 
         private AoAStructure delegate() {

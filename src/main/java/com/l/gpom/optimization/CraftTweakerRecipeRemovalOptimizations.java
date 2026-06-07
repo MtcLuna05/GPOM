@@ -41,6 +41,8 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static volatile Method craftTweakerOreDictMethod;
     private static volatile Method recipeOutputMethod;
     private static volatile Method recipeIngredientsMethod;
+    private static volatile Method itemStackIsEmptyMethod;
+    private static volatile Method itemStackGetItemMethod;
     private static volatile RecipeIndex recipeIndex;
     private static volatile boolean fallbackLogged;
 
@@ -521,6 +523,32 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         return method;
     }
 
+    private static Method itemStackIsEmptyMethod() {
+        Method method = itemStackIsEmptyMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(ItemStack.class, "func_190926_b");
+        if (method == null) {
+            method = findMethod(ItemStack.class, "isEmpty");
+        }
+        itemStackIsEmptyMethod = method;
+        return method;
+    }
+
+    private static Method itemStackGetItemMethod() {
+        Method method = itemStackGetItemMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(ItemStack.class, "func_77973_b");
+        if (method == null) {
+            method = findMethod(ItemStack.class, "getItem");
+        }
+        itemStackGetItemMethod = method;
+        return method;
+    }
+
     private static boolean invokeBoolean(Method method, Object target, Object argument) {
         if (method == null || target == null) {
             return false;
@@ -711,11 +739,33 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     }
 
     private static boolean isEmpty(ItemStack stack) {
-        return stack == null || stack.isEmpty();
+        if (stack == null || stack == ItemStack.EMPTY) {
+            return true;
+        }
+        try {
+            Method method = itemStackIsEmptyMethod();
+            if (method != null) {
+                Object value = method.invoke(stack);
+                if (value instanceof Boolean) {
+                    return (Boolean) value;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return item(stack) == null;
     }
 
     private static Item item(ItemStack stack) {
-        return isEmpty(stack) ? null : stack.getItem();
+        if (stack == null || stack == ItemStack.EMPTY) {
+            return null;
+        }
+        try {
+            Method method = itemStackGetItemMethod();
+            Object value = method == null ? null : method.invoke(stack);
+            return value instanceof Item ? (Item) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static void logInfo(String message) {

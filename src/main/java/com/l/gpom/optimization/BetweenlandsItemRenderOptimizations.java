@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.client.ClientAccess;
 import com.l.gpom.core.TargetedModVersions;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GlStateManager;
@@ -429,7 +430,7 @@ public final class BetweenlandsItemRenderOptimizations {
 
     private static World clientWorld() {
         try {
-            Minecraft minecraft = Minecraft.getMinecraft();
+            Minecraft minecraft = ClientAccess.minecraft();
             if (minecraft == null) {
                 return null;
             }

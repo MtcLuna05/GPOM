@@ -1,5 +1,6 @@
 package com.l.gpom.mixin.astralsorcery;
 
+import com.l.gpom.client.ClientAccess;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import org.spongepowered.asm.mixin.Mixin;
@@ -15,12 +16,12 @@ public abstract class MixinAstralSorceryClientConnectionEventHandler {
 
     @Inject(method = "onDc", at = @At("HEAD"), cancellable = true, require = 0)
     private void gpom$runDisconnectCleanupOnClientThread(FMLNetworkEvent.ClientDisconnectionFromServerEvent event, CallbackInfo ci) {
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft == null || minecraft.isCallingFromMinecraftThread()) {
+        Minecraft minecraft = ClientAccess.minecraft();
+        if (minecraft == null || ClientAccess.isMinecraftThread(minecraft)) {
             return;
         }
 
         ci.cancel();
-        minecraft.addScheduledTask(() -> onDc(event));
+        ClientAccess.schedule(minecraft, () -> onDc(event));
     }
 }

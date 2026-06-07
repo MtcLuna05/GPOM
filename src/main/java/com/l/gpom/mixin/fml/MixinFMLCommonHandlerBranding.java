@@ -2,7 +2,6 @@ package com.l.gpom.mixin.fml;
 
 import com.google.common.collect.ImmutableList;
 import com.l.gpom.Reference;
-import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -24,6 +23,6 @@ public abstract class MixinFMLCommonHandlerBranding {
             remap = false
     )
     private void gpom$addBranding(CallbackInfo ci, ImmutableList.Builder<String> builder) {
-        builder.add(Reference.MOD_ID.toUpperCase() + " " + Reference.VERSION + " (" + StartupProfiler.startupBrandingText() + ")");
+        builder.add(Reference.MOD_ID.toUpperCase() + " " + Reference.VERSION);
     }
 }
