@@ -97,6 +97,24 @@ public final class WorldLoadingProgress {
         update("Receiving terrain", "Waiting for initial chunks", 88);
     }
 
+    public static void beginLeaving(String message) {
+        if (!enabled()) {
+            return;
+        }
+        active = true;
+        title = "Leaving world";
+        worldName = "";
+        stage = "Saving and disconnecting";
+        detail = clean(message);
+        if (detail.isEmpty()) {
+            detail = "Returning to main menu";
+        }
+        progress = -1;
+        startedAt = System.nanoTime();
+        firstFrameLogged = false;
+        GPOM.LOGGER.info("[WorldLoadingScreen] Started world leave overlay ({})", detail);
+    }
+
     public static void update(String newStage, String newDetail, int newProgress) {
         if (!enabled() || !active) {
             return;

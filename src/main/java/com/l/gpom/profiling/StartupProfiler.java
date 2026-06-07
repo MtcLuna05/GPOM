@@ -60,6 +60,7 @@ public final class StartupProfiler {
     private static final ThreadLocal<Integer> ACTIVE_PROGRESS_DEPTH = ThreadLocal.withInitial(() -> 0);
     private static String activePhase;
     private static long activePhaseStartedAt;
+    private static volatile long mainMenuReachedAt;
     private static int resourceReloadSequence;
 
     private StartupProfiler() {
@@ -216,6 +217,37 @@ public final class StartupProfiler {
         GPOM.LOGGER.info("[StartupProfiler] [Boot] {} at {} ms since GPOM core init",
                 label,
                 formatMillis(System.nanoTime() - BOOT_STARTED_AT));
+    }
+
+    public static void markMainMenuReached(String screenName) {
+        if (!ENABLED || mainMenuReachedAt != 0L) {
+            return;
+        }
+        mainMenuReachedAt = System.nanoTime();
+        if (BOOT_LOGS_ENABLED) {
+            GPOM.LOGGER.info("[StartupProfiler] Main menu reached after {} ms ({})",
+                    formatMillis(mainMenuReachedAt - BOOT_STARTED_AT),
+                    screenName == null ? "<unknown>" : screenName);
+        }
+    }
+
+    public static String mainMenuStartupTimeText() {
+        long reachedAt = mainMenuReachedAt;
+        long elapsed = (reachedAt == 0L ? System.nanoTime() : reachedAt) - BOOT_STARTED_AT;
+        return "GPOM last startup: " + formatSeconds(elapsed);
+    }
+
+    public static String startupBrandingText() {
+        long reachedAt = mainMenuReachedAt;
+        if (reachedAt == 0L) {
+            markMainMenuReached("FML branding");
+            reachedAt = mainMenuReachedAt;
+            if (reachedAt == 0L) {
+                reachedAt = System.nanoTime();
+            }
+        }
+        long millis = Math.max(0L, Math.round((reachedAt - BOOT_STARTED_AT) / 1_000_000.0D));
+        return "Startup: " + millis + "ms";
     }
 
     public static void endProbe(String probeName, long startedAt) {
@@ -825,6 +857,10 @@ public final class StartupProfiler {
 
     private static String formatMillis(long nanos) {
         return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0D);
+    }
+
+    private static String formatSeconds(long nanos) {
+        return String.format(Locale.ROOT, "%.3f s", nanos / 1_000_000_000.0D);
     }
 
     private static String formatMib(long bytes) {

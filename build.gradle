@@ -32,12 +32,35 @@ repositories {
     maven {
         url = 'https://maven.cleanroommc.com/releases'
     }
+    maven {
+        url = 'https://modmaven.dev/'
+    }
+    maven {
+        url = 'https://cursemaven.com'
+        content {
+            includeGroup 'curse.maven'
+        }
+    }
 }
 
 dependencies {
-    compileOnly localModJar('AoA3-3.3.6.jar')
-    compileOnly localModJar('EnderCore-1.12.2-0.5.78.jar')
-    compileOnly localModJar('EnderIO-1.12.2-5.3.72.jar')
+    compileOnly modJarDependency('AoA3-3.3.6.jar', 'curse.maven:advent-of-ascension-nevermine-311054:3054253')
+    compileOnly modJarDependency('EnderCore-1.12.2-0.5.78.jar', 'com.enderio.core:EnderCore:1.12.2-0.5.78')
+    compileOnly modJarDependency('EnderIO-1.12.2-5.3.72.jar', 'com.enderio:EnderIO:1.12.2-5.3.72')
+}
+
+def modJarDependency(String fileName, String fallbackNotation) {
+    if (!project.findProperty('gpom_use_remote_mod_deps')?.toString()?.toBoolean()) {
+        def jarFile = localModJar(fileName)
+        if (jarFile != null) {
+            return files(jarFile)
+        }
+    }
+    def dependency = dependencies.create(fallbackNotation)
+    if (dependency.hasProperty('transitive')) {
+        dependency.transitive = false
+    }
+    return dependency
 }
 
 def localModJar(String fileName) {
@@ -53,10 +76,7 @@ def localModJar(String fileName) {
     }
 
     def jarFile = file("${configuredMinecraftDir}/mods/${fileName}")
-    if (!jarFile.isFile()) {
-        throw new GradleException("Missing compile-only mod jar '${fileName}'. Set -Pmeatball_minecraft_dir=/path/to/minecraft or MEATBALL_MINECRAFT_DIR=/path/to/minecraft.")
-    }
-    return files(jarFile)
+    return jarFile.isFile() ? jarFile : null
 }
 
 unimined.minecraft {

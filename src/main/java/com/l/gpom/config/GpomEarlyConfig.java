@@ -82,6 +82,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "false");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "Minecraft");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "false");
+        DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleIC2Containers", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleContainers", "false");
@@ -115,6 +116,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.gendustryCallProfiler", "false");
         DEFAULTS.setProperty("gpom.erebus.deferComposterRegistry", "true");
         DEFAULTS.setProperty("gpom.erebus.deferOreConfigs", "true");
+        DEFAULTS.setProperty("gpom.enderio.fastSpawnerEntityValidation", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "true");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.enabled", "true");
@@ -413,6 +415,8 @@ public final class GpomEarlyConfig {
         writer.println("# World loading screen: passive/fail-closed overlay for the blank/early-0% world join wait.");
         writer.println("# Shipped default is disabled until pack-specific world-entry validation is clean.");
         writeProperty(writer, "gpom.worldLoadingScreen.enabled");
+        writer.println("# Main menu startup time: draws the last startup duration on vanilla or CustomMainMenu screens.");
+        writeProperty(writer, "gpom.mainMenuStartupTime.enabled");
         writer.println();
 
         writer.println("# Railcraft startup deferrals: exact-version options for Railcraft 12.1.0-beta-8.");
@@ -466,6 +470,8 @@ public final class GpomEarlyConfig {
         writeProperty(writer, "gpom.erebus.deferComposterRegistry");
         writer.println("# Erebus: defer ore config enum materialization until first ore-setting use.");
         writeProperty(writer, "gpom.erebus.deferOreConfigs");
+        writer.println("# EnderIO: cache powered-spawner XML entity validation during core recipe loading.");
+        writeProperty(writer, "gpom.enderio.fastSpawnerEntityValidation");
         writer.println("# CraftTweaker: use ASMData to register ZenRegister classes without scanning class annotations reflectively.");
         writeProperty(writer, "gpom.crafttweaker.fastZenRegister");
         writeProperty(writer, "gpom.preInitHighSinkCallProfiler");
@@ -567,6 +573,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.gendustryCallProfiler");
         copySystemPropertyIfAbsent("gpom.erebus.deferComposterRegistry");
         copySystemPropertyIfAbsent("gpom.erebus.deferOreConfigs");
+        copySystemPropertyIfAbsent("gpom.enderio.fastSpawnerEntityValidation");
         copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister");
         copySystemPropertyIfAbsent("gpom.preInitHighSinkCallProfiler");
     }
@@ -675,6 +682,10 @@ public final class GpomEarlyConfig {
 
     public static boolean worldLoadingScreenEnabled() {
         return booleanValue("gpom.worldLoadingScreen.enabled");
+    }
+
+    public static boolean mainMenuStartupTimeEnabled() {
+        return booleanValue("gpom.mainMenuStartupTime.enabled");
     }
 
     public static boolean preInitClassPrewarmEnabled() {

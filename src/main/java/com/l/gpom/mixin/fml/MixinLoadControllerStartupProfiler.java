@@ -155,12 +155,16 @@ public abstract class MixinLoadControllerStartupProfiler {
             return;
         }
         try {
-            while (progress.getStep() < progress.getSteps()) {
+            for (int guard = 0; guard <= gpom$phaseTransitionSteps && progress.getStep() < progress.getSteps(); guard++) {
                 progress.step("Starting phase");
             }
+        } catch (Throwable ignored) {
+        }
+        try {
             ProgressManager.pop(progress);
         } catch (Throwable ignored) {
         }
+        EarlySplashWindow.setPhaseProgress("Forge phase starting", 0, 0);
     }
 
     @Unique

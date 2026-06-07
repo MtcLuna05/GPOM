@@ -41,6 +41,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.InitPhaseDeepProfilerTransformer",
                 "com.l.gpom.core.ForcedResourceReloadTransformer",
                 "com.l.gpom.core.BetweenlandsItemRendererTransformer",
+                "com.l.gpom.core.CustomMainMenuStartupOverlayTransformer",
                 "com.l.gpom.core.RenderLibCompatibilityTransformer",
                 "com.l.gpom.core.LibVulpesCompatibilityTransformer",
                 "com.l.gpom.core.LogSpamTransformer"

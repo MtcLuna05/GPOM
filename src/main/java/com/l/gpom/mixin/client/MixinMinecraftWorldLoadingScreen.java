@@ -4,6 +4,7 @@ import com.l.gpom.client.WorldLoadingProgress;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDownloadTerrain;
+import net.minecraft.client.gui.GuiMainMenu;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiScreenWorking;
 import net.minecraft.client.multiplayer.WorldClient;
@@ -71,11 +72,16 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadWorldStarted(WorldClient worldClient, String message, CallbackInfo ci) {
-        if (!WorldLoadingProgress.isActive()) {
+        if (worldClient == null) {
+            if (!WorldLoadingProgress.isActive()) {
+                WorldLoadingProgress.beginLeaving(message);
+            }
+            gpom$drawImmediate("Closing previous world", "Clearing old client world", 18);
             return;
         }
-        if (worldClient == null) {
-            gpom$drawImmediate("Closing previous world", "Clearing old client world", 18);
+
+        if (!WorldLoadingProgress.isActive()) {
+            return;
         } else {
             gpom$drawImmediate("Creating client world", "Binding world renderer and particle systems", 72);
         }
@@ -130,6 +136,12 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$observeWorldLoadingScreenChange(GuiScreen screen, CallbackInfo ci) {
+        if (gpom$isMainMenuScreen(screen) && WorldLoadingProgress.isActive()) {
+            gpom$drawImmediate("Returning to menu", "Main menu ready", 100);
+            WorldLoadingProgress.finish("main menu displayed");
+            return;
+        }
+
         if (WorldLoadingProgress.isActive() && gpom$isVanillaWorldLoadingScreen(screen)) {
             gpom$drawImmediate("Loading world", "Preparing client handoff", -1);
             return;
@@ -173,6 +185,13 @@ public abstract class MixinMinecraftWorldLoadingScreen {
 
     private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {
         return screen instanceof GuiDownloadTerrain || screen instanceof GuiScreenWorking;
+    }
+
+    private boolean gpom$isMainMenuScreen(GuiScreen screen) {
+        if (screen instanceof GuiMainMenu) {
+            return true;
+        }
+        return screen != null && screen.getClass().getName().equals("lumien.custommainmenu.gui.GuiCustom");
     }
 
     private static boolean gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {

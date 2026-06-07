@@ -45,6 +45,7 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
     private static final boolean ENDERIO_IMC_CALL_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.enderioImcCallProfiler", "false"));
     private static final boolean ENDERIO_ALLOY_CALL_DETAIL = Boolean.parseBoolean(System.getProperty("gpom.enderioAlloyCallProfiler", "false"));
     private static final boolean ENDERIO_FAST_ALLOY_LOOKUP = Boolean.parseBoolean(System.getProperty("gpom.enderio.fastAlloyLookup", "true"));
+    private static final boolean ENDERIO_FAST_SPAWNER_ENTITY_VALIDATION = Boolean.parseBoolean(System.getProperty("gpom.enderio.fastSpawnerEntityValidation", "true"));
     private static final boolean CRAFTTWEAKER_FAST_RECIPE_REMOVAL = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastRecipeRemoval", "true"));
     private static final boolean CRAFTTWEAKER_FAST_ZEN_REGISTER = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastZenRegister", "false"));
     private static final boolean THERMAL_EXPANSION_FAST_SAWMILL_CRAFTING_RESULT = Boolean.parseBoolean(System.getProperty("gpom.thermalexpansion.fastSawmillCraftingResult", "true"));
@@ -118,6 +119,16 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 && "crazypants.enderio.base.recipe.alloysmelter.AlloyRecipeManager".equals(className)
                 && TargetedModVersions.isEnderIOClass(className)) {
             basicClass = patchEnderIOAlloyLookup(basicClass);
+        }
+        if (ENDERIO_FAST_SPAWNER_ENTITY_VALIDATION
+                && "crazypants.enderio.base.config.recipes.xml.Entity".equals(className)
+                && TargetedModVersions.isEnderIOClass(className)) {
+            basicClass = patchEnderIOSpawnerEntityValidation(basicClass);
+        }
+        if (ENDERIO_FAST_SPAWNER_ENTITY_VALIDATION
+                && "crazypants.enderio.base.recipe.spawner.EntityDataRegistry".equals(className)
+                && TargetedModVersions.isEnderIOClass(className)) {
+            basicClass = patchEnderIOSpawnerEntityDataRegistry(basicClass);
         }
         if (CRAFTTWEAKER_FAST_RECIPE_REMOVAL
                 && isCraftTweakerRecipeRemovalAction(className)
@@ -1039,6 +1050,127 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 || "crafttweaker.mc1120.recipes.MCRecipeManager$ActionRemoveRecipesNoIngredients".equals(className);
     }
 
+    private static byte[] patchEnderIOSpawnerEntityValidation(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("isValid".equals(method.name) && "()Z".equals(method.desc)) {
+                    InsnList instructions = new InsnList();
+                    instructions.add(new org.objectweb.asm.tree.VarInsnNode(Opcodes.ALOAD, 0));
+                    instructions.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/EnderIOSpawnerRecipeOptimizations",
+                            "isEntityValid",
+                            "(Lcrazypants/enderio/base/config/recipes/xml/Entity;)Z",
+                            false
+                    ));
+                    instructions.add(new InsnNode(Opcodes.IRETURN));
+                    replaceMethod(method, instructions, 1, 1);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static byte[] patchEnderIOSpawnerEntityDataRegistry(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("getByIdentity".equals(method.name)
+                        && "(Ljava/lang/Object;)Lcrazypants/enderio/base/recipe/spawner/EntityDataRegistry$Entry;".equals(method.desc)) {
+                    replaceMethod(method, enderIOGetByIdentityLoop(), 4, 2);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static InsnList enderIOGetByIdentityLoop() {
+        org.objectweb.asm.tree.LabelNode loop = new org.objectweb.asm.tree.LabelNode();
+        org.objectweb.asm.tree.LabelNode miss = new org.objectweb.asm.tree.LabelNode();
+        InsnList instructions = new InsnList();
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        instructions.add(new FieldInsnNode(
+                Opcodes.GETFIELD,
+                "crazypants/enderio/base/recipe/spawner/EntityDataRegistry",
+                "entries",
+                "Lcom/enderio/core/common/util/NNList;"
+        ));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL,
+                "com/enderio/core/common/util/NNList",
+                "iterator",
+                "()Lcom/enderio/core/common/util/NNList$NNIterator;",
+                false
+        ));
+        instructions.add(new VarInsnNode(Opcodes.ASTORE, 2));
+        instructions.add(loop);
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKEINTERFACE,
+                "java/util/Iterator",
+                "hasNext",
+                "()Z",
+                true
+        ));
+        instructions.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFEQ, miss));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKEINTERFACE,
+                "java/util/Iterator",
+                "next",
+                "()Ljava/lang/Object;",
+                true
+        ));
+        instructions.add(new org.objectweb.asm.tree.TypeInsnNode(
+                Opcodes.CHECKCAST,
+                "crazypants/enderio/base/recipe/spawner/EntityDataRegistry$Entry"
+        ));
+        instructions.add(new VarInsnNode(Opcodes.ASTORE, 3));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        instructions.add(new FieldInsnNode(
+                Opcodes.GETFIELD,
+                "crazypants/enderio/base/recipe/spawner/EntityDataRegistry$Entry",
+                "identity",
+                "Ljava/lang/Object;"
+        ));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKEVIRTUAL,
+                "java/lang/Object",
+                "equals",
+                "(Ljava/lang/Object;)Z",
+                false
+        ));
+        instructions.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFEQ, loop));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        instructions.add(miss);
+        instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return instructions;
+    }
+
     private static byte[] patchCraftTweakerRecipeRemovalAction(byte[] basicClass, String className) {
         try {
             ClassNode node = new ClassNode();
@@ -1777,6 +1909,9 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         add(targets, ModTarget.RFTOOLS, "mcjty.rftools.items.ModItems", "<clinit>", "<init>", "init");
         add(targets, ModTarget.RFTOOLS, "mcjty.rftools.blocks.ModBlocks", "<clinit>", "<init>", "init");
         add(targets, ModTarget.RFTOOLS, "mcjty.rftools.world.ModWorldgen", "<clinit>", "<init>", "init");
+
+        add(targets, ModTarget.ENDERIO, "crazypants.enderio.base.config.recipes.xml.Entity", "isValid");
+        add(targets, ModTarget.ENDERIO, "crazypants.enderio.base.recipe.spawner.EntityDataRegistry", "getByIdentity");
 
         if (ENDERIO_IMC_DETAIL) {
             add(targets, ModTarget.ENDERIO, "crazypants.enderio.base.EnderIO",

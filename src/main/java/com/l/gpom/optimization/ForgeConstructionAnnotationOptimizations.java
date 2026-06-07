@@ -235,7 +235,7 @@ public final class ForgeConstructionAnnotationOptimizations {
                 long registerStartedAt = StartupProfiler.beginAutomaticSubscriberProbe();
                 try {
                     EventBus eventBus = MinecraftForge.EVENT_BUS;
-                    List<SubscriberHandlerSpec> handlerSpecs = handlerSpecsFor(className, subscriberClass, loader);
+                    List<SubscriberHandlerSpec> handlerSpecs = handlerSpecsFor(className, subscriberClass, loader, side);
                     FmlConstructionSafety.subscriberRegistration(
                             "automatic subscriber register " + mod.getModId() + " " + className,
                             () -> {
@@ -366,7 +366,8 @@ public final class ForgeConstructionAnnotationOptimizations {
 
     private static List<SubscriberHandlerSpec> handlerSpecsFor(String subscriberClassName,
                                                                Class<?> subscriberClass,
-                                                               ClassLoader loader) {
+                                                               ClassLoader loader,
+                                                               Side side) {
         String resourceName = subscriberClassName.replace('.', '/') + ".class";
         InputStream classStream = loader.getResourceAsStream(resourceName);
         if (classStream == null) {
@@ -389,48 +390,69 @@ public final class ForgeConstructionAnnotationOptimizations {
                                                  String signature,
                                                  String[] exceptions) {
                     return new MethodVisitor(Opcodes.ASM9) {
+                        private boolean subscribeEvent;
+                        private EventPriority priority = EventPriority.NORMAL;
+                        private boolean receiveCanceled;
+                        private Side methodSide;
+
                         @Override
                         public AnnotationVisitor visitAnnotation(String annotationDescriptor, boolean visible) {
-                            if (!"Lnet/minecraftforge/fml/common/eventhandler/SubscribeEvent;".equals(annotationDescriptor)) {
-                                return null;
+                            if ("Lnet/minecraftforge/fml/relauncher/SideOnly;".equals(annotationDescriptor)) {
+                                return new AnnotationVisitor(Opcodes.ASM9) {
+                                    @Override
+                                    public void visitEnum(String annotationName, String enumDescriptor, String value) {
+                                        if ("value".equals(annotationName)) {
+                                            methodSide = Side.valueOf(value);
+                                        }
+                                    }
+                                };
                             }
-                            return new AnnotationVisitor(Opcodes.ASM9) {
-                                private EventPriority priority = EventPriority.NORMAL;
-                                private boolean receiveCanceled;
 
-                                @Override
-                                public void visit(String annotationName, Object value) {
-                                    if ("receiveCanceled".equals(annotationName) && value instanceof Boolean) {
-                                        receiveCanceled = (Boolean) value;
+                            if ("Lnet/minecraftforge/fml/common/eventhandler/SubscribeEvent;".equals(annotationDescriptor)) {
+                                subscribeEvent = true;
+                                return new AnnotationVisitor(Opcodes.ASM9) {
+                                    @Override
+                                    public void visit(String annotationName, Object value) {
+                                        if ("receiveCanceled".equals(annotationName) && value instanceof Boolean) {
+                                            receiveCanceled = (Boolean) value;
+                                        }
                                     }
-                                }
 
-                                @Override
-                                public void visitEnum(String annotationName, String enumDescriptor, String value) {
-                                    if ("priority".equals(annotationName)) {
-                                        priority = EventPriority.valueOf(value);
+                                    @Override
+                                    public void visitEnum(String annotationName, String enumDescriptor, String value) {
+                                        if ("priority".equals(annotationName)) {
+                                            priority = EventPriority.valueOf(value);
+                                        }
                                     }
-                                }
+                                };
+                            }
 
-                                @Override
-                                public void visitEnd() {
-                                    SubscriberHandlerSpec spec = SubscriberHandlerSpec.fromBytecode(
-                                            subscriberClassName,
-                                            name,
-                                            descriptor,
-                                            signature,
-                                            access,
-                                            priority,
-                                            receiveCanceled,
-                                            loader
-                                    );
-                                    if (spec == null) {
-                                        needsForgeFallback[0] = true;
-                                    } else {
-                                        specs.add(spec);
-                                    }
-                                }
-                            };
+                            return null;
+                        }
+
+                        @Override
+                        public void visitEnd() {
+                            if (!subscribeEvent) {
+                                return;
+                            }
+                            if (methodSide != null && methodSide != side) {
+                                return;
+                            }
+                            SubscriberHandlerSpec spec = SubscriberHandlerSpec.fromBytecode(
+                                    subscriberClassName,
+                                    name,
+                                    descriptor,
+                                    signature,
+                                    access,
+                                    priority,
+                                    receiveCanceled,
+                                    loader
+                            );
+                            if (spec == null) {
+                                needsForgeFallback[0] = true;
+                            } else {
+                                specs.add(spec);
+                            }
                         }
                     };
                 }
@@ -449,7 +471,6 @@ public final class ForgeConstructionAnnotationOptimizations {
             return Collections.emptyList();
         }
     }
-
     @SuppressWarnings("unchecked")
     private static boolean tryRegisterLazyStaticSubscriber(EventBus eventBus,
                                                            ModContainer owner,
@@ -983,15 +1004,45 @@ public final class ForgeConstructionAnnotationOptimizations {
             } catch (NoSuchMethodException ignored) {
             }
 
+            Method method = findCompatibleSubscriberMethod(subscriberClass.getDeclaredMethods());
+            if (method != null) {
+                return method;
+            }
+
+            method = findCompatibleSubscriberMethod(subscriberClass.getMethods());
+            if (method != null) {
+                return method;
+            }
+
+            throw new NoSuchMethodException(subscriberClass.getName() + '#' + spec.methodName + '(' + spec.eventType.getName() + ')');
+        }
+
+        private Method findCompatibleSubscriberMethod(Method[] methods) {
             Method sameNamedFallback = null;
-            for (Method method : subscriberClass.getDeclaredMethods()) {
-                if (!spec.methodName.equals(method.getName())
-                        || method.getParameterTypes().length != 1
-                        || !Modifier.isStatic(method.getModifiers())) {
+            Method uniqueSameNamedFallback = null;
+            int sameNamedCandidates = 0;
+            for (Method method : methods) {
+                if (!spec.methodName.equals(method.getName()) || !Modifier.isStatic(method.getModifiers())) {
                     continue;
                 }
 
-                Class<?> parameterType = method.getParameterTypes()[0];
+                Class<?>[] parameterTypes;
+                try {
+                    parameterTypes = method.getParameterTypes();
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (parameterTypes.length != 1) {
+                    continue;
+                }
+
+                sameNamedCandidates++;
+                if (uniqueSameNamedFallback == null) {
+                    uniqueSameNamedFallback = method;
+                }
+
+                Class<?> parameterType = parameterTypes[0];
                 if (parameterType == spec.eventType
                         || parameterType.isAssignableFrom(spec.eventType)
                         || spec.eventType.isAssignableFrom(parameterType)
@@ -1007,7 +1058,10 @@ public final class ForgeConstructionAnnotationOptimizations {
             if (sameNamedFallback != null) {
                 return sameNamedFallback;
             }
-            throw new NoSuchMethodException(subscriberClass.getName() + '#' + spec.methodName + '(' + spec.eventType.getName() + ')');
+
+            // Some 1.12 coremod stacks expose classloader edge cases where Event assignability
+            // fails even though the bytecode annotation points at the only same-name subscriber.
+            return sameNamedCandidates == 1 ? uniqueSameNamedFallback : null;
         }
 
         @Override
