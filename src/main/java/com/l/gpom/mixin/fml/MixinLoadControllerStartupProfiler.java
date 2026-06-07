@@ -155,6 +155,9 @@ public abstract class MixinLoadControllerStartupProfiler {
             return;
         }
         try {
+            while (progress.getStep() < progress.getSteps()) {
+                progress.step("Starting phase");
+            }
             ProgressManager.pop(progress);
         } catch (Throwable ignored) {
         }
