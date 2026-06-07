@@ -1,0 +1,33 @@
+{
+  "required": false,
+  "package": "com.l.gpom.mixin",
+  "compatibilityLevel": "JAVA_8",
+  "refmap": "gpom.refmap.json",
+  "mixins": [
+    "fml.MixinAutomaticEventSubscriberStartupProfiler",
+    "fml.MixinASMDataTableAnnotationCache",
+    "fml.MixinEventBusStartupProfiler",
+    "fml.MixinFMLContainerConstructionProfiler",
+    "fml.MixinFMLCommonHandlerBranding",
+    "fml.MixinFMLModContainerStartupProfiler",
+    "fml.MixinForgeModContainerConstructionProfiler",
+    "fml.MixinLoadControllerStartupProfiler"
+  ],
+  "client": [
+    "client.MixinMinecraftMainStartupProfiler",
+    "client.MixinMinecraftWorldLoadingScreen",
+    "client.MixinLoadingScreenRendererWorldLoading",
+    "client.MixinGuiDownloadTerrainWorldLoading",
+    "client.MixinGuiScreenWorkingWorldLoading",
+    "client.resources.MixinMinecraftResourceStartupProfiler",
+    "client.resources.MixinSimpleReloadableResourceManagerStartupProfiler",
+    "client.resources.MixinTextureMapStartupProfiler",
+    "client.model.MixinModelManagerStartupProfiler",
+    "client.model.MixinModelLoaderStartupProfiler",
+    "client.render.MixinRenderGlobalLifecycleCleanup",
+    "client.render.MixinRenderChunkLifecycleCleanup",
+    "client.sound.MixinSoundManagerResourceCleanup"
+  ],
+  "server": [],
+  "minVersion": "0.8"
+}

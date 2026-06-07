@@ -4,6 +4,18 @@ out/
 .idea/workspace.xml
 .idea/tasks.xml
 .idea/shelf/
+.idea/*
+!.idea/.gitignore
 *.iml
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
+run/
+
+# Local launch/test artifacts.
+/META-INF/
+/mcmod.info
+/docs/GPOM_CHAT_RESUME_STATE.json
+*.log
+hs_err_pid*.log
+replay_pid*.log
