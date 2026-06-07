@@ -48,11 +48,15 @@ public final class EarlySplashWindow {
             return;
         }
         if (GraphicsEnvironment.isHeadless()) {
-            LOGGER.info("[EarlySplash] Disabled because the JVM is headless");
+            if (logsEnabled()) {
+                LOGGER.info("[EarlySplash] Disabled because the JVM is headless");
+            }
             return;
         }
         if (System.getenv("DISPLAY") == null && System.getenv("WAYLAND_DISPLAY") == null) {
-            LOGGER.info("[EarlySplash] Disabled because no graphical display environment is present");
+            if (logsEnabled()) {
+                LOGGER.info("[EarlySplash] Disabled because no graphical display environment is present");
+            }
             return;
         }
         if (!STARTED.compareAndSet(false, true)) {
@@ -106,7 +110,9 @@ public final class EarlySplashWindow {
                 snapshot.frame.dispose();
                 ui = null;
             }
-            LOGGER.info("[EarlySplash] Closed AWT progress window: {}", status);
+            if (logsEnabled()) {
+                LOGGER.info("[EarlySplash] Closed AWT progress window: {}", status);
+            }
         });
     }
 
@@ -133,11 +139,19 @@ public final class EarlySplashWindow {
 
             ui = new UiState(frame, panel, timer);
             applySnapshot();
-            LOGGER.info("[EarlySplash] Shown AWT progress window");
+            if (logsEnabled()) {
+                LOGGER.info("[EarlySplash] Shown AWT progress window");
+            }
         } catch (Throwable throwable) {
-            LOGGER.warn("[EarlySplash] Disabled after AWT startup failure", throwable);
+            if (logsEnabled()) {
+                LOGGER.warn("[EarlySplash] Disabled after AWT startup failure", throwable);
+            }
             CLOSED.set(true);
         }
+    }
+
+    private static boolean logsEnabled() {
+        return GpomEarlyConfig.gpomLoggingEnabled();
     }
 
     private static void queueUpdate() {

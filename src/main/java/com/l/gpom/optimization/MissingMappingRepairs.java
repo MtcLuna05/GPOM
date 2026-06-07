@@ -65,7 +65,9 @@ public final class MissingMappingRepairs {
     public static void onMissingBlockMappings(RegistryEvent.MissingMappings<Block> event) {
         for (RegistryEvent.MissingMappings.Mapping<Block> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
-            if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
+            if (isMysticalLibAoAGrass(key)) {
+                remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("aoa3", path(key)), "block");
+            } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
             }
         }
@@ -75,7 +77,9 @@ public final class MissingMappingRepairs {
     public static void onMissingItemMappings(RegistryEvent.MissingMappings<Item> event) {
         for (RegistryEvent.MissingMappings.Mapping<Item> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
-            if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
+            if (isMysticalLibAoAGrass(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("aoa3", path(key)), "item");
+            } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.ITEMS, "item");
             }
         }
@@ -121,6 +125,10 @@ public final class MissingMappingRepairs {
         return key != null && "aoa3".equals(namespace(key)) && AOA_GRASS_BLOCKS.contains(path(key));
     }
 
+    private static boolean isMysticalLibAoAGrass(ResourceLocation key) {
+        return key != null && "mysticallib".equals(namespace(key)) && AOA_GRASS_BLOCKS.contains(path(key));
+    }
+
     private static boolean isBlockcrafteryEditableBlock(ResourceLocation key) {
         return key != null && "blockcraftery".equals(namespace(key)) && BLOCKCRAFTERY_EDITABLE_BLOCKS.contains(path(key));
     }
@@ -152,14 +160,28 @@ public final class MissingMappingRepairs {
     private static <T extends IForgeRegistryEntry<T>> boolean remapSameKey(RegistryEvent.MissingMappings.Mapping<T> mapping,
                                                                            IForgeRegistry<T> registry,
                                                                            String typeName) {
-        T target = registry.getValue(mapping.key);
+        return remap(mapping, registry, mapping.key, typeName);
+    }
+
+    private static <T extends IForgeRegistryEntry<T>> boolean remap(RegistryEvent.MissingMappings.Mapping<T> mapping,
+                                                                    IForgeRegistry<T> registry,
+                                                                    ResourceLocation targetKey,
+                                                                    String typeName) {
+        T target = registry.getValue(targetKey);
         if (target == null) {
-            GPOM.LOGGER.warn("[MissingMappingRepairs] Could not remap missing {} {}; no live registry entry exists", typeName, mapping.key);
+            GPOM.LOGGER.warn("[MissingMappingRepairs] Could not remap missing {} {} to {}; no live target exists",
+                    typeName,
+                    mapping.key,
+                    targetKey);
             return false;
         }
 
         mapping.remap(target);
-        GPOM.LOGGER.warn("[MissingMappingRepairs] Remapped missing {} {} to live same-key registry entry", typeName, mapping.key);
+        if (mapping.key.equals(targetKey)) {
+            GPOM.LOGGER.warn("[MissingMappingRepairs] Remapped missing {} {} to live same-key registry entry", typeName, mapping.key);
+        } else {
+            GPOM.LOGGER.warn("[MissingMappingRepairs] Remapped missing {} {} to {}", typeName, mapping.key, targetKey);
+        }
         return true;
     }
 }

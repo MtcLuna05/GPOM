@@ -1,6 +1,7 @@
 package com.l.gpom.profiling;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.ProgressManager;
 import net.minecraftforge.fml.common.event.FMLEvent;
@@ -19,6 +20,18 @@ import java.util.Set;
 
 public final class StartupProfiler {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler", "true"));
+    private static final boolean PROBE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerProbeLogsEnabled()
+            && Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.probeLogs", "true"));
+    private static final boolean BOOT_LOGS_ENABLED = GpomEarlyConfig.startupProfilerBootLogsEnabled();
+    private static final boolean PHASE_LIFECYCLE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerPhaseLifecycleLogsEnabled();
+    private static final boolean MOD_DETAIL_LOGS_ENABLED = GpomEarlyConfig.startupProfilerModDetailsLogsEnabled();
+    private static final boolean PHASE_SUMMARY_LOGS_ENABLED = GpomEarlyConfig.startupProfilerPhaseSummaryLogsEnabled();
+    private static final boolean PHASE_DIGEST_LOGS_ENABLED = GpomEarlyConfig.startupProfilerPhaseDigestLogsEnabled();
+    private static final boolean MEMORY_DETAIL_LOGS_ENABLED = GpomEarlyConfig.startupProfilerMemoryDetailsLogsEnabled();
+    private static final boolean PROBE_SUMMARY_LOGS_ENABLED = GpomEarlyConfig.startupProfilerProbeSummaryLogsEnabled();
+    private static final boolean WALL_DIAGNOSTICS_LOGS_ENABLED = GpomEarlyConfig.startupProfilerWallDiagnosticsLogsEnabled();
+    private static final boolean STACK_SAMPLE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerStackSampleLogsEnabled();
+    private static final boolean RESOURCE_LOAD_ORDER_LOGS_ENABLED = GpomEarlyConfig.startupProfilerResourceLoadOrderLogsEnabled();
     private static final long DETAIL_THRESHOLD_NANOS = millisProperty("gpom.startupProfiler.detailThresholdMs", 100L) * 1_000_000L;
     private static final long PROBE_THRESHOLD_NANOS = millisProperty("gpom.startupProfiler.probeThresholdMs", 25L) * 1_000_000L;
     private static final boolean STACK_SAMPLER_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.stackSampler", "true"));
@@ -27,9 +40,14 @@ public final class StartupProfiler {
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("gpom.startupProfiler.stackSamplerFrames", 32);
     private static final Set<String> STACK_SAMPLER_MODS = setProperty("gpom.startupProfiler.stackSamplerMods", "aoa3,abyssalcraft,agricraft,appliedenergistics2,astralsorcery,botania,brandonscore,citnbt,codechickenlib,concheckrmd,contenttweaker,crafttweaker,cyclicmagic,draconicevolution,ebwizardry,enderio,extrautils2,forestry,forgelin,ftbutilities,hammercore,integrateddynamics,itemblacklist,opencomputers,railcraft,redcore,smoothfont,techreborn,tconstruct,thaumadditions,thaumcraft,thaumicaugmentation,thaumictinkerer,thaumicwonders,thebetweenlands,thermalexpansion,thermalfoundation,xreliquary");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.progressBars", "false"));
+    private static final boolean PROBE_RECORDING_ENABLED = PROBE_LOGS_ENABLED
+            || PROBE_SUMMARY_LOGS_ENABLED
+            || WALL_DIAGNOSTICS_LOGS_ENABLED
+            || PROGRESS_BARS_ENABLED;
     private static final boolean RESOURCE_LOAD_ORDER_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.resourceLoadOrder", "true"));
     private static final int TOP_COUNT = intProperty("gpom.startupProfiler.topCount", 40);
     private static final int PHASE_DIGEST_COUNT = intProperty("gpom.startupProfiler.phaseDigestCount", 3);
+    private static final int WALL_DIGEST_COUNT = intProperty("gpom.startupProfiler.wallDigestCount", 8);
     private static final int RESOURCE_LOAD_ORDER_TOP_COUNT = intProperty("gpom.resourceLoadOrder.topCount", 12);
     private static final long BOOT_STARTED_AT = longProperty("gpom.bootStartNanos", System.nanoTime());
 
@@ -62,7 +80,9 @@ public final class StartupProfiler {
             activePhase = phaseName;
             activePhaseStartedAt = System.nanoTime();
             PHASES.computeIfAbsent(phaseName, PhaseData::new);
-            GPOM.LOGGER.info("[StartupProfiler] Starting FML phase {}", phaseName);
+            if (PHASE_LIFECYCLE_LOGS_ENABLED) {
+                GPOM.LOGGER.info("[StartupProfiler] Starting FML phase {}", phaseName);
+            }
         }
     }
 
@@ -104,7 +124,7 @@ public final class StartupProfiler {
             String phaseName = activePhase != null ? activePhase : eventName(event);
             PHASES.computeIfAbsent(phaseName, PhaseData::new).add(new ModTiming(modId, modName, elapsed, heapDelta, heapAfter));
 
-            if (elapsed >= DETAIL_THRESHOLD_NANOS) {
+            if (MOD_DETAIL_LOGS_ENABLED && elapsed >= DETAIL_THRESHOLD_NANOS) {
                 GPOM.LOGGER.info(
                         "[StartupProfiler] {} took {} ms for {} ({}) heapDelta={} MiB heapAfter={} MiB",
                         phaseName,
@@ -120,7 +140,7 @@ public final class StartupProfiler {
 
     public static void recordModError(ModContainer container, FMLEvent event, long startedAt, Throwable throwable) {
         endMod(container, event, startedAt);
-        if (ENABLED && container != null && event != null) {
+        if (ENABLED && MOD_DETAIL_LOGS_ENABLED && container != null && event != null) {
             GPOM.LOGGER.warn(
                     "[StartupProfiler] {} errored while handling {} after timing sample was recorded",
                     safeModId(container),
@@ -131,7 +151,7 @@ public final class StartupProfiler {
     }
 
     public static StackSampler beginModStackSampler(ModContainer container, FMLEvent event, long startedAt) {
-        if (!ENABLED || !STACK_SAMPLER_ENABLED || container == null || event == null || startedAt == 0L) {
+        if (!ENABLED || !STACK_SAMPLER_ENABLED || !STACK_SAMPLE_LOGS_ENABLED || container == null || event == null || startedAt == 0L) {
             return null;
         }
 
@@ -153,7 +173,7 @@ public final class StartupProfiler {
 
 
     public static void beginNamedProbe(String probeName) {
-        if (!ENABLED || probeName == null) {
+        if (!ENABLED || !PROBE_RECORDING_ENABLED || probeName == null) {
             return;
         }
 
@@ -164,7 +184,7 @@ public final class StartupProfiler {
     }
 
     public static void endNamedProbe(String probeName) {
-        if (!ENABLED || probeName == null) {
+        if (!ENABLED || !PROBE_RECORDING_ENABLED || probeName == null) {
             return;
         }
 
@@ -183,14 +203,14 @@ public final class StartupProfiler {
     }
 
     public static long beginProbe() {
-        if (!ENABLED) {
+        if (!ENABLED || !PROBE_RECORDING_ENABLED) {
             return 0L;
         }
         return System.nanoTime();
     }
 
     public static void markBoot(String label) {
-        if (!ENABLED || label == null) {
+        if (!ENABLED || !BOOT_LOGS_ENABLED || label == null) {
             return;
         }
         GPOM.LOGGER.info("[StartupProfiler] [Boot] {} at {} ms since GPOM core init",
@@ -273,7 +293,7 @@ public final class StartupProfiler {
     }
 
     private static void endProbe(String probeName, long startedAt, long thresholdNanos) {
-        if (!ENABLED || startedAt == 0L || probeName == null) {
+        if (!ENABLED || !PROBE_RECORDING_ENABLED || startedAt == 0L || probeName == null) {
             return;
         }
 
@@ -282,7 +302,7 @@ public final class StartupProfiler {
             String phaseName = activePhase != null ? activePhase : "<async>";
             PHASES.computeIfAbsent(phaseName, PhaseData::new).addProbe(probeName, elapsed);
         }
-        if (elapsed >= thresholdNanos) {
+        if (PROBE_LOGS_ENABLED && elapsed >= thresholdNanos) {
             GPOM.LOGGER.info(
                     "[StartupProfiler] [Probe] {} took {} ms",
                     probeName,
@@ -300,10 +320,12 @@ public final class StartupProfiler {
         }
         if (probeName.startsWith("ABYSS ")
                 || probeName.startsWith("AOA ")
+                || probeName.startsWith("ASTRAL ")
                 || probeName.startsWith("BQ ")
                 || probeName.startsWith("HEI ")
                 || probeName.startsWith("BL ")
                 || probeName.startsWith("MM ")
+                || probeName.startsWith("GEND ")
                 || probeName.startsWith("OC ")
                 || probeName.startsWith("PE ")
                 || probeName.startsWith("FTB ")
@@ -537,67 +559,80 @@ public final class StartupProfiler {
         List<ModTiming> timings = new ArrayList<>(phase.timings);
         timings.sort(Comparator.comparingLong((ModTiming timing) -> timing.elapsedNanos).reversed());
 
-        GPOM.LOGGER.info(
-                "[StartupProfiler] Finished FML phase {}: wall={} ms, modHandlers={} ms across {} mods, heap={} MiB",
-                phase.name,
-                formatMillis(phase.wallTimeNanos),
-                formatMillis(phase.totalModNanos()),
-                timings.size(),
-                formatMib(usedHeapBytes())
-        );
+        if (PHASE_SUMMARY_LOGS_ENABLED) {
+            GPOM.LOGGER.info(
+                    "[StartupProfiler] Finished FML phase {}: wall={} ms, modHandlersInclusive={} ms across {} samples, heap={} MiB",
+                    phase.name,
+                    formatMillis(phase.wallTimeNanos),
+                    formatMillis(phase.totalModNanos()),
+                    timings.size(),
+                    formatMib(usedHeapBytes())
+            );
+        }
 
         logPhaseDigest(phase, timings);
+        logWallDiagnostics(phase);
 
-        int limit = Math.min(TOP_COUNT, timings.size());
-        for (int i = 0; i < limit; i++) {
-            ModTiming timing = timings.get(i);
-            GPOM.LOGGER.info(
-                    "[StartupProfiler]   #{} {} ms, heapDelta={} MiB, heapAfter={} MiB - {} ({})",
-                    i + 1,
-                    formatMillis(timing.elapsedNanos),
-                    formatMib(timing.heapDeltaBytes),
-                    formatMib(timing.heapAfterBytes),
-                    timing.modId,
-                    timing.modName
-            );
-        }
-
-        List<ModTiming> memoryTimings = new ArrayList<>(phase.timings);
-        memoryTimings.sort(Comparator.comparingLong((ModTiming timing) -> timing.heapDeltaBytes).reversed());
-        int memoryLimit = Math.min(TOP_COUNT, memoryTimings.size());
-        for (int i = 0; i < memoryLimit; i++) {
-            ModTiming timing = memoryTimings.get(i);
-            if (timing.heapDeltaBytes <= 0L) {
-                break;
+        if (MOD_DETAIL_LOGS_ENABLED) {
+            int limit = Math.min(TOP_COUNT, timings.size());
+            for (int i = 0; i < limit; i++) {
+                ModTiming timing = timings.get(i);
+                GPOM.LOGGER.info(
+                        "[StartupProfiler]   inclusive mod #{} {} ms, heapDelta={} MiB, heapAfter={} MiB - {} ({})",
+                        i + 1,
+                        formatMillis(timing.elapsedNanos),
+                        formatMib(timing.heapDeltaBytes),
+                        formatMib(timing.heapAfterBytes),
+                        timing.modId,
+                        timing.modName
+                );
             }
-            GPOM.LOGGER.info(
-                    "[StartupProfiler]   memory #{} heapDelta={} MiB, heapAfter={} MiB, {} ms - {} ({})",
-                    i + 1,
-                    formatMib(timing.heapDeltaBytes),
-                    formatMib(timing.heapAfterBytes),
-                    formatMillis(timing.elapsedNanos),
-                    timing.modId,
-                    timing.modName
-            );
         }
 
-        List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
-        probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.totalNanos).reversed());
-        int probeLimit = Math.min(TOP_COUNT, probes.size());
-        for (int i = 0; i < probeLimit; i++) {
-            ProbeTiming probe = probes.get(i);
-            GPOM.LOGGER.info(
-                    "[StartupProfiler]   probe #{} {} ms total, {} ms max, count={} - {}",
-                    i + 1,
-                    formatMillis(probe.totalNanos),
-                    formatMillis(probe.maxNanos),
-                    probe.count,
-                    probe.name
-            );
+        if (MEMORY_DETAIL_LOGS_ENABLED) {
+            List<ModTiming> memoryTimings = new ArrayList<>(phase.timings);
+            memoryTimings.sort(Comparator.comparingLong((ModTiming timing) -> timing.heapDeltaBytes).reversed());
+            int memoryLimit = Math.min(TOP_COUNT, memoryTimings.size());
+            for (int i = 0; i < memoryLimit; i++) {
+                ModTiming timing = memoryTimings.get(i);
+                if (timing.heapDeltaBytes <= 0L) {
+                    break;
+                }
+                GPOM.LOGGER.info(
+                        "[StartupProfiler]   memory #{} heapDelta={} MiB, heapAfter={} MiB, {} ms - {} ({})",
+                        i + 1,
+                        formatMib(timing.heapDeltaBytes),
+                        formatMib(timing.heapAfterBytes),
+                        formatMillis(timing.elapsedNanos),
+                        timing.modId,
+                        timing.modName
+                );
+            }
+        }
+
+        if (PROBE_SUMMARY_LOGS_ENABLED) {
+            List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
+            probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.totalNanos).reversed());
+            int probeLimit = Math.min(TOP_COUNT, probes.size());
+            for (int i = 0; i < probeLimit; i++) {
+                ProbeTiming probe = probes.get(i);
+                GPOM.LOGGER.info(
+                        "[StartupProfiler]   probe #{} {} ms total, {} ms max, count={} - {}",
+                        i + 1,
+                        formatMillis(probe.totalNanos),
+                        formatMillis(probe.maxNanos),
+                        probe.count,
+                        probe.name
+                );
+            }
         }
     }
 
     private static void logPhaseDigest(PhaseData phase, List<ModTiming> sortedTimings) {
+        if (!PHASE_DIGEST_LOGS_ENABLED) {
+            return;
+        }
+
         int modLimit = Math.min(PHASE_DIGEST_COUNT, sortedTimings.size());
         for (int i = 0; i < modLimit; i++) {
             ModTiming timing = sortedTimings.get(i);
@@ -612,43 +647,104 @@ public final class StartupProfiler {
             );
         }
 
-        List<ModTiming> memoryTimings = new ArrayList<>(phase.timings);
-        memoryTimings.sort(Comparator.comparingLong((ModTiming timing) -> timing.heapDeltaBytes).reversed());
-        int memoryLimit = Math.min(PHASE_DIGEST_COUNT, memoryTimings.size());
-        for (int i = 0; i < memoryLimit; i++) {
-            ModTiming timing = memoryTimings.get(i);
-            if (timing.heapDeltaBytes <= 0L) {
-                break;
+        if (MEMORY_DETAIL_LOGS_ENABLED) {
+            List<ModTiming> memoryTimings = new ArrayList<>(phase.timings);
+            memoryTimings.sort(Comparator.comparingLong((ModTiming timing) -> timing.heapDeltaBytes).reversed());
+            int memoryLimit = Math.min(PHASE_DIGEST_COUNT, memoryTimings.size());
+            for (int i = 0; i < memoryLimit; i++) {
+                ModTiming timing = memoryTimings.get(i);
+                if (timing.heapDeltaBytes <= 0L) {
+                    break;
+                }
+                GPOM.LOGGER.info(
+                        "[StartupProfiler]   digest memory #{} phase={} heapDelta={} MiB, {} ms - {} ({})",
+                        i + 1,
+                        phase.name,
+                        formatMib(timing.heapDeltaBytes),
+                        formatMillis(timing.elapsedNanos),
+                        timing.modId,
+                        timing.modName
+                );
             }
-            GPOM.LOGGER.info(
-                    "[StartupProfiler]   digest memory #{} phase={} heapDelta={} MiB, {} ms - {} ({})",
-                    i + 1,
-                    phase.name,
-                    formatMib(timing.heapDeltaBytes),
-                    formatMillis(timing.elapsedNanos),
-                    timing.modId,
-                    timing.modName
-            );
         }
 
-        List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
-        probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.totalNanos).reversed());
-        int probeLimit = Math.min(PHASE_DIGEST_COUNT, probes.size());
-        for (int i = 0; i < probeLimit; i++) {
-            ProbeTiming probe = probes.get(i);
-            GPOM.LOGGER.info(
-                    "[StartupProfiler]   digest probe #{} phase={} {} ms total, {} ms max, count={} - {}",
-                    i + 1,
-                    phase.name,
-                    formatMillis(probe.totalNanos),
-                    formatMillis(probe.maxNanos),
-                    probe.count,
-                    probe.name
-            );
+        if (PROBE_SUMMARY_LOGS_ENABLED) {
+            List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
+            probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.totalNanos).reversed());
+            int probeLimit = Math.min(PHASE_DIGEST_COUNT, probes.size());
+            for (int i = 0; i < probeLimit; i++) {
+                ProbeTiming probe = probes.get(i);
+                GPOM.LOGGER.info(
+                        "[StartupProfiler]   digest probe #{} phase={} {} ms total, {} ms max, count={} - {}",
+                        i + 1,
+                        phase.name,
+                        formatMillis(probe.totalNanos),
+                        formatMillis(probe.maxNanos),
+                        probe.count,
+                        probe.name
+                );
+            }
         }
     }
 
+    private static void logWallDiagnostics(PhaseData phase) {
+        if (!WALL_DIAGNOSTICS_LOGS_ENABLED) {
+            return;
+        }
+        List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
+        probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.maxNanos).reversed());
+        logProbeCategory(phase, "wall probe", probes, StartupProfiler::isWallRelevantProbe);
+        logProbeCategory(phase, "serialized action", probes, StartupProfiler::isSerializedActionProbe);
+        logProbeCategory(phase, "serialized wait", probes, StartupProfiler::isSerializedWaitProbe);
+        logProbeCategory(phase, "scheduler wait", probes, StartupProfiler::isSchedulerWaitProbe);
+    }
+
+    private static void logProbeCategory(PhaseData phase, String label, List<ProbeTiming> sortedByMax, ProbeFilter filter) {
+        int emitted = 0;
+        for (ProbeTiming probe : sortedByMax) {
+            if (!filter.accept(probe.name)) {
+                continue;
+            }
+            GPOM.LOGGER.info(
+                    "[StartupProfiler]   {} #{} phase={} {} ms max, {} ms total, count={} - {}",
+                    label,
+                    emitted + 1,
+                    phase.name,
+                    formatMillis(probe.maxNanos),
+                    formatMillis(probe.totalNanos),
+                    probe.count,
+                    probe.name
+            );
+            emitted++;
+            if (emitted >= WALL_DIGEST_COUNT) {
+                return;
+            }
+        }
+    }
+
+    private static boolean isWallRelevantProbe(String name) {
+        return !name.startsWith("FML dispatch ")
+                || name.contains(" eventBusPost ")
+                || name.contains(" serializedAction ")
+                || name.contains(" serializedWait ");
+    }
+
+    private static boolean isSerializedActionProbe(String name) {
+        return name.contains(" serializedAction ");
+    }
+
+    private static boolean isSerializedWaitProbe(String name) {
+        return name.contains(" serializedWait ");
+    }
+
+    private static boolean isSchedulerWaitProbe(String name) {
+        return name.startsWith("FML scheduler ") && name.contains(" drainInFlight ");
+    }
+
     private static void logResourceReloadSummary(ResourceReloadData data) {
+        if (!RESOURCE_LOAD_ORDER_LOGS_ENABLED) {
+            return;
+        }
         GPOM.LOGGER.info(
                 "[ResourceLoadOrder] reload #{} finished: {} ms, packs={}, packLoads={}, listeners={}",
                 data.sequence,
@@ -816,6 +912,9 @@ public final class StartupProfiler {
         }
 
         private void logStackSample() {
+            if (!STACK_SAMPLE_LOGS_ENABLED) {
+                return;
+            }
             StackTraceElement[] stackTrace = targetThread.getStackTrace();
             long elapsed = System.nanoTime() - startedAt;
 
@@ -930,5 +1029,10 @@ public final class StartupProfiler {
             maxNanos = Math.max(maxNanos, elapsedNanos);
             count++;
         }
+    }
+
+    @FunctionalInterface
+    private interface ProbeFilter {
+        boolean accept(String name);
     }
 }

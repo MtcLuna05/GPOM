@@ -15,6 +15,7 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -37,12 +38,23 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
     private static final boolean FAST_ENTITY_REGISTRATION = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.fastEntityRegistration", "true"));
     private static final boolean DIRECT_BLOCK_REGISTRY_PREINIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.directBlockRegistryPreInit", "true"));
     private static final boolean LAZY_CLIENT_ENTITY_RENDERERS = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.lazyClientEntityRenderers", "true"));
+    private static final boolean DEFER_CLIENT_ENTITY_RENDERERS_TO_INIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferClientEntityRenderersToInit", "true"));
     private static final boolean LAZY_CLIENT_TILE_RENDERERS = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.lazyClientTileRenderers", "true"));
     private static final boolean DEFER_PARTICLE_STITCHERS = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferParticleStitchers", "true"));
+    private static final boolean SKIP_IMMEDIATE_SHADER_RELOAD = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.skipImmediateShaderReload", "true"));
+    private static final boolean DEFER_HERBLORE_RESOURCE_RELOAD_TO_INIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferHerbloreReloadToInit", "true"));
     private static final boolean BLOCK_FIELD_ACCESS_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.blockFieldAccessProfiler", "false"));
     private static final boolean LAZY_BLOCK_FIELD_ACCESSORS = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.lazyBlockFieldAccessors", "true"));
     private static final boolean LAZY_BLOCK_CONSTRUCTION = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.lazyBlockConstruction", "true"));
     private static final boolean BLOCK_CONSTRUCTOR_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.blockConstructorProfiler", "false"));
+    private static final boolean DEFER_BLOCK_ITEM_CREATION = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferBlockItemCreation", "true"));
+    private static final boolean DEFER_BLOCK_REGISTRATION_TO_REGISTRY_EVENT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferBlockRegistrationToRegistryEvent", "true"));
+    private static final boolean DIRECT_ITEM_REGISTRY_PREINIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.directItemRegistryPreInit", "true"));
+    private static final boolean DEFER_ITEM_REGISTRATION_TO_REGISTRY_EVENT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferItemRegistrationToRegistryEvent", "true"));
+    private static final boolean DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferEntityRegistrationToBlockRegistryEvent", "true"));
+    private static final boolean DEFER_MODEL_REGISTRY_PREINIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferModelRegistryPreInit", "true"));
+    private static final boolean DEFER_SOUND_REGISTRY_PREINIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferSoundRegistryPreInit", "true"));
+    private static final boolean DEFER_AMBIENCE_REGISTRY_PREINIT = Boolean.parseBoolean(System.getProperty("gpom.betweenlands.deferAmbienceRegistryPreInit", "true"));
     private static final Map<String, Set<MethodKey>> TARGETS = createTargets();
     private static final Set<String> EAGER_BLOCK_FIELDS = createEagerBlockFields();
 
@@ -57,15 +69,46 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
             return basicClass;
         }
 
-        if ("thebetweenlands.common.registries.EntityRegistry".equals(className) && FAST_ENTITY_REGISTRATION) {
+        if ("thebetweenlands.common.registries.EntityRegistry".equals(className)
+                && (FAST_ENTITY_REGISTRATION || DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT)) {
             basicClass = patchEntityRegistry(basicClass);
         }
         if ("thebetweenlands.common.registries.BlockRegistry".equals(className)
-                && (DIRECT_BLOCK_REGISTRY_PREINIT || LAZY_BLOCK_CONSTRUCTION)) {
+                && (DIRECT_BLOCK_REGISTRY_PREINIT || LAZY_BLOCK_CONSTRUCTION || DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT)) {
             basicClass = patchBlockRegistry(basicClass);
         }
+        if ("thebetweenlands.common.registries.Registries".equals(className)
+                && (DEFER_BLOCK_REGISTRATION_TO_REGISTRY_EVENT
+                || DEFER_ITEM_REGISTRATION_TO_REGISTRY_EVENT
+                || DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT
+                || DEFER_MODEL_REGISTRY_PREINIT
+                || DEFER_SOUND_REGISTRY_PREINIT
+                || DEFER_AMBIENCE_REGISTRY_PREINIT)) {
+            basicClass = patchRegistriesPreInitForDeferredRegistries(basicClass);
+        }
+        if (DEFER_MODEL_REGISTRY_PREINIT
+                && "thebetweenlands.common.registries.ModelRegistry".equals(className)) {
+            basicClass = patchModelRegistryPreInitGuard(basicClass);
+        }
+        if (DEFER_SOUND_REGISTRY_PREINIT
+                && "thebetweenlands.common.registries.SoundRegistry".equals(className)) {
+            basicClass = patchSoundRegistryPreInitGuard(basicClass);
+        }
+        if (DEFER_AMBIENCE_REGISTRY_PREINIT
+                && "thebetweenlands.common.registries.AmbienceRegistry".equals(className)) {
+            basicClass = patchAmbienceRegistryPreInitGuard(basicClass);
+        }
+        if (DEFER_MODEL_REGISTRY_PREINIT
+                && "thebetweenlands.client.render.model.loader.CustomModelManager".equals(className)) {
+            basicClass = patchCustomModelManagerModelRegistryMaterialization(basicClass);
+        }
+        if ("thebetweenlands.common.registries.ItemRegistry".equals(className)
+                && (DEFER_BLOCK_ITEM_CREATION || DIRECT_ITEM_REGISTRY_PREINIT)) {
+            basicClass = patchItemRegistry(basicClass);
+        }
         if ("thebetweenlands.client.proxy.ClientProxy".equals(className)
-                && (LAZY_CLIENT_ENTITY_RENDERERS || LAZY_CLIENT_TILE_RENDERERS || DEFER_PARTICLE_STITCHERS)) {
+                && (LAZY_CLIENT_ENTITY_RENDERERS || LAZY_CLIENT_TILE_RENDERERS || DEFER_PARTICLE_STITCHERS || SKIP_IMMEDIATE_SHADER_RELOAD
+                || DEFER_HERBLORE_RESOURCE_RELOAD_TO_INIT || DEFER_AMBIENCE_REGISTRY_PREINIT)) {
             basicClass = patchClientProxyRenderers(basicClass);
         }
 
@@ -116,6 +159,7 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
 
         add(targets, "thebetweenlands.common.registries.SoundRegistry", "<clinit>", "()V");
         add(targets, "thebetweenlands.common.registries.SoundRegistry", "preInit", "()V");
+        add(targets, "thebetweenlands.common.registries.SoundRegistry", "registerSounds", "(Lnet/minecraftforge/event/RegistryEvent$Register;)V");
 
         add(targets, "thebetweenlands.common.registries.CapabilityRegistry", "<clinit>", "()V");
         add(targets, "thebetweenlands.common.registries.CapabilityRegistry", "preInit", "()V");
@@ -141,6 +185,7 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "<init>", "()V");
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "registerItemAndBlockRenderers", "()V");
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "preInit", "()V");
+        add(targets, "thebetweenlands.client.proxy.ClientProxy", "init", "()V");
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "registerEventHandlersPreInit", "()V");
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "registerEventHandlers", "()V");
         add(targets, "thebetweenlands.client.proxy.ClientProxy", "loadRiftVariants", "()V");
@@ -177,7 +222,12 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
             ClassNode node = new ClassNode();
             new ClassReader(basicClass).accept(node, 0);
             boolean changed = false;
+            MethodNode preInit = null;
             for (MethodNode method : node.methods) {
+                if ("preInit".equals(method.name) && "()V".equals(method.desc)) {
+                    preInit = method;
+                    continue;
+                }
                 if (!"registerEntity".equals(method.name)) {
                     continue;
                 }
@@ -195,6 +245,58 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                     changed = true;
                 }
             }
+            if (DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT && preInit != null) {
+                node.fields.add(new FieldNode(
+                        Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC,
+                        "gpom$entityRegistryMaterialized",
+                        "Z",
+                        null,
+                        null
+                ));
+
+                MethodNode materializer = new MethodNode(
+                        Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                        "gpom$materializeEntityRegistry",
+                        "()V",
+                        null,
+                        null
+                );
+                materializer.instructions = preInit.instructions;
+                LabelNode runMaterializer = new LabelNode();
+                InsnList guard = new InsnList();
+                guard.add(new FieldInsnNode(
+                        Opcodes.GETSTATIC,
+                        "thebetweenlands/common/registries/EntityRegistry",
+                        "gpom$entityRegistryMaterialized",
+                        "Z"
+                ));
+                guard.add(new JumpInsnNode(Opcodes.IFEQ, runMaterializer));
+                guard.add(new InsnNode(Opcodes.RETURN));
+                guard.add(runMaterializer);
+                guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                guard.add(new InsnNode(Opcodes.ICONST_1));
+                guard.add(new FieldInsnNode(
+                        Opcodes.PUTSTATIC,
+                        "thebetweenlands/common/registries/EntityRegistry",
+                        "gpom$entityRegistryMaterialized",
+                        "Z"
+                ));
+                materializer.instructions.insert(guard);
+                materializer.tryCatchBlocks = new ArrayList<>(preInit.tryCatchBlocks);
+                materializer.localVariables = new ArrayList<>(preInit.localVariables);
+                materializer.maxLocals = preInit.maxLocals;
+                materializer.maxStack = Math.max(preInit.maxStack, 4);
+                node.methods.add(materializer);
+
+                InsnList noOpPreInit = new InsnList();
+                noOpPreInit.add(new InsnNode(Opcodes.RETURN));
+                preInit.instructions = noOpPreInit;
+                preInit.tryCatchBlocks.clear();
+                preInit.localVariables.clear();
+                preInit.maxLocals = 0;
+                preInit.maxStack = 0;
+                changed = true;
+            }
             if (!changed) {
                 return basicClass;
             }
@@ -211,17 +313,20 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
             ClassNode node = new ClassNode();
             new ClassReader(basicClass).accept(node, 0);
             MethodNode preInit = null;
+            MethodNode init = null;
             for (MethodNode method : node.methods) {
                 if ("preInit".equals(method.name) && "()V".equals(method.desc)) {
                     preInit = method;
-                    break;
+                } else if ("init".equals(method.name) && "()V".equals(method.desc)) {
+                    init = method;
                 }
             }
-            if (preInit == null) {
+            if (preInit == null && init == null) {
                 return basicClass;
             }
 
-            if (LAZY_CLIENT_ENTITY_RENDERERS) {
+            boolean deferredEntityRenderersToInit = false;
+            if (preInit != null && LAZY_CLIENT_ENTITY_RENDERERS) {
                 AbstractInsnNode start = null;
                 AbstractInsnNode firstTileRenderer = null;
                 int renderRegistrations = 0;
@@ -245,15 +350,19 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                 }
 
                 if (start != null && firstTileRenderer != null && renderRegistrations == 121) {
-                    InsnList replacement = new InsnList();
-                    replacement.add(new MethodInsnNode(
-                            Opcodes.INVOKESTATIC,
-                            "com/l/gpom/optimization/BetweenlandsClientRendererOptimizations",
-                            "registerEntityRenderers",
-                            "()V",
-                            false
-                    ));
-                    preInit.instructions.insertBefore(start, replacement);
+                    if (DEFER_CLIENT_ENTITY_RENDERERS_TO_INIT && init != null) {
+                        deferredEntityRenderersToInit = true;
+                    } else {
+                        InsnList replacement = new InsnList();
+                        replacement.add(new MethodInsnNode(
+                                Opcodes.INVOKESTATIC,
+                                "com/l/gpom/optimization/BetweenlandsClientRendererOptimizations",
+                                "registerEntityRenderers",
+                                "()V",
+                                false
+                        ));
+                        preInit.instructions.insertBefore(start, replacement);
+                    }
 
                     AbstractInsnNode current = start;
                     while (current != null && current != firstTileRenderer) {
@@ -264,10 +373,11 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                 }
             }
 
-            if (LAZY_CLIENT_TILE_RENDERERS) {
+            if (preInit != null && LAZY_CLIENT_TILE_RENDERERS) {
                 List<TileRendererRegistration> tileRenderers = collectTileRendererRegistrations(preInit);
                 if (tileRenderers.size() == 49) {
                     InsnList replacement = new InsnList();
+                    addBeginProbes(replacement, new String[] {"BL ClientProxy.preInit lazy tile renderer manifest"});
                     for (TileRendererRegistration registration : tileRenderers) {
                         replacement.add(new LdcInsnNode(registration.tileClassName));
                         replacement.add(new LdcInsnNode(registration.rendererClassName));
@@ -279,6 +389,7 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                                 false
                         ));
                     }
+                    addEndProbes(replacement, new String[] {"BL ClientProxy.preInit lazy tile renderer manifest"});
 
                     AbstractInsnNode first = tileRenderers.get(0).start;
                     AbstractInsnNode end = tileRenderers.get(tileRenderers.size() - 1).endExclusive;
@@ -293,8 +404,44 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                 }
             }
 
-            if (DEFER_PARTICLE_STITCHERS) {
+            if (preInit != null && DEFER_PARTICLE_STITCHERS) {
                 patchClientProxyParticleStitchers(preInit);
+            }
+            if (preInit != null && SKIP_IMMEDIATE_SHADER_RELOAD) {
+                patchClientProxyReloadListeners(preInit);
+            }
+            if (init != null) {
+                InsnList initPrelude = new InsnList();
+                if (DEFER_HERBLORE_RESOURCE_RELOAD_TO_INIT) {
+                    initPrelude.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/BetweenlandsResourceReloadOptimizations",
+                            "runDeferredClientInitReloads",
+                            "()V",
+                            false
+                    ));
+                }
+                if (deferredEntityRenderersToInit) {
+                    initPrelude.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/BetweenlandsClientRendererOptimizations",
+                            "registerEntityRenderers",
+                            "()V",
+                            false
+                    ));
+                }
+                if (DEFER_AMBIENCE_REGISTRY_PREINIT) {
+                    initPrelude.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "thebetweenlands/common/registries/AmbienceRegistry",
+                            "preInit",
+                            "()V",
+                            false
+                    ));
+                }
+                if (initPrelude.size() > 0) {
+                    init.instructions.insert(initPrelude);
+                }
             }
 
             ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -303,6 +450,81 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
         } catch (Throwable ignored) {
             return basicClass;
         }
+    }
+
+    private static void patchClientProxyReloadListeners(MethodNode preInit) {
+        int rewritten = 0;
+        for (AbstractInsnNode insn = preInit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (!(insn instanceof MethodInsnNode)) {
+                continue;
+            }
+            MethodInsnNode methodInsn = (MethodInsnNode) insn;
+            if (methodInsn.getOpcode() != Opcodes.INVOKEINTERFACE
+                    || !"net/minecraft/client/resources/IReloadableResourceManager".equals(methodInsn.owner)
+                    || !"func_110542_a".equals(methodInsn.name)
+                    || !"(Lnet/minecraft/client/resources/IResourceManagerReloadListener;)V".equals(methodInsn.desc)) {
+                continue;
+            }
+
+            String label = betweenlandsReloadListenerLabel(methodInsn);
+            if (label == null) {
+                continue;
+            }
+            preInit.instructions.insertBefore(methodInsn, new LdcInsnNode(label));
+            methodInsn.setOpcode(Opcodes.INVOKESTATIC);
+            methodInsn.owner = "com/l/gpom/optimization/BetweenlandsResourceReloadOptimizations";
+            methodInsn.name = "registerReloadListener";
+            methodInsn.desc = "(Lnet/minecraft/client/resources/IReloadableResourceManager;Lnet/minecraft/client/resources/IResourceManagerReloadListener;Ljava/lang/String;)V";
+            methodInsn.itf = false;
+            rewritten++;
+        }
+
+        if (rewritten != 4) {
+            throw new IllegalStateException("Unexpected Betweenlands ClientProxy reload listener registration count: " + rewritten);
+        }
+    }
+
+    private static String betweenlandsReloadListenerLabel(MethodInsnNode registerCall) {
+        AbstractInsnNode producer = previousOpcode(registerCall);
+        if (producer instanceof FieldInsnNode) {
+            FieldInsnNode fieldInsn = (FieldInsnNode) producer;
+            if (fieldInsn.getOpcode() == Opcodes.GETSTATIC
+                    && "thebetweenlands/client/render/shader/ShaderHelper".equals(fieldInsn.owner)
+                    && "INSTANCE".equals(fieldInsn.name)) {
+                return "BL ClientProxy.preInit reload listener ShaderHelper";
+            }
+        }
+        if (producer instanceof MethodInsnNode) {
+            MethodInsnNode methodInsn = (MethodInsnNode) producer;
+            if (methodInsn.getOpcode() == Opcodes.INVOKESPECIAL
+                    && "thebetweenlands/common/capability/foodsickness/FoodSickness$ResourceReloadListener".equals(methodInsn.owner)
+                    && "<init>".equals(methodInsn.name)) {
+                return "BL ClientProxy.preInit reload listener FoodSickness";
+            }
+        }
+        if (producer instanceof InvokeDynamicInsnNode) {
+            InvokeDynamicInsnNode invokeDynamic = (InvokeDynamicInsnNode) producer;
+            if ("func_110549_a".equals(invokeDynamic.name)
+                    && "()Lnet/minecraft/client/resources/IResourceManagerReloadListener;".equals(invokeDynamic.desc)) {
+                return "BL ClientProxy.preInit reload listener HLEntryRegistry";
+            }
+        }
+        if (producer instanceof VarInsnNode) {
+            VarInsnNode varInsn = (VarInsnNode) producer;
+            if (varInsn.getOpcode() == Opcodes.ALOAD && varInsn.var == 0) {
+                return "BL ClientProxy.preInit reload listener ClientProxy";
+            }
+        }
+        return null;
+    }
+
+    private static AbstractInsnNode previousOpcode(AbstractInsnNode insn) {
+        for (AbstractInsnNode current = insn.getPrevious(); current != null; current = current.getPrevious()) {
+            if (current.getOpcode() >= 0) {
+                return current;
+            }
+        }
+        return null;
     }
 
     private static void patchClientProxyParticleStitchers(MethodNode preInit) {
@@ -431,6 +653,319 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
         return registrationCall;
     }
 
+    private static byte[] patchItemRegistry(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            MethodNode preInit = null;
+            MethodNode registerItems = null;
+            for (MethodNode method : node.methods) {
+                if ("preInit".equals(method.name) && "()V".equals(method.desc)) {
+                    preInit = method;
+                } else if ("registerItems".equals(method.name)
+                        && "(Lnet/minecraftforge/event/RegistryEvent$Register;)V".equals(method.desc)) {
+                    registerItems = method;
+                }
+            }
+
+            InsnList itemMaterializer = null;
+            boolean deferItemsToRegistryEvent = DIRECT_ITEM_REGISTRY_PREINIT
+                    && DEFER_ITEM_REGISTRATION_TO_REGISTRY_EVENT
+                    && preInit != null
+                    && registerItems != null;
+            if (DIRECT_ITEM_REGISTRY_PREINIT && preInit != null) {
+                itemMaterializer = createDirectItemRegistrationInstructions(node);
+                if (deferItemsToRegistryEvent) {
+                    MethodNode materializer = new MethodNode(
+                            Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC,
+                            "gpom$materializeItemRegistry",
+                            "()V",
+                            null,
+                            null
+                    );
+                    materializer.instructions = itemMaterializer;
+                    materializer.maxLocals = 0;
+                    materializer.maxStack = 4;
+                    node.methods.add(materializer);
+
+                    InsnList noOpPreInit = new InsnList();
+                    noOpPreInit.add(new InsnNode(Opcodes.RETURN));
+                    preInit.instructions = noOpPreInit;
+                } else {
+                    preInit.instructions = itemMaterializer;
+                }
+                preInit.tryCatchBlocks.clear();
+                preInit.localVariables.clear();
+                preInit.maxLocals = 0;
+                preInit.maxStack = 4;
+                changed = true;
+            }
+
+            if (registerItems != null) {
+                InsnList prelude = new InsnList();
+                if (DEFER_BLOCK_ITEM_CREATION) {
+                    prelude.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/BetweenlandsOptimizations",
+                            "populateDeferredBlockItemBlocks",
+                            "()V",
+                            false
+                    ));
+                }
+                if (deferItemsToRegistryEvent) {
+                    prelude.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "thebetweenlands/common/registries/ItemRegistry",
+                            "gpom$materializeItemRegistry",
+                            "()V",
+                            false
+                    ));
+                }
+                if (prelude.size() > 0) {
+                    registerItems.instructions.insert(prelude);
+                    changed = true;
+                }
+            }
+
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static InsnList createDirectItemRegistrationInstructions(ClassNode node) {
+        InsnList instructions = new InsnList();
+        instructions.add(new LdcInsnNode(countRegistrableItemFields(node)));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/BetweenlandsOptimizations",
+                "beginItemRegistryDirectPreInit",
+                "(I)V",
+                false
+        ));
+        for (FieldNode field : node.fields) {
+            if (!isRegistrableItemField(field)) {
+                continue;
+            }
+            instructions.add(new LdcInsnNode(field.name));
+            instructions.add(new InsnNode(Opcodes.DUP));
+            instructions.add(new FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    "thebetweenlands/common/registries/ItemRegistry",
+                    field.name,
+                    field.desc
+            ));
+            if (!"Lnet/minecraft/item/Item;".equals(field.desc)) {
+                instructions.add(new TypeInsnNode(Opcodes.CHECKCAST, "net/minecraft/item/Item"));
+            }
+            instructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/l/gpom/optimization/BetweenlandsOptimizations",
+                    "recordItemRegistryDirectPreInit",
+                    "(Ljava/lang/String;Lnet/minecraft/item/Item;)Lnet/minecraft/item/Item;",
+                    false
+            ));
+            instructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/l/gpom/optimization/BetweenlandsOptimizations",
+                    "registerItem",
+                    "(Ljava/lang/String;Lnet/minecraft/item/Item;)V",
+                    false
+            ));
+        }
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/BetweenlandsOptimizations",
+                "logItemRegistryDirectPreInitSummary",
+                "()V",
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.RETURN));
+        return instructions;
+    }
+
+    private static boolean isRegistrableItemField(FieldNode field) {
+        return (field.access & Opcodes.ACC_STATIC) != 0
+                && ("Lnet/minecraft/item/Item;".equals(field.desc)
+                || (field.desc != null && field.desc.startsWith("Lthebetweenlands/common/item/")));
+    }
+
+    private static int countRegistrableItemFields(ClassNode node) {
+        int count = 0;
+        for (FieldNode field : node.fields) {
+            if (isRegistrableItemField(field)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static byte[] patchRegistriesPreInitForDeferredRegistries(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"preInit".equals(method.name) || !"()V".equals(method.desc)) {
+                    continue;
+                }
+                for (AbstractInsnNode current = method.instructions.getFirst(); current != null;) {
+                    AbstractInsnNode next = current.getNext();
+                    if (current instanceof MethodInsnNode) {
+                        MethodInsnNode call = (MethodInsnNode) current;
+                        if (call.getOpcode() == Opcodes.INVOKESTATIC
+                                && shouldSkipDeferredRegistryPreInit(call.owner)
+                                && "preInit".equals(call.name)
+                                && "()V".equals(call.desc)) {
+                            method.instructions.remove(current);
+                            changed = true;
+                        }
+                    }
+                    current = next;
+                }
+                break;
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static boolean shouldSkipDeferredRegistryPreInit(String owner) {
+        return (DEFER_BLOCK_REGISTRATION_TO_REGISTRY_EVENT
+                && "thebetweenlands/common/registries/BlockRegistry".equals(owner))
+                || (DIRECT_ITEM_REGISTRY_PREINIT
+                && DEFER_ITEM_REGISTRATION_TO_REGISTRY_EVENT
+                && "thebetweenlands/common/registries/ItemRegistry".equals(owner))
+                || (DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT
+                && "thebetweenlands/common/registries/EntityRegistry".equals(owner))
+                || (DEFER_MODEL_REGISTRY_PREINIT
+                && "thebetweenlands/common/registries/ModelRegistry".equals(owner))
+                || (DEFER_SOUND_REGISTRY_PREINIT
+                && "thebetweenlands/common/registries/SoundRegistry".equals(owner))
+                || (DEFER_AMBIENCE_REGISTRY_PREINIT
+                && "thebetweenlands/common/registries/AmbienceRegistry".equals(owner));
+    }
+
+    private static byte[] patchModelRegistryPreInitGuard(byte[] basicClass) {
+        return patchStaticPreInitGuard(
+                basicClass,
+                "thebetweenlands/common/registries/ModelRegistry",
+                "gpom$modelRegistryPreInitMaterialized"
+        );
+    }
+
+    private static byte[] patchSoundRegistryPreInitGuard(byte[] basicClass) {
+        return patchStaticPreInitGuard(
+                basicClass,
+                "thebetweenlands/common/registries/SoundRegistry",
+                "gpom$soundRegistryPreInitMaterialized"
+        );
+    }
+
+    private static byte[] patchAmbienceRegistryPreInitGuard(byte[] basicClass) {
+        return patchStaticPreInitGuard(
+                basicClass,
+                "thebetweenlands/common/registries/AmbienceRegistry",
+                "gpom$ambienceRegistryPreInitMaterialized"
+        );
+    }
+
+    private static byte[] patchStaticPreInitGuard(byte[] basicClass, String owner, String materializedFieldName) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            MethodNode preInit = null;
+            for (MethodNode method : node.methods) {
+                if ("preInit".equals(method.name) && "()V".equals(method.desc)) {
+                    preInit = method;
+                    break;
+                }
+            }
+            if (preInit == null) {
+                return basicClass;
+            }
+
+            node.fields.add(new FieldNode(
+                    Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC,
+                    materializedFieldName,
+                    "Z",
+                    null,
+                    null
+            ));
+
+            LabelNode runPreInit = new LabelNode();
+            InsnList guard = new InsnList();
+            guard.add(new FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    owner,
+                    materializedFieldName,
+                    "Z"
+            ));
+            guard.add(new JumpInsnNode(Opcodes.IFEQ, runPreInit));
+            guard.add(new InsnNode(Opcodes.RETURN));
+            guard.add(runPreInit);
+            guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+            guard.add(new InsnNode(Opcodes.ICONST_1));
+            guard.add(new FieldInsnNode(
+                    Opcodes.PUTSTATIC,
+                    owner,
+                    materializedFieldName,
+                    "Z"
+            ));
+            preInit.instructions.insert(guard);
+
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static byte[] patchCustomModelManagerModelRegistryMaterialization(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"getRegisteredModelProviders".equals(method.name) || !"()Ljava/util/Map;".equals(method.desc)) {
+                    continue;
+                }
+                InsnList materialize = new InsnList();
+                materialize.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "thebetweenlands/common/registries/ModelRegistry",
+                        "preInit",
+                        "()V",
+                        false
+                ));
+                method.instructions.insert(materialize);
+                changed = true;
+                break;
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
     private static byte[] patchBlockRegistry(byte[] basicClass) {
         try {
             ClassNode node = new ClassNode();
@@ -448,77 +983,62 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                     : Collections.emptySet();
 
             MethodNode preInit = null;
+            MethodNode registerBlocks = null;
             for (MethodNode method : node.methods) {
                 if ("preInit".equals(method.name) && "()V".equals(method.desc)) {
                     preInit = method;
-                    break;
+                } else if ("registerBlocks".equals(method.name)
+                        && "(Lnet/minecraftforge/event/RegistryEvent$Register;)V".equals(method.desc)) {
+                    registerBlocks = method;
                 }
             }
             if (preInit == null) {
                 return basicClass;
             }
 
-            InsnList instructions = new InsnList();
-            instructions.add(new LdcInsnNode(countRegistrableBlockFields(node)));
-            instructions.add(new MethodInsnNode(
-                    Opcodes.INVOKESTATIC,
-                    "com/l/gpom/optimization/BetweenlandsOptimizations",
-                    "beginBlockRegistryDirectPreInit",
-                    "(I)V",
-                    false
-            ));
-            for (FieldNode field : node.fields) {
-                if (!isRegistrableBlockField(field)) {
-                    continue;
-                }
-                String registryName = field.name.toLowerCase(Locale.ENGLISH);
-                instructions.add(new LdcInsnNode(registryName));
-                instructions.add(new LdcInsnNode(field.name));
-                instructions.add(new LdcInsnNode(registryName));
-                if (generatedLazyFields.contains(field.name)) {
-                    String[] labels = lazyBlockMaterializationLabels(field.name);
-                    addBeginProbes(instructions, labels);
-                    instructions.add(new MethodInsnNode(
-                            Opcodes.INVOKESTATIC,
-                            "thebetweenlands/common/registries/BlockRegistry",
-                            lazyBlockMethodName(field.name),
-                            "()Lnet/minecraft/block/Block;",
-                            false
-                    ));
-                    addEndProbes(instructions, labels);
-                } else {
-                    instructions.add(new FieldInsnNode(
-                            Opcodes.GETSTATIC,
-                            "thebetweenlands/common/registries/BlockRegistry",
-                            field.name,
-                            field.desc
-                    ));
-                }
-                instructions.add(new MethodInsnNode(
+            InsnList instructions = createDirectBlockRegistrationInstructions(node, generatedLazyFields);
+            boolean deferToRegistryEvent = DEFER_BLOCK_REGISTRATION_TO_REGISTRY_EVENT && registerBlocks != null;
+            InsnList registryPrelude = new InsnList();
+            if (DEFER_ENTITY_REGISTRATION_TO_BLOCK_REGISTRY_EVENT && registerBlocks != null) {
+                registryPrelude.add(new MethodInsnNode(
                         Opcodes.INVOKESTATIC,
-                        "com/l/gpom/optimization/BetweenlandsOptimizations",
-                        "recordBlockRegistryDirectPreInit",
-                        "(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/block/Block;)Lnet/minecraft/block/Block;",
-                        false
-                ));
-                instructions.add(new MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        "thebetweenlands/common/registries/BlockRegistry",
-                        "registerBlock",
-                        "(Ljava/lang/String;Lnet/minecraft/block/Block;)V",
+                        "thebetweenlands/common/registries/EntityRegistry",
+                        "gpom$materializeEntityRegistry",
+                        "()V",
                         false
                 ));
             }
-            instructions.add(new MethodInsnNode(
-                    Opcodes.INVOKESTATIC,
-                    "com/l/gpom/optimization/BetweenlandsOptimizations",
-                    "logBlockRegistryDirectPreInitSummary",
-                    "()V",
-                    false
-            ));
-            instructions.add(new InsnNode(Opcodes.RETURN));
+            if (deferToRegistryEvent) {
+                MethodNode materializer = new MethodNode(
+                        Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC,
+                        "gpom$materializeBlockRegistry",
+                        "()V",
+                        null,
+                        null
+                );
+                materializer.instructions = instructions;
+                materializer.maxLocals = 0;
+                materializer.maxStack = 4;
+                node.methods.add(materializer);
 
-            preInit.instructions = instructions;
+                InsnList noOpPreInit = new InsnList();
+                noOpPreInit.add(new InsnNode(Opcodes.RETURN));
+                preInit.instructions = noOpPreInit;
+
+                registryPrelude.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "thebetweenlands/common/registries/BlockRegistry",
+                        "gpom$materializeBlockRegistry",
+                        "()V",
+                        false
+                ));
+            } else {
+                preInit.instructions = instructions;
+            }
+            if (registryPrelude.size() > 0) {
+                registerBlocks.instructions.insert(registryPrelude);
+            }
+
             preInit.tryCatchBlocks.clear();
             preInit.localVariables.clear();
             preInit.maxLocals = 0;
@@ -530,6 +1050,73 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
         } catch (Throwable ignored) {
             return basicClass;
         }
+    }
+
+    private static InsnList createDirectBlockRegistrationInstructions(ClassNode node, Set<String> generatedLazyFields) {
+        InsnList instructions = new InsnList();
+        instructions.add(new LdcInsnNode(countRegistrableBlockFields(node)));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/BetweenlandsOptimizations",
+                "beginBlockRegistryDirectPreInit",
+                "(I)V",
+                false
+        ));
+        for (FieldNode field : node.fields) {
+            if (!isRegistrableBlockField(field)) {
+                continue;
+            }
+            String registryName = field.name.toLowerCase(Locale.ENGLISH);
+            instructions.add(new LdcInsnNode(registryName));
+            instructions.add(new LdcInsnNode(field.name));
+            instructions.add(new LdcInsnNode(registryName));
+            if (generatedLazyFields.contains(field.name)) {
+                String[] labels = lazyBlockMaterializationLabels(field.name);
+                addBeginProbes(instructions, labels);
+                instructions.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "thebetweenlands/common/registries/BlockRegistry",
+                        lazyBlockMethodName(field.name),
+                        "()Lnet/minecraft/block/Block;",
+                        false
+                ));
+                addEndProbes(instructions, labels);
+            } else {
+                instructions.add(new FieldInsnNode(
+                        Opcodes.GETSTATIC,
+                        "thebetweenlands/common/registries/BlockRegistry",
+                        field.name,
+                        field.desc
+                ));
+            }
+            instructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/l/gpom/optimization/BetweenlandsOptimizations",
+                    "recordBlockRegistryDirectPreInit",
+                    "(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/block/Block;)Lnet/minecraft/block/Block;",
+                    false
+            ));
+            instructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    DEFER_BLOCK_ITEM_CREATION
+                            ? "com/l/gpom/optimization/BetweenlandsOptimizations"
+                            : "thebetweenlands/common/registries/BlockRegistry",
+                    DEFER_BLOCK_ITEM_CREATION
+                            ? "registerBlockWithoutItemBlock"
+                            : "registerBlock",
+                    "(Ljava/lang/String;Lnet/minecraft/block/Block;)V",
+                    false
+            ));
+        }
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/BetweenlandsOptimizations",
+                "logBlockRegistryDirectPreInitSummary",
+                "()V",
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.RETURN));
+        return instructions;
     }
 
     private static boolean isExactBlockField(FieldNode field) {
@@ -1020,6 +1607,11 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                     && "preInit".equals(name)
                     && "()V".equals(desc)) {
                 visitor = new RegistryPreInitCallVisitor(visitor);
+            }
+            if ("thebetweenlands.common.TheBetweenlands".equals(className)
+                    && "preInit".equals(name)
+                    && "(Lnet/minecraftforge/fml/common/event/FMLPreInitializationEvent;)V".equals(desc)) {
+                visitor = new TheBetweenlandsPreInitCallVisitor(visitor);
             }
             if ("thebetweenlands.common.registries.BlockRegistry".equals(className)
                     && "<clinit>".equals(name)
@@ -1646,6 +2238,94 @@ public final class BetweenlandsStartupProfilerTransformer implements IClassTrans
                 return;
             }
             super.visitMethodInsn(opcode, owner, name, desc, itf);
+        }
+    }
+
+    private static final class TheBetweenlandsPreInitCallVisitor extends MethodVisitor {
+        private TheBetweenlandsPreInitCallVisitor(MethodVisitor delegate) {
+            super(Opcodes.ASM9, delegate);
+        }
+
+        @Override
+        public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+            String label = theBetweenlandsPreInitCallLabel(opcode, owner, name, desc);
+            if (label != null) {
+                beginProbe(mv, label);
+            }
+            super.visitMethodInsn(opcode, owner, name, desc, itf);
+            if (label != null) {
+                endProbe(mv, label);
+            }
+        }
+
+        private static String theBetweenlandsPreInitCallLabel(int opcode, String owner, String name, String desc) {
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "thebetweenlands/common/config/ConfigHelper".equals(owner)
+                    && "init".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit ConfigHelper.init";
+            }
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "thebetweenlands/common/BetweenlandsAPI".equals(owner)
+                    && "init".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit BetweenlandsAPI.init";
+            }
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "net/minecraft/world/DimensionType".equals(owner)
+                    && "register".equals(name)) {
+                return "BL TheBetweenlands.preInit DimensionType.register";
+            }
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "net/minecraftforge/common/DimensionManager".equals(owner)
+                    && "registerDimension".equals(name)) {
+                return "BL TheBetweenlands.preInit DimensionManager.registerDimension";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "thebetweenlands/common/registries/Registries".equals(owner)
+                    && "preInit".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit Registries.preInit";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "net/minecraftforge/fml/common/network/NetworkRegistry".equals(owner)
+                    && "registerGuiHandler".equals(name)) {
+                return "BL TheBetweenlands.preInit NetworkRegistry.registerGuiHandler";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "net/minecraftforge/fml/common/network/NetworkRegistry".equals(owner)
+                    && "newSimpleChannel".equals(name)) {
+                return "BL TheBetweenlands.preInit NetworkRegistry.newSimpleChannel";
+            }
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "thebetweenlands/common/registries/MessageRegistry".equals(owner)
+                    && "preInit".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit MessageRegistry.preInit";
+            }
+            if (opcode == Opcodes.INVOKESTATIC
+                    && "net/minecraftforge/fml/common/event/FMLInterModComms".equals(owner)
+                    && "sendMessage".equals(name)) {
+                return "BL TheBetweenlands.preInit FMLInterModComms.sendMessage";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "thebetweenlands/common/proxy/CommonProxy".equals(owner)
+                    && "registerItemAndBlockRenderers".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit proxy.registerItemAndBlockRenderers";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "thebetweenlands/common/proxy/CommonProxy".equals(owner)
+                    && "preInit".equals(name)
+                    && "()V".equals(desc)) {
+                return "BL TheBetweenlands.preInit proxy.preInit";
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL
+                    && "net/minecraftforge/fml/common/eventhandler/EventBus".equals(owner)
+                    && "register".equals(name)) {
+                return "BL TheBetweenlands.preInit EventBus.register calls";
+            }
+            return null;
         }
     }
 

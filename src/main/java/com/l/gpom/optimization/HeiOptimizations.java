@@ -8,7 +8,6 @@ import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.entity.IMerchant;
@@ -62,6 +61,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
@@ -98,6 +98,7 @@ public final class HeiOptimizations {
     private static Method merchantRecipeGetItemToSell;
     private static Method enchantmentHelperGetEnchantmentLevel;
     private static Method enchantmentHelperSetEnchantments;
+    private static Method enchantmentCanApply;
     private static Method nbtDataWrite;
     private static Method nbtDataRead;
     private static Method itemGetEnchantability;
@@ -138,6 +139,7 @@ public final class HeiOptimizations {
     private static volatile int jerVillagerTradeCacheHits;
     private static volatile int jerVillagerTradeCacheMisses;
     private static volatile int jerVillagerTradeCacheFailed;
+    private static volatile String craftTweakerContentSignature;
 
     private HeiOptimizations() {
     }
@@ -383,7 +385,7 @@ public final class HeiOptimizations {
 
             List<Fluid> fluids = forestryBottlerFluids();
             String cacheSignature = forestryBottlerRecipeCacheSignature(fluidHandlers, fluids);
-            List cachedRecipes = loadForestryBottlerRecipeCache(cacheSignature);
+            List cachedRecipes = loadForestryBottlerRecipeCache(cacheSignature, fluidHandlers, fluids);
             if (cachedRecipes != null) {
                 return cachedRecipes;
             }
@@ -485,7 +487,7 @@ public final class HeiOptimizations {
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private static List loadForestryBottlerRecipeCache(String signature) {
+    private static List loadForestryBottlerRecipeCache(String signature, List<?> fluidHandlers, List<Fluid> fluids) {
         if (!GpomEarlyConfig.heiForestryBottlerRecipeCacheEnabled() || signature == null) {
             return null;
         }
@@ -501,9 +503,22 @@ public final class HeiOptimizations {
             int version = input.readInt();
             String cacheSignature = input.readUTF();
             if (magic != FORESTRY_BOTTLER_RECIPE_CACHE_MAGIC
-                    || version != FORESTRY_BOTTLER_RECIPE_CACHE_VERSION
-                    || !signature.equals(cacheSignature)) {
+                    || version != FORESTRY_BOTTLER_RECIPE_CACHE_VERSION) {
                 return null;
+            }
+            boolean legacySignature = false;
+            if (!signature.equals(cacheSignature)) {
+                String legacy = legacyForestryBottlerRecipeCacheSignature(fluidHandlers, fluids);
+                if (!cacheSignature.equals(legacy)) {
+                    GPOM.LOGGER.info(
+                            "[HEI Optimizations] Ignoring stale Forestry Bottler recipe cache {} (cache={}, current={})",
+                            file,
+                            cacheSignature,
+                            signature
+                    );
+                    return null;
+                }
+                legacySignature = true;
             }
 
             int count = input.readInt();
@@ -513,6 +528,9 @@ public final class HeiOptimizations {
             }
 
             List recipes = new ArrayList(count);
+            List<ForestryBottlerRecipeRecord> legacyRecords = legacySignature
+                    ? new ArrayList<ForestryBottlerRecipeRecord>(count)
+                    : null;
             for (int i = 0; i < count; i++) {
                 ItemStack inputStack = readNullableItemStack(input);
                 String fluidName = input.readUTF();
@@ -529,11 +547,21 @@ public final class HeiOptimizations {
                     GPOM.LOGGER.info("[HEI Optimizations] Ignoring stale Forestry Bottler recipe cache {}; missing fluid {}", file, fluidName);
                     return null;
                 }
-                recipes.add(newForestryBottlerRecipe(inputStack, new FluidStack(fluid, amount), outputStack, filling));
+                FluidStack fluidStack = new FluidStack(fluid, amount);
+                recipes.add(newForestryBottlerRecipe(inputStack, fluidStack, outputStack, filling));
+                addForestryBottlerRecord(legacyRecords, inputStack, fluidStack, outputStack, filling);
             }
 
+            if (legacySignature) {
+                saveForestryBottlerRecipeCache(signature, legacyRecords);
+            }
             long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
-            GPOM.LOGGER.info("[HEI Optimizations] Loaded {} Forestry Bottler recipe(s) from cache in {} ms", recipes.size(), elapsedMs);
+            GPOM.LOGGER.info(
+                    "[HEI Optimizations] Loaded {} Forestry Bottler recipe(s) from {}cache in {} ms",
+                    recipes.size(),
+                    legacySignature ? "legacy " : "",
+                    elapsedMs
+            );
             return recipes;
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[HEI Optimizations] Failed to load Forestry Bottler recipe cache {}; rebuilding", file, throwable);
@@ -597,6 +625,55 @@ public final class HeiOptimizations {
         }
         try {
             StringBuilder builder = new StringBuilder(64 * 1024);
+            builder.append("v=").append(FORESTRY_BOTTLER_RECIPE_CACHE_VERSION).append(":stable4\n");
+            appendCraftTweakerSignature(builder);
+            builder.append("items=").append(itemStackCacheSignature()).append('\n');
+            builder.append("fluids=");
+            appendSortedFluidSignature(builder, fluids);
+            builder.append('\n').append("handlers=");
+            appendSortedStackIdentitySignature(builder, fluidHandlers);
+            return Integer.toHexString(builder.toString().hashCode());
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[HEI Optimizations] Failed to build Forestry Bottler recipe cache signature; cache disabled for this run", throwable);
+            return null;
+        }
+    }
+
+    private static void appendSortedFluidSignature(StringBuilder builder, List<Fluid> fluids) {
+        List<String> entries = new ArrayList<>(fluids.size());
+        for (Fluid fluid : fluids) {
+            if (fluid == null) {
+                entries.add("null");
+            } else {
+                entries.add(fluid.getName() + '@' + fluid.getClass().getName());
+            }
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            builder.append(entry).append(';');
+        }
+    }
+
+    private static void appendSortedStackIdentitySignature(StringBuilder builder, List<?> ingredients) throws ReflectiveOperationException {
+        List<String> entries = new ArrayList<>(ingredients.size());
+        for (Object ingredient : ingredients) {
+            StringBuilder entry = new StringBuilder(128);
+            if (!(ingredient instanceof ItemStack)) {
+                entry.append("nonstack:").append(ingredient == null ? "null" : ingredient.getClass().getName());
+            } else {
+                appendStackIdentityKey(entry, (ItemStack) ingredient);
+            }
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            builder.append(entry).append(';');
+        }
+    }
+
+    private static String legacyForestryBottlerRecipeCacheSignature(List<?> fluidHandlers, List<Fluid> fluids) {
+        try {
+            StringBuilder builder = new StringBuilder(64 * 1024);
             builder.append("v=").append(FORESTRY_BOTTLER_RECIPE_CACHE_VERSION).append('\n');
             builder.append("items=").append(itemStackCacheSignature()).append('\n');
             builder.append("fluids=");
@@ -617,8 +694,7 @@ public final class HeiOptimizations {
                 builder.append(data.length).append(':').append(Arrays.hashCode(data)).append(';');
             }
             return Integer.toHexString(builder.toString().hashCode());
-        } catch (Throwable throwable) {
-            GPOM.LOGGER.warn("[HEI Optimizations] Failed to build Forestry Bottler recipe cache signature; cache disabled for this run", throwable);
+        } catch (Throwable ignored) {
             return null;
         }
     }
@@ -786,8 +862,16 @@ public final class HeiOptimizations {
             int version = input.readInt();
             String cacheSignature = input.readUTF();
             if (magic != EXTRATREES_LUMBERMILL_RECIPE_CACHE_MAGIC
-                    || version != EXTRATREES_LUMBERMILL_RECIPE_CACHE_VERSION
-                    || !signature.equals(cacheSignature)) {
+                    || version != EXTRATREES_LUMBERMILL_RECIPE_CACHE_VERSION) {
+                return null;
+            }
+            if (!signature.equals(cacheSignature)) {
+                GPOM.LOGGER.info(
+                        "[HEI Optimizations] Ignoring stale ExtraTrees Lumbermill recipe cache {} (cache={}, current={})",
+                        file,
+                        cacheSignature,
+                        signature
+                );
                 return null;
             }
 
@@ -873,39 +957,35 @@ public final class HeiOptimizations {
         }
         try {
             StringBuilder builder = new StringBuilder(64 * 1024);
-            builder.append("v=").append(EXTRATREES_LUMBERMILL_RECIPE_CACHE_VERSION).append('\n');
+            builder.append("v=").append(EXTRATREES_LUMBERMILL_RECIPE_CACHE_VERSION).append(":stable5\n");
+            appendCraftTweakerSignature(builder);
             builder.append("items=").append(itemStackCacheSignature()).append('\n');
-            builder.append("manager=");
-            for (ExtraTreesLumbermillRecipeRecord record : managerRecords) {
-                appendStackKey(builder, record.input);
-                builder.append("=>");
-                appendStackKey(builder, record.output);
-                builder.append(';');
-            }
-            builder.append('\n').append("logs=");
-            for (Object object : logSubtypes) {
-                if (object instanceof ItemStack) {
-                    appendStackKey(builder, (ItemStack) object);
-                    builder.append(';');
-                }
-            }
-            builder.append('\n').append("recipes=");
-            List<String> recipeEntries = new ArrayList<>();
-            for (IRecipe recipe : ForgeRegistries.RECIPES) {
-                if (recipe == null) {
-                    continue;
-                }
-                ResourceLocation registryName = recipe.getRegistryName();
-                recipeEntries.add((registryName == null ? "unknown" : registryName.toString()) + '@' + recipe.getClass().getName());
-            }
-            Collections.sort(recipeEntries);
-            for (String entry : recipeEntries) {
-                builder.append(entry).append(';');
-            }
+            builder.append("managerRecords=");
+            appendExtraTreesLumbermillRecordSignature(builder, managerRecords);
+            builder.append('\n').append("logSubtypes=");
+            appendSortedStackIdentitySignature(builder, logSubtypes);
             return Integer.toHexString(builder.toString().hashCode());
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[HEI Optimizations] Failed to build ExtraTrees Lumbermill recipe cache signature; cache disabled for this run", throwable);
             return null;
+        }
+    }
+
+    private static void appendExtraTreesLumbermillRecordSignature(
+            StringBuilder builder,
+            List<ExtraTreesLumbermillRecipeRecord> records
+    ) throws ReflectiveOperationException, IOException {
+        List<String> entries = new ArrayList<>(records.size());
+        for (ExtraTreesLumbermillRecipeRecord record : records) {
+            StringBuilder entry = new StringBuilder(256);
+            appendStackKey(entry, record.input);
+            entry.append("=>");
+            appendStackKey(entry, record.output);
+            entries.add(entry.toString());
+        }
+        Collections.sort(entries);
+        for (String entry : entries) {
+            builder.append(entry).append(';');
         }
     }
 
@@ -1112,10 +1192,13 @@ public final class HeiOptimizations {
                 String.class,
                 String.class
         );
-        setLevelData.invoke(null, simpleWrapperClass, guiHelper, 125, 15, "textures/blocks/block_tank.png", "textures/blocks/block_tank.png");
-        setLevelData.invoke(null, recipeWrapperClass, guiHelper, 125, 15, "textures/blocks/block_tank.png", "textures/blocks/block_tank.png");
+        Class<?> tankCategoryClass = Class.forName("crazypants.enderio.machines.integration.jei.TankRecipeCategory");
+        int x = 140 - intStaticField(tankCategoryClass, "xOff", 15);
+        int y = 40 - intStaticField(tankCategoryClass, "yOff", 20) - 5;
+        setLevelData.invoke(null, simpleWrapperClass, guiHelper, x, y, "textures/blocks/block_tank.png", "textures/blocks/block_tank.png");
+        setLevelData.invoke(null, recipeWrapperClass, guiHelper, x, y, "textures/blocks/block_tank.png", "textures/blocks/block_tank.png");
 
-        Object category = Class.forName("crazypants.enderio.machines.integration.jei.TankRecipeCategory")
+        Object category = tankCategoryClass
                 .getConstructor(guiHelperClass)
                 .newInstance(guiHelper);
         Class<?> categoryClass = Class.forName("mezz.jei.api.recipe.IRecipeCategory");
@@ -1145,6 +1228,15 @@ public final class HeiOptimizations {
                 16,
                 (Object) new String[]{"EIOTank"}
         );
+    }
+
+    private static int intStaticField(Class<?> ownerClass, String fieldName, int fallback) {
+        try {
+            Field field = findField(ownerClass, fieldName);
+            return field.getInt(null);
+        } catch (Throwable ignored) {
+            return fallback;
+        }
     }
 
     private static Block enderIOTankBlock() throws ReflectiveOperationException, ClassNotFoundException {
@@ -1248,7 +1340,7 @@ public final class HeiOptimizations {
 
             ItemStack enchanted = copyStack(stack);
             if (getEnchantmentLevelReflective(mending, enchanted) <= 0) {
-                if (!mending.canApply(enchanted)) {
+                if (!canApplyEnchantmentReflective(mending, enchanted)) {
                     continue;
                 }
                 setEnchantmentsReflective(Collections.singletonMap(mending, 1), enchanted);
@@ -1350,6 +1442,18 @@ public final class HeiOptimizations {
         }
 
         method.invoke(null, enchantments, stack);
+    }
+
+    private static boolean canApplyEnchantmentReflective(Enchantment enchantment, ItemStack stack) throws ReflectiveOperationException {
+        Method method = enchantmentCanApply;
+        if (method == null) {
+            method = findMethodWithParameters(enchantment.getClass(), "func_92089_a", "canApply", ItemStack.class);
+            if (method == null) {
+                throw new NoSuchMethodException("Enchantment#canApply/func_92089_a");
+            }
+            enchantmentCanApply = method;
+        }
+        return Boolean.TRUE.equals(method.invoke(enchantment, stack));
     }
 
     private static boolean booleanConfigValue(String className, String fieldName) throws ReflectiveOperationException, ClassNotFoundException {
@@ -3033,16 +3137,11 @@ public final class HeiOptimizations {
 
     private static String thermalTransposerContainerCacheSignature() {
         StringBuilder builder = new StringBuilder(64 * 1024);
-        builder.append("v=").append(THERMAL_TRANSPOSER_CONTAINER_CACHE_VERSION).append('\n');
+        builder.append("v=").append(THERMAL_TRANSPOSER_CONTAINER_CACHE_VERSION).append(":sorted\n");
+        appendCraftTweakerSignature(builder);
         builder.append("items=").append(itemStackCacheSignature()).append('\n');
         builder.append("fluids=");
-        for (Fluid fluid : forestryBottlerFluids()) {
-            if (fluid == null) {
-                builder.append("null;");
-            } else {
-                builder.append(fluid.getName()).append('@').append(fluid.getClass().getName()).append(';');
-            }
-        }
+        appendSortedFluidSignature(builder, forestryBottlerFluids());
         return Integer.toHexString(builder.toString().hashCode());
     }
 
@@ -3051,7 +3150,9 @@ public final class HeiOptimizations {
     }
 
     private static String jerVillagerTradeCacheSignature() {
-        return itemStackCacheSignature() + ":samples=" + GpomEarlyConfig.heiJerVillagerTradeCacheSamples();
+        return itemStackCacheSignature()
+                + ":ct=" + craftTweakerContentSignature()
+                + ":samples=" + GpomEarlyConfig.heiJerVillagerTradeCacheSamples();
     }
 
     private static String jerTradeGeneratorKey(Object tradeGenerator) throws ReflectiveOperationException, IOException {
@@ -3142,6 +3243,57 @@ public final class HeiOptimizations {
                 .append(':')
                 .append(Integer.toHexString(Arrays.hashCode(writeItemStack(stack))))
                 .append(')');
+    }
+
+    private static void appendStackIdentityKey(StringBuilder builder, ItemStack stack) throws ReflectiveOperationException {
+        if (stack == null) {
+            builder.append("stack(null)");
+            return;
+        }
+        Object itemObject = getItemReflective(stack);
+        ResourceLocation registryName = itemObject instanceof Item ? ((Item) itemObject).getRegistryName() : null;
+        builder.append("stack(")
+                .append(registryName == null ? "unknown" : registryName.toString())
+                .append('@')
+                .append(stackMetadata(stack))
+                .append('#')
+                .append(stackCount(stack))
+                .append(')');
+    }
+
+    private static void appendFastStackKey(StringBuilder builder, ItemStack stack) throws ReflectiveOperationException {
+        if (stack == null) {
+            builder.append("stack(null)");
+            return;
+        }
+        Object itemObject = getItemReflective(stack);
+        ResourceLocation registryName = itemObject instanceof Item ? ((Item) itemObject).getRegistryName() : null;
+        builder.append("stack(")
+                .append(registryName == null ? "unknown" : registryName.toString())
+                .append('@')
+                .append(stackMetadata(stack))
+                .append('#')
+                .append(stackCount(stack))
+                .append(':')
+                .append(Integer.toHexString(itemStackNbtTextHash(stack)))
+                .append(')');
+    }
+
+    private static int itemStackNbtTextHash(ItemStack stack) throws ReflectiveOperationException {
+        NBTTagCompound tag = new NBTTagCompound();
+        Method method = itemStackWriteToNbt;
+        if (method == null) {
+            method = findMethodWithParameters(stack.getClass(), "func_77955_b", "writeToNBT", NBTTagCompound.class);
+            itemStackWriteToNbt = method;
+        }
+        if (method == null) {
+            throw new NoSuchMethodException("ItemStack.writeToNBT");
+        }
+        Object written = method.invoke(stack, tag);
+        if (written instanceof NBTTagCompound) {
+            tag = (NBTTagCompound) written;
+        }
+        return tag.toString().hashCode();
     }
 
     private static boolean mayHaveJerEnchantments(ItemStack stack) {
@@ -3436,10 +3588,13 @@ public final class HeiOptimizations {
     }
 
     private static int computeSearchWorkerCount() {
-        int fallback = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2));
-        int configured = intProperty("gpom.hei.searchWorkers", fallback);
         int max = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-        int workers = Math.max(1, Math.min(configured, max));
+        int auto = Math.max(1, Math.min(8, max));
+        int configured = GpomEarlyConfig.heiSearchWorkers();
+        if (System.getProperty("gpom.hei.searchWorkers") != null) {
+            configured = intProperty("gpom.hei.searchWorkers", configured);
+        }
+        int workers = configured > 0 ? Math.max(1, Math.min(configured, max)) : auto;
         GPOM.LOGGER.info("[HEI Optimizations] Using {} HEI async search worker(s)", workers);
         return workers;
     }
@@ -3513,10 +3668,118 @@ public final class HeiOptimizations {
 
         StringBuilder builder = new StringBuilder(64 * 1024);
         builder.append("v=").append(HEI_ITEM_STACK_CACHE_VERSION).append('\n');
+        appendCraftTweakerSignature(builder);
         builder.append("items=");
         for (String entry : entries) {
             builder.append(entry).append(';');
         }
         return Integer.toHexString(builder.toString().hashCode());
+    }
+
+    private static void appendCraftTweakerSignature(StringBuilder builder) {
+        builder.append("craftTweaker=").append(craftTweakerContentSignature()).append('\n');
+    }
+
+    private static String craftTweakerContentSignature() {
+        String cached = craftTweakerContentSignature;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (HeiOptimizations.class) {
+            cached = craftTweakerContentSignature;
+            if (cached != null) {
+                return cached;
+            }
+            try {
+                cached = computeCraftTweakerContentSignature();
+            } catch (Throwable throwable) {
+                cached = "error-" + Long.toHexString(System.nanoTime());
+                GPOM.LOGGER.warn("[HEI Optimizations] Failed to build CraftTweaker content signature; persistent HEI caches disabled for this run", throwable);
+            }
+            craftTweakerContentSignature = cached;
+            return cached;
+        }
+    }
+
+    private static String computeCraftTweakerContentSignature() throws IOException {
+        File minecraftDir = minecraftDirectory();
+        List<String> entries = new ArrayList<>();
+        collectCraftTweakerSignatureEntries(minecraftDir, "scripts", entries);
+        collectCraftTweakerSignatureEntries(minecraftDir, "config/CraftTweaker", entries);
+        collectCraftTweakerSignatureEntries(minecraftDir, "config/contenttweaker", entries);
+        collectCraftTweakerSignatureEntries(minecraftDir, "resources/contenttweaker", entries);
+        Collections.sort(entries);
+
+        StringBuilder builder = new StringBuilder(Math.max(128, entries.size() * 96));
+        builder.append("v1:").append(entries.size()).append(':');
+        for (String entry : entries) {
+            builder.append(entry).append(';');
+        }
+        return Integer.toHexString(builder.toString().hashCode());
+    }
+
+    private static File minecraftDirectory() {
+        try {
+            Class<?> launch = Class.forName("net.minecraft.launchwrapper.Launch");
+            Object value = launch.getField("minecraftHome").get(null);
+            if (value instanceof File) {
+                return (File) value;
+            }
+        } catch (Throwable ignored) {
+            // Fall back to the process working directory used by normal client launches.
+        }
+        return new File(".");
+    }
+
+    private static void collectCraftTweakerSignatureEntries(
+            File minecraftDir,
+            String relativeRoot,
+            List<String> entries
+    ) throws IOException {
+        File root = new File(minecraftDir, relativeRoot);
+        if (!root.exists()) {
+            return;
+        }
+        if (!root.isDirectory()) {
+            entries.add(relativeRoot + ':' + root.length() + ':' + Long.toHexString(fileCrc32(root)));
+            return;
+        }
+        collectCraftTweakerSignatureEntries(root, root, relativeRoot, entries);
+    }
+
+    private static void collectCraftTweakerSignatureEntries(
+            File root,
+            File file,
+            String relativeRoot,
+            List<String> entries
+    ) throws IOException {
+        File[] children = file.listFiles();
+        if (children == null) {
+            return;
+        }
+        Arrays.sort(children, (left, right) -> left.getName().compareTo(right.getName()));
+        for (File child : children) {
+            if (child.isDirectory()) {
+                collectCraftTweakerSignatureEntries(root, child, relativeRoot, entries);
+                continue;
+            }
+            if (!child.isFile()) {
+                continue;
+            }
+            String relativePath = root.toURI().relativize(child.toURI()).getPath();
+            entries.add(relativeRoot + '/' + relativePath + ':' + child.length() + ':' + Long.toHexString(fileCrc32(child)));
+        }
+    }
+
+    private static long fileCrc32(File file) throws IOException {
+        CRC32 crc = new CRC32();
+        byte[] buffer = new byte[8192];
+        try (FileInputStream input = new FileInputStream(file)) {
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                crc.update(buffer, 0, read);
+            }
+        }
+        return crc.getValue();
     }
 }

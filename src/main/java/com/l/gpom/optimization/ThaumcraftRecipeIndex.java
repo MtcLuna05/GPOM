@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -61,7 +62,9 @@ public final class ThaumcraftRecipeIndex {
                         value = visSize;
                     }
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    if (GpomEarlyConfig.gpomLoggingEnabled()) {
+                        GPOM.LOGGER.warn("[Thaumcraft Optimizations] Indexed recipe aspect generation failed; continuing", e);
+                    }
                 }
             }
             return ret;
@@ -173,7 +176,9 @@ public final class ThaumcraftRecipeIndex {
                             value = visSize;
                         }
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        if (GpomEarlyConfig.gpomLoggingEnabled()) {
+                            GPOM.LOGGER.warn("[Thaumcraft Optimizations] Fallback recipe aspect generation failed; continuing", e);
+                        }
                     }
                 }
             }

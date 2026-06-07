@@ -35,9 +35,28 @@ repositories {
 }
 
 dependencies {
-    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/AoA3-3.3.6.jar')
-    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/EnderCore-1.12.2-0.5.78.jar')
-    compileOnly files('/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft/mods/EnderIO-1.12.2-5.3.72.jar')
+    compileOnly localModJar('AoA3-3.3.6.jar')
+    compileOnly localModJar('EnderCore-1.12.2-0.5.78.jar')
+    compileOnly localModJar('EnderIO-1.12.2-5.3.72.jar')
+}
+
+def localModJar(String fileName) {
+    def configuredMinecraftDir = project.findProperty('meatball_minecraft_dir')?.toString()
+    if (configuredMinecraftDir == null || configuredMinecraftDir.trim().isEmpty()) {
+        configuredMinecraftDir = System.getenv('MEATBALL_MINECRAFT_DIR')
+    }
+    if (configuredMinecraftDir == null || configuredMinecraftDir.trim().isEmpty()) {
+        configuredMinecraftDir = new File(
+                System.getProperty('user.home'),
+                '.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/MeatballCraft, Dimensional Ascension/minecraft'
+        ).absolutePath
+    }
+
+    def jarFile = file("${configuredMinecraftDir}/mods/${fileName}")
+    if (!jarFile.isFile()) {
+        throw new GradleException("Missing compile-only mod jar '${fileName}'. Set -Pmeatball_minecraft_dir=/path/to/minecraft or MEATBALL_MINECRAFT_DIR=/path/to/minecraft.")
+    }
+    return files(jarFile)
 }
 
 unimined.minecraft {

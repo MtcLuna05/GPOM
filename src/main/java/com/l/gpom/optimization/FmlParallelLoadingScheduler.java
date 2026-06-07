@@ -6,6 +6,7 @@ import com.google.common.eventbus.EventBus;
 import com.l.gpom.GPOM;
 import com.l.gpom.client.EarlySplashWindow;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.core.ChickenAsmConcurrencyTransformer;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.LoaderState;
 import net.minecraftforge.fml.common.ModContainer;
@@ -22,14 +23,21 @@ import net.minecraftforge.fml.common.versioning.ArtifactVersion;
 import org.apache.logging.log4j.ThreadContext;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.lang.management.ManagementFactory;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
@@ -44,6 +52,7 @@ public final class FmlParallelLoadingScheduler {
     private static final Object PROGRESS_LOCK = new Object();
     private static final int PROGRESS_LOG_INTERVAL = 25;
     private static final long MIB = 1048576L;
+    private static volatile Field progressBarMessageField;
 
     private FmlParallelLoadingScheduler() {
     }
@@ -64,6 +73,14 @@ public final class FmlParallelLoadingScheduler {
         boolean continueOnModError = continueOnModError(event);
         boolean serialHandlersAreBarriers = serialHandlersAreBarriers(event);
         if (parallelMods.isEmpty()) {
+            return;
+        }
+        if (event instanceof FMLConstructionEvent || event instanceof FMLPreInitializationEvent) {
+            ChickenAsmConcurrencyTransformer.hardenRuntimeCaches();
+        }
+        clearThreadedBreadcrumbs(event);
+        if (event instanceof FMLPreInitializationEvent && GpomEarlyConfig.parallelPreInitDagEnabled()) {
+            propagatePreInitDag(event, activeModList, eventChannels, modStates, parallelMods, deniedMods, continueOnModError);
             return;
         }
 
@@ -106,16 +123,20 @@ public final class FmlParallelLoadingScheduler {
         int parallelHandlers = 0;
         ProgressState progressState = new ProgressState(event.getEventType(), phaseDisplayName(event), activeModList.size(), parallelEligibleHandlers, startedAt);
         EarlySplashWindow.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
-        GPOM.LOGGER.info(
-                "[FmlParallelLoading] {} starting with {} worker(s), parallelEligible={}, activeHandlers={}, serialHandlersAreBarriers={}, allowlist={}, denylist={}",
-                event.getEventType(),
-                workers,
-                parallelEligibleHandlers,
-                activeModList.size(),
-                serialHandlersAreBarriers,
-                parallelMods,
-                deniedMods
-        );
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] {} starting with {} worker(s), parallelEligible={}, activeHandlers={}, serialHandlersAreBarriers={}, allowlist={}, denylist={}",
+                    event.getEventType(),
+                    workers,
+                    parallelEligibleHandlers,
+                    activeModList.size(),
+                    serialHandlersAreBarriers,
+                    parallelMods,
+                    deniedMods
+            );
+        }
+        PreInitClassPrewarmer.WarmHandle prewarmHandle = PreInitClassPrewarmer.WarmHandle.noop();
+        boolean prewarmStarted = false;
         InFlightDispatches inFlight = new InFlightDispatches(completionService);
         Set<ModContainer> submittedAhead = new LinkedHashSet<>();
         boolean completed = false;
@@ -130,6 +151,10 @@ public final class FmlParallelLoadingScheduler {
                 boolean parallelAllowed = isParallelAllowed(mod, parallelMods, deniedMods);
 
                 if (parallelAllowed) {
+                    if (!prewarmStarted && shouldStartPreInitPrewarmer(event, progressState, -1L)) {
+                        prewarmHandle = startPreInitPrewarmer(activeModList, workers, progressState);
+                        prewarmStarted = true;
+                    }
                     if (hasOrderDependencyWithBatch(event, mod, inFlight.mods, "workerBatch")) {
                         drainInFlight(event, inFlight, modStates, progress, progressState, continueOnModError, true, "workerDependency");
                     }
@@ -170,10 +195,19 @@ public final class FmlParallelLoadingScheduler {
                         progressState.completedHandlers,
                         progressState.totalHandlers
                 );
-                DispatchResult result = dispatchSingle(event, mod, eventChannels, modStates, true);
+                long serialStartedAt = System.nanoTime();
+                DispatchResult result;
+                try (PreInitClassPrewarmer.SerialPause ignored = PreInitClassPrewarmer.pauseDuringSerialHandler()) {
+                    result = dispatchSingle(event, mod, eventChannels, modStates, true);
+                }
+                long serialElapsedMillis = elapsedMillis(serialStartedAt);
                 commitResult(result, modStates);
                 markHandlerCompleted(mod, progressState);
                 handleFailure(event, result, modStates, progressState, continueOnModError);
+                if (!prewarmStarted && shouldStartPreInitPrewarmer(event, progressState, serialElapsedMillis)) {
+                    prewarmHandle = startPreInitPrewarmer(activeModList, workers, progressState);
+                    prewarmStarted = true;
+                }
                 drainInFlight(event, inFlight, modStates, progress, progressState, continueOnModError, false, "pollAfterSerial");
             }
 
@@ -183,20 +217,200 @@ public final class FmlParallelLoadingScheduler {
             if (completed) {
                 ProgressManager.pop(progress);
             }
+            prewarmHandle.close();
             executor.shutdownNow();
         }
 
         long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
-        GPOM.LOGGER.info(
-                "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, continuedFailures={}, wall={} ms, allowlist={}, denylist={}",
-                event.getEventType(),
-                workers,
-                parallelHandlers,
-                progressState.continuedFailures,
-                elapsedMillis,
-                parallelMods,
-                deniedMods
-        );
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] {} handled with {} worker(s), parallelHandlers={}, continuedFailures={}, wall={} ms, allowlist={}, denylist={}",
+                    event.getEventType(),
+                    workers,
+                    parallelHandlers,
+                    progressState.continuedFailures,
+                    elapsedMillis,
+                    parallelMods,
+                    deniedMods
+            );
+        }
+    }
+
+    private static void propagatePreInitDag(FMLEvent event,
+                                            List<ModContainer> activeModList,
+                                            ImmutableMap<String, EventBus> eventChannels,
+                                            Multimap<String, LoaderState.ModState> modStates,
+                                            Set<String> parallelMods,
+                                            Set<String> deniedMods,
+                                            boolean continueOnModError) {
+        long countStartedAt = StartupProfiler.beginProbe();
+        int parallelEligibleHandlers;
+        try {
+            parallelEligibleHandlers = countParallelAllowed(activeModList, parallelMods, deniedMods);
+        } finally {
+            StartupProfiler.endProbe("FML scheduler " + event.getEventType() + " dag countParallelAllowed", countStartedAt);
+        }
+        int requestedWorkers = requestedWorkers(event);
+        int workers = Math.min(requestedWorkers, Math.max(1, parallelEligibleHandlers));
+        int maxInFlight = preInitDagMaxInFlight(workers);
+
+        long graphStartedAt = StartupProfiler.beginProbe();
+        List<DagNode> nodes;
+        Map<String, DagNode> nodesByModId;
+        try {
+            nodes = buildPreInitDag(activeModList, parallelMods, deniedMods);
+            nodesByModId = new HashMap<>();
+            for (DagNode node : nodes) {
+                nodesByModId.put(normalize(node.mod.getModId()), node);
+            }
+        } finally {
+            StartupProfiler.endProbe("FML scheduler " + event.getEventType() + " dag build", graphStartedAt);
+        }
+
+        long executorStartedAt = StartupProfiler.beginProbe();
+        ExecutorService executor;
+        CompletionService<DispatchResult> completionService;
+        try {
+            executor = Executors.newFixedThreadPool(workers, runnable -> {
+                Thread thread = new Thread(runnable, "GPOM FML preInit DAG loader");
+                thread.setDaemon(true);
+                return thread;
+            });
+            completionService = new ExecutorCompletionService<>(executor);
+        } finally {
+            StartupProfiler.endProbe("FML scheduler " + event.getEventType() + " dag executorSetup", executorStartedAt);
+        }
+
+        long progressStartedAt = StartupProfiler.beginProbe();
+        ProgressManager.ProgressBar progress;
+        try {
+            progress = ProgressManager.push(
+                    "GPOM " + phaseDisplayName(event),
+                    activeModList.size(),
+                    true
+            );
+        } finally {
+            StartupProfiler.endProbe("FML scheduler " + event.getEventType() + " dag progressSetup", progressStartedAt);
+        }
+
+        long startedAt = System.nanoTime();
+        int parallelHandlers = 0;
+        ProgressState progressState = new ProgressState(event.getEventType(), phaseDisplayName(event), activeModList.size(), parallelEligibleHandlers, startedAt);
+        EarlySplashWindow.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] {} DAG starting with {} worker(s), maxInFlight={}, parallelEligible={}, activeHandlers={}, allowlist={}, denylist={}",
+                    event.getEventType(),
+                    workers,
+                    maxInFlight,
+                    parallelEligibleHandlers,
+                    activeModList.size(),
+                    parallelMods,
+                    deniedMods
+            );
+        }
+
+        InFlightDispatches inFlight = new InFlightDispatches(completionService);
+        boolean completed = false;
+        try {
+            while (progressState.completedHandlers < nodes.size()) {
+                DagNode nextSerial = nextIncompleteSerial(nodes);
+                int serialCutoff = nextSerial == null ? Integer.MAX_VALUE : nextSerial.index;
+                parallelHandlers += submitReadyDagWorkers(
+                        event,
+                        nodes,
+                        serialCutoff,
+                        Integer.MAX_VALUE,
+                        maxInFlight,
+                        eventChannels,
+                        modStates,
+                        progress,
+                        progressState,
+                        inFlight
+                );
+
+                if (nextSerial != null && !nextSerial.completed && nextSerial.remainingDependencies == 0) {
+                    runDagSerialNode(event, nextSerial, eventChannels, modStates, progress, progressState, continueOnModError);
+                    continue;
+                }
+
+                if (nextSerial == null) {
+                    int submitted = submitReadyDagWorkers(
+                            event,
+                            nodes,
+                            Integer.MAX_VALUE,
+                            Integer.MAX_VALUE,
+                            maxInFlight,
+                            eventChannels,
+                            modStates,
+                            progress,
+                            progressState,
+                            inFlight
+                    );
+                    parallelHandlers += submitted;
+                    if (submitted > 0) {
+                        continue;
+                    }
+                } else {
+                    int submitted = submitReadyDagWorkers(
+                            event,
+                            nodes,
+                            serialCutoff,
+                            1,
+                            maxInFlight,
+                            eventChannels,
+                            modStates,
+                            progress,
+                            progressState,
+                            inFlight
+                    );
+                    parallelHandlers += submitted;
+                    if (submitted > 0) {
+                        drainOneDagInFlight(event, inFlight, nodesByModId, modStates, progress, progressState, continueOnModError, "dagBlockedSerial");
+                        continue;
+                    }
+                }
+
+                if (inFlight.pending > 0) {
+                    drainOneDagInFlight(event, inFlight, nodesByModId, modStates, progress, progressState, continueOnModError, "dagWait");
+                    continue;
+                }
+
+                DagNode forced = firstIncompleteNode(nodes);
+                if (forced == null) {
+                    break;
+                }
+                GPOM.LOGGER.warn(
+                        "[FmlParallelLoading] {} DAG found no ready node; forcing {} ({}) with {} unresolved dependency edge(s)",
+                        event.getEventType(),
+                        forced.mod.getModId(),
+                        forced.mod.getName(),
+                        forced.remainingDependencies
+                );
+                runDagSerialNode(event, forced, eventChannels, modStates, progress, progressState, continueOnModError);
+            }
+            completed = true;
+        } finally {
+            if (completed) {
+                ProgressManager.pop(progress);
+            }
+            executor.shutdownNow();
+        }
+
+        long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000L;
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] {} DAG handled with {} worker(s), maxInFlight={}, parallelHandlers={}, continuedFailures={}, wall={} ms, allowlist={}, denylist={}",
+                    event.getEventType(),
+                    workers,
+                    maxInFlight,
+                    parallelHandlers,
+                    progressState.continuedFailures,
+                    elapsedMillis,
+                    parallelMods,
+                    deniedMods
+            );
+        }
     }
 
     private static void drainInFlight(FMLEvent phaseEvent,
@@ -209,11 +423,22 @@ public final class FmlParallelLoadingScheduler {
                                       String reason) {
         int initialPending = inFlight.pending;
         int drained = 0;
+        String waitMessage = "Waiting for none";
         long startedAt = StartupProfiler.beginProbe();
         while (inFlight.pending > 0) {
             Future<DispatchResult> future;
             try {
-                future = blockUntilEmpty ? inFlight.completionService.take() : inFlight.completionService.poll();
+                if (blockUntilEmpty) {
+                    waitMessage = inFlight.longestRunningWaitMessage();
+                    setVisibleProgressMessage(progress, waitMessage);
+                }
+                if (blockUntilEmpty) {
+                    try (PreInitClassPrewarmer.SerialPause ignored = PreInitClassPrewarmer.pauseDuringBlockingWait()) {
+                        future = inFlight.completionService.take();
+                    }
+                } else {
+                    future = inFlight.completionService.poll();
+                }
                 if (future == null) {
                     if (drained > 0) {
                         StartupProfiler.endProbeAlways(
@@ -250,18 +475,29 @@ public final class FmlParallelLoadingScheduler {
             StartupProfiler.endProbeAlways(
                     "FML scheduler " + eventType(phaseEvent) + " drainInFlight "
                             + (blockUntilEmpty ? "block " : "poll ")
-                            + safeReason(reason),
+                            + safeReason(reason)
+                            + (blockUntilEmpty ? " " + waitMessage : ""),
                     startedAt
             );
         }
         if (blockUntilEmpty && initialPending > 0 && elapsedMillis(startedAt) >= 250L) {
-            GPOM.LOGGER.info(
-                    "[FmlParallelLoading] Waited {} ms draining {} in-flight {} handler(s) for {}",
-                    elapsedMillis(startedAt),
-                    initialPending,
-                    eventType(phaseEvent),
-                    safeReason(reason)
-            );
+            logVisibleWait(waitMessage);
+        }
+    }
+
+    private static void setVisibleProgressMessage(ProgressManager.ProgressBar progress, String message) {
+        if (progress == null || message == null || message.isEmpty()) {
+            return;
+        }
+        try {
+            Field field = progressBarMessageField;
+            if (field == null) {
+                field = ProgressManager.ProgressBar.class.getDeclaredField("message");
+                field.setAccessible(true);
+                progressBarMessageField = field;
+            }
+            field.set(progress, message);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -272,13 +508,15 @@ public final class FmlParallelLoadingScheduler {
         synchronized (PROGRESS_LOCK) {
             if (state != null && !state.firstVisibleProgressLogged) {
                 state.firstVisibleProgressLogged = true;
-                GPOM.LOGGER.info(
-                        "[FmlParallelLoading] {} first visible progress after {} ms: {} ({})",
-                        state.eventType,
-                        elapsedMillis(state.startedAtNanos),
-                        mod.getModId(),
-                        mod.getName()
-                );
+                if (schedulerLogsEnabled()) {
+                    GPOM.LOGGER.info(
+                            "[FmlParallelLoading] {} first visible progress after {} ms: {} ({})",
+                            state.eventType,
+                            elapsedMillis(state.startedAtNanos),
+                            mod.getModId(),
+                            mod.getName()
+                    );
+                }
             }
             progress.step(progressLabel(mod));
         }
@@ -298,6 +536,30 @@ public final class FmlParallelLoadingScheduler {
         }
         ++state.completedParallelHandlers;
         maybeLogProgressSnapshot(mod, state);
+    }
+
+    private static boolean shouldStartPreInitPrewarmer(FMLEvent event, ProgressState state, long completedSerialMillis) {
+        if (!(event instanceof FMLPreInitializationEvent) || !GpomEarlyConfig.preInitClassPrewarmEnabled()) {
+            return false;
+        }
+        long serialThresholdMillis = GpomEarlyConfig.preInitClassPrewarmDeferUntilSerialMillis();
+        if (completedSerialMillis >= 0L && completedSerialMillis >= serialThresholdMillis) {
+            return true;
+        }
+        int minCompletedHandlers = GpomEarlyConfig.preInitClassPrewarmDeferMinCompletedHandlers();
+        return state != null && state.completedHandlers >= minCompletedHandlers;
+    }
+
+    private static PreInitClassPrewarmer.WarmHandle startPreInitPrewarmer(List<ModContainer> activeModList,
+                                                                          int workers,
+                                                                          ProgressState state) {
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[PreInitClassPrewarmer] Deferred async prewarm start after {} completed handler(s)",
+                    state == null ? 0 : state.completedHandlers
+            );
+        }
+        return PreInitClassPrewarmer.startAsync(activeModList, workers);
     }
 
     private static int submitLoadCompleteLookahead(FMLEvent event,
@@ -343,10 +605,12 @@ public final class FmlParallelLoadingScheduler {
         }
 
         if (submitted > 0) {
-            GPOM.LOGGER.info(
-                    "[FmlParallelLoading] Queued {} independent LoadComplete lookahead handler(s) before serial HEI",
-                    submitted
-            );
+            if (schedulerLogsEnabled()) {
+                GPOM.LOGGER.info(
+                        "[FmlParallelLoading] Queued {} independent LoadComplete lookahead handler(s) before serial HEI",
+                        submitted
+                );
+            }
             EarlySplashWindow.setPhaseProgress(
                     "FML LoadComplete running HEI; queued " + submitted + " later handler(s)",
                     progressState.completedHandlers,
@@ -354,6 +618,305 @@ public final class FmlParallelLoadingScheduler {
             );
         }
         return submitted;
+    }
+
+    private static List<DagNode> buildPreInitDag(List<ModContainer> activeModList,
+                                                 Set<String> parallelMods,
+                                                 Set<String> deniedMods) {
+        List<DagNode> nodes = new ArrayList<>(activeModList.size());
+        for (int index = 0; index < activeModList.size(); index++) {
+            ModContainer mod = activeModList.get(index);
+            DagNode node = new DagNode(index, mod, isParallelAllowed(mod, parallelMods, deniedMods));
+            nodes.add(node);
+        }
+
+        for (int left = 0; left < nodes.size(); left++) {
+            DagNode earlier = nodes.get(left);
+            for (int right = left + 1; right < nodes.size(); right++) {
+                DagNode later = nodes.get(right);
+                if (hasOrderDependency(earlier.mod, later.mod)) {
+                    addDagEdge(earlier, later);
+                }
+            }
+        }
+
+        DagNode previousSerial = null;
+        for (DagNode node : nodes) {
+            if (node.parallelAllowed) {
+                continue;
+            }
+            if (previousSerial != null) {
+                addDagEdge(previousSerial, node);
+            }
+            previousSerial = node;
+        }
+        return nodes;
+    }
+
+    private static void addDagEdge(DagNode before, DagNode after) {
+        if (before == null || after == null || before == after) {
+            return;
+        }
+        before.successors.add(after);
+        after.remainingDependencies++;
+    }
+
+    private static int preInitDagMaxInFlight(int workers) {
+        return Math.max(1, workers);
+    }
+
+    private static int submitReadyDagWorkers(FMLEvent event,
+                                             List<DagNode> nodes,
+                                             int indexCutoff,
+                                             int maxSubmits,
+                                             int maxInFlight,
+                                             ImmutableMap<String, EventBus> eventChannels,
+                                             Multimap<String, LoaderState.ModState> modStates,
+                                             ProgressManager.ProgressBar progress,
+                                             ProgressState progressState,
+                                             InFlightDispatches inFlight) {
+        int submitted = 0;
+        while (submitted < maxSubmits && inFlight.pending < maxInFlight) {
+            DagNode node = firstReadyParallelNode(nodes, indexCutoff);
+            if (node == null) {
+                break;
+            }
+            node.submitted = true;
+            inFlight.submit(new DispatchTask(
+                    event,
+                    node.mod,
+                    eventChannels,
+                    modStates,
+                    progress,
+                    progressState
+            ));
+            submitted++;
+        }
+        return submitted;
+    }
+
+    private static DagNode firstReadyParallelNode(List<DagNode> nodes, int indexCutoff) {
+        for (int index = nodes.size() - 1; index >= 0; index--) {
+            DagNode node = nodes.get(index);
+            if (node.index >= indexCutoff) {
+                continue;
+            }
+            if (node.parallelAllowed && !node.submitted && !node.completed && node.remainingDependencies == 0) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private static DagNode nextIncompleteSerial(List<DagNode> nodes) {
+        for (DagNode node : nodes) {
+            if (!node.parallelAllowed && !node.completed) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private static DagNode firstIncompleteNode(List<DagNode> nodes) {
+        for (DagNode node : nodes) {
+            if (!node.completed && !node.submitted) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private static void runDagSerialNode(FMLEvent event,
+                                         DagNode node,
+                                         ImmutableMap<String, EventBus> eventChannels,
+                                         Multimap<String, LoaderState.ModState> modStates,
+                                         ProgressManager.ProgressBar progress,
+                                         ProgressState progressState,
+                                         boolean continueOnModError) {
+        node.submitted = true;
+        stepVisibleProgress(progress, node.mod, progressState);
+        EarlySplashWindow.setPhaseProgress(
+                "FML " + progressState.displayPhaseName + " running " + progressLabel(node.mod),
+                progressState.completedHandlers,
+                progressState.totalHandlers
+        );
+        DispatchResult result = dispatchSingle(event, node.mod, eventChannels, modStates, true);
+        commitResult(result, modStates);
+        markHandlerCompleted(node.mod, progressState);
+        handleFailure(event, result, modStates, progressState, continueOnModError);
+        completeDagNode(node);
+    }
+
+    private static boolean drainOneDagInFlight(FMLEvent phaseEvent,
+                                               InFlightDispatches inFlight,
+                                               Map<String, DagNode> nodesByModId,
+                                               Multimap<String, LoaderState.ModState> modStates,
+                                               ProgressManager.ProgressBar progress,
+                                               ProgressState progressState,
+                                               boolean continueOnModError,
+                                               String reason) {
+        if (inFlight.pending <= 0) {
+            return false;
+        }
+
+        String waitMessage = inFlight.longestRunningWaitMessage();
+        setVisibleProgressMessage(progress, waitMessage);
+        long startedAt = StartupProfiler.beginProbe();
+        try {
+            Future<DispatchResult> future;
+            try (PreInitClassPrewarmer.SerialPause ignored = PreInitClassPrewarmer.pauseDuringBlockingWait()) {
+                future = inFlight.completionService.take();
+            }
+            DispatchResult result = future.get();
+            inFlight.complete(result);
+            commitResult(result, modStates);
+            if (result != null && result.mod != null) {
+                if (!result.visibleProgressStepped) {
+                    stepVisibleProgress(progress, result.mod, progressState);
+                }
+                markHandlerCompleted(result.mod, progressState);
+                stepThreadedProgress(result.mod, progressState);
+                DagNode node = nodesByModId.get(normalize(result.mod.getModId()));
+                if (node != null) {
+                    completeDagNode(node);
+                }
+            }
+            handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
+            return true;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            inFlight.cancelAll();
+            throw new RuntimeException("Interrupted while waiting for parallel FML loading", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+            DispatchResult result = DispatchResult.failed(null, cause);
+            inFlight.complete(result);
+            handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
+            return true;
+        } finally {
+            StartupProfiler.endProbeAlways(
+                    "FML scheduler " + eventType(phaseEvent) + " dag drainOne "
+                            + safeReason(reason) + " " + waitMessage,
+                    startedAt
+            );
+            if (elapsedMillis(startedAt) >= 250L) {
+                logVisibleWait(waitMessage);
+            }
+        }
+    }
+
+    private static void logVisibleWait(String waitMessage) {
+        if (waitMessage == null || waitMessage.isEmpty() || "Waiting for none".equals(waitMessage)) {
+            return;
+        }
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info("[FmlParallelLoading] {}", waitMessage);
+        }
+    }
+
+    private static void completeDagNode(DagNode node) {
+        if (node == null || node.completed) {
+            return;
+        }
+        node.completed = true;
+        for (DagNode successor : node.successors) {
+            successor.remainingDependencies = Math.max(0, successor.remainingDependencies - 1);
+        }
+    }
+
+    private static void clearThreadedBreadcrumbs(FMLEvent event) {
+        if (!GpomEarlyConfig.parallelAutoQuarantineGlErrorsEnabled()) {
+            return;
+        }
+        File directory = breadcrumbDirectory();
+        File[] files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file.isFile()) {
+                try {
+                    Files.deleteIfExists(file.toPath());
+                } catch (IOException exception) {
+                    GPOM.LOGGER.warn("[FmlParallelLoading] Failed to clear stale breadcrumb {}", file, exception);
+                }
+            }
+        }
+    }
+
+    private static File writeThreadedBreadcrumb(FMLEvent event, ModContainer mod) {
+        if (!GpomEarlyConfig.parallelAutoQuarantineGlErrorsEnabled() || event == null || mod == null) {
+            return null;
+        }
+        String modId = normalize(mod.getModId());
+        if (modId.isEmpty()) {
+            return null;
+        }
+
+        File directory = breadcrumbDirectory();
+        String eventType = eventType(event);
+        File activeFile = new File(directory, safeFileName(eventType + "-" + modId) + ".properties");
+        List<String> lines = threadedBreadcrumbLines(event, mod);
+        try {
+            Files.createDirectories(directory.toPath());
+            Files.write(activeFile.toPath(), lines, StandardCharsets.UTF_8);
+            Files.write(lastThreadedBreadcrumbFile().toPath(), lines, StandardCharsets.UTF_8);
+            return activeFile;
+        } catch (IOException exception) {
+            GPOM.LOGGER.warn("[FmlParallelLoading] Failed to write threaded breadcrumb for {} ({})", modId, mod.getName(), exception);
+            return null;
+        }
+    }
+
+    private static List<String> threadedBreadcrumbLines(FMLEvent event, ModContainer mod) {
+        Set<String> related = quarantineModSet(mod);
+        related.remove(normalize(mod.getModId()));
+        List<String> relatedList = new ArrayList<>(related);
+        Collections.sort(relatedList);
+
+        List<String> lines = new ArrayList<>();
+        lines.add("phase=" + eventType(event));
+        lines.add("phaseDisplayName=" + phaseDisplayName(event));
+        lines.add("denylistKey=" + denylistProperty(event));
+        lines.add("modId=" + normalize(mod.getModId()));
+        lines.add("modName=" + sanitizePropertyValue(mod.getName()));
+        lines.add("threadName=" + sanitizePropertyValue(Thread.currentThread().getName()));
+        lines.add("startedAtNanos=" + System.nanoTime());
+        lines.add("related=" + String.join(",", relatedList));
+        return lines;
+    }
+
+    private static void deleteThreadedBreadcrumb(File file) {
+        if (file == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(file.toPath());
+        } catch (IOException exception) {
+            GPOM.LOGGER.warn("[FmlParallelLoading] Failed to delete threaded breadcrumb {}", file, exception);
+        }
+    }
+
+    private static File breadcrumbDirectory() {
+        return new File(new File(System.getProperty("user.dir", "."), "config"), "gpom-parallel-active");
+    }
+
+    private static File lastThreadedBreadcrumbFile() {
+        return new File(new File(System.getProperty("user.dir", "."), "config"), "gpom-parallel-last-threaded.properties");
+    }
+
+    private static String safeFileName(String value) {
+        String normalized = normalize(value);
+        StringBuilder builder = new StringBuilder(normalized.length());
+        for (int index = 0; index < normalized.length(); index++) {
+            char c = normalized.charAt(index);
+            builder.append((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' ? c : '_');
+        }
+        return builder.length() == 0 ? "unknown" : builder.toString();
+    }
+
+    private static String sanitizePropertyValue(String value) {
+        return value == null ? "" : value.replace('\n', ' ').replace('\r', ' ');
     }
 
     private static String progressLabel(ModContainer mod) {
@@ -393,17 +956,19 @@ public final class FmlParallelLoadingScheduler {
             return;
         }
         state.lastLoggedParallelHandlers = completed;
-        GPOM.LOGGER.info(
-                "[FmlParallelLoading] progress {} parallel={}/{} total={}/{} heap={} MiB last={} ({})",
-                state.eventType,
-                completed,
-                state.totalParallelHandlers,
-                state.completedHandlers,
-                state.totalHandlers,
-                usedHeapMib(),
-                mod.getModId(),
-                mod.getName()
-        );
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] progress {} parallel={}/{} total={}/{} heap={} MiB last={} ({})",
+                    state.eventType,
+                    completed,
+                    state.totalParallelHandlers,
+                    state.completedHandlers,
+                    state.totalHandlers,
+                    usedHeapMib(),
+                    mod.getModId(),
+                    mod.getName()
+            );
+        }
     }
 
     private static DispatchResult dispatchSingle(FMLEvent phaseEvent, ModContainer mod,
@@ -413,16 +978,20 @@ public final class FmlParallelLoadingScheduler {
         String modId = mod.getModId();
         long startedAt = System.nanoTime();
         String originalThreadName = null;
+        File breadcrumb = null;
         if (!mainThread) {
             Thread currentThread = Thread.currentThread();
             originalThreadName = currentThread.getName();
             currentThread.setName("GPOM FML " + phaseDisplayName(phaseEvent) + " - " + modId);
-            GPOM.LOGGER.info(
-                    "[FmlParallelLoading] Starting threaded {} for {} ({})",
-                    phaseEvent.getEventType(),
-                    modId,
-                    mod.getName()
-            );
+            breadcrumb = writeThreadedBreadcrumb(phaseEvent, mod);
+            if (schedulerLogsEnabled()) {
+                GPOM.LOGGER.info(
+                        "[FmlParallelLoading] Starting threaded {} for {} ({})",
+                        phaseEvent.getEventType(),
+                        modId,
+                        mod.getName()
+                );
+            }
         }
         try {
             if (requiredDependencyErrored(mod, modStates)) {
@@ -460,7 +1029,7 @@ public final class FmlParallelLoadingScheduler {
                 try {
                     eventBus.post(event);
                 } finally {
-                    StartupProfiler.endProbe("FML dispatch " + eventType(phaseEvent) + " eventBusPost", postStartedAt);
+                    StartupProfiler.endProbe("FML dispatch " + eventType(phaseEvent) + " eventBusPost " + modId, postStartedAt);
                 }
             } finally {
                 FmlParallelLoadingContext.clearActiveContainer();
@@ -473,7 +1042,7 @@ public final class FmlParallelLoadingScheduler {
             } else {
                 result = DispatchResult.ok(mod);
             }
-            if (!mainThread) {
+            if (!mainThread && schedulerLogsEnabled()) {
                 GPOM.LOGGER.info(
                         "[FmlParallelLoading] Finished threaded {} for {} ({}) in {} ms",
                         phaseEvent.getEventType(),
@@ -496,6 +1065,7 @@ public final class FmlParallelLoadingScheduler {
             }
             return DispatchResult.failed(mod, throwable);
         } finally {
+            deleteThreadedBreadcrumb(breadcrumb);
             if (originalThreadName != null) {
                 Thread.currentThread().setName(originalThreadName);
             }
@@ -565,6 +1135,13 @@ public final class FmlParallelLoadingScheduler {
         if (result == null || result.throwable == null) {
             return;
         }
+        if (autoQuarantineGlFailure(event, result)) {
+            rethrow(new RuntimeException(
+                    "GPOM auto-quarantined a threaded OpenGL failure; relaunch required for main-thread retry",
+                    result.throwable
+            ));
+            return;
+        }
         if (!continueOnModError) {
             ModContainer mod = result.mod;
             if (mod != null) {
@@ -607,6 +1184,100 @@ public final class FmlParallelLoadingScheduler {
                 event.getEventType(),
                 result.throwable
         );
+    }
+
+    private static boolean autoQuarantineGlFailure(FMLEvent event, DispatchResult result) {
+        if (!GpomEarlyConfig.parallelAutoQuarantineGlErrorsEnabled()
+                || result == null
+                || result.mod == null
+                || result.throwable == null
+                || !isGlThreadFailure(result.throwable)) {
+            return false;
+        }
+
+        String denylistKey = denylistProperty(event);
+        if (denylistKey == null) {
+            return false;
+        }
+
+        Set<String> quarantineMods = quarantineModSet(result.mod);
+        boolean changed = GpomEarlyConfig.appendCsvValues(denylistKey, quarantineMods);
+        GPOM.LOGGER.error(
+                "[FmlParallelLoading] Auto-quarantined threaded OpenGL failure in {} ({}); appended {} to {} changed={}. Relaunch required for main-thread retry.",
+                result.mod.getModId(),
+                result.mod.getName(),
+                quarantineMods,
+                denylistKey,
+                changed,
+                result.throwable
+        );
+        return true;
+    }
+
+    private static Set<String> quarantineModSet(ModContainer mod) {
+        Set<String> mods = new LinkedHashSet<>();
+        String modId = normalize(mod.getModId());
+        if (isUsefulQuarantineModId(modId)) {
+            mods.add(modId);
+        }
+        if (GpomEarlyConfig.parallelAutoQuarantineGlErrorsIncludeRelatedMods()) {
+            for (String related : dependencyLabels(mod)) {
+                if (isUsefulQuarantineModId(related)) {
+                    mods.add(related);
+                }
+            }
+        }
+        return mods;
+    }
+
+    private static boolean isGlThreadFailure(Throwable throwable) {
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            String className = current.getClass().getName().toLowerCase(Locale.ROOT);
+            String message = current.getMessage() == null ? "" : current.getMessage().toLowerCase(Locale.ROOT);
+            if (className.contains("opengl") || className.contains("lwjgl")) {
+                return true;
+            }
+            if ((message.contains("opengl") || message.contains("gl context") || message.contains("no context"))
+                    && (message.contains("thread") || message.contains("current") || message.contains("context"))) {
+                return true;
+            }
+            for (StackTraceElement element : current.getStackTrace()) {
+                String elementClass = element.getClassName().toLowerCase(Locale.ROOT);
+                if (elementClass.startsWith("org.lwjgl.opengl")
+                        && (message.contains("thread") || message.contains("context") || message.contains("current"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static String denylistProperty(FMLEvent event) {
+        if (event instanceof FMLConstructionEvent) {
+            return "fml.parallel.construct.denylist";
+        }
+        if (event instanceof FMLPreInitializationEvent) {
+            return "fml.parallel.preInit.denylist";
+        }
+        if (event instanceof FMLInitializationEvent) {
+            return "fml.parallel.init.denylist";
+        }
+        if (event instanceof FMLPostInitializationEvent) {
+            return "fml.parallel.postInit.denylist";
+        }
+        if (event instanceof FMLLoadCompleteEvent) {
+            return "fml.parallel.loadComplete.denylist";
+        }
+        return null;
+    }
+
+    private static boolean isUsefulQuarantineModId(String modId) {
+        return modId != null
+                && !modId.isEmpty()
+                && !"minecraft".equals(modId)
+                && !"mcp".equals(modId)
+                && !"fml".equals(modId)
+                && !"forge".equals(modId);
     }
 
     private static void rethrow(Throwable throwable) {
@@ -759,13 +1430,15 @@ public final class FmlParallelLoadingScheduler {
             return configured;
         }
         int autoWorkers = automaticWorkers();
-        GPOM.LOGGER.info(
-                "[FmlParallelLoading] Auto-selected {} worker(s) for {} from cpuCount={} totalMemory={} MiB",
-                autoWorkers,
-                event == null ? "unknown" : event.getEventType(),
-                Runtime.getRuntime().availableProcessors(),
-                totalPhysicalMemoryMib()
-        );
+        if (schedulerLogsEnabled()) {
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] Auto-selected {} worker(s) for {} from cpuCount={} totalMemory={} MiB",
+                    autoWorkers,
+                    event == null ? "unknown" : event.getEventType(),
+                    Runtime.getRuntime().availableProcessors(),
+                    totalPhysicalMemoryMib()
+            );
+        }
         return autoWorkers;
     }
 
@@ -840,6 +1513,26 @@ public final class FmlParallelLoadingScheduler {
         return reason == null || reason.isEmpty() ? "unknown" : reason;
     }
 
+    private static boolean schedulerLogsEnabled() {
+        return GpomEarlyConfig.fmlSchedulerLogsEnabled();
+    }
+
+    private static final class DagNode {
+        private final int index;
+        private final ModContainer mod;
+        private final boolean parallelAllowed;
+        private final List<DagNode> successors = new ArrayList<>();
+        private int remainingDependencies;
+        private boolean submitted;
+        private boolean completed;
+
+        private DagNode(int index, ModContainer mod, boolean parallelAllowed) {
+            this.index = index;
+            this.mod = mod;
+            this.parallelAllowed = parallelAllowed;
+        }
+    }
+
     private static final class DispatchTask implements Callable<DispatchResult> {
         private final FMLEvent phaseEvent;
         private final ModContainer mod;
@@ -873,6 +1566,7 @@ public final class FmlParallelLoadingScheduler {
         private final CompletionService<DispatchResult> completionService;
         private final List<ModContainer> mods = new ArrayList<>();
         private final List<Future<DispatchResult>> futures = new ArrayList<>();
+        private final List<Long> submittedAtNanos = new ArrayList<>();
         private int pending;
 
         private InFlightDispatches(CompletionService<DispatchResult> completionService) {
@@ -881,18 +1575,46 @@ public final class FmlParallelLoadingScheduler {
 
         private void submit(DispatchTask task) {
             mods.add(task.mod);
+            submittedAtNanos.add(System.nanoTime());
             futures.add(completionService.submit(task));
             pending++;
+        }
+
+        private String longestRunningWaitMessage() {
+            if (mods.isEmpty()) {
+                return "Waiting for none";
+            }
+
+            int index = 0;
+            long oldest = submittedAtNanos.isEmpty() ? System.nanoTime() : submittedAtNanos.get(0);
+            for (int i = 1; i < mods.size() && i < submittedAtNanos.size(); i++) {
+                long submittedAt = submittedAtNanos.get(i);
+                if (submittedAt < oldest) {
+                    oldest = submittedAt;
+                    index = i;
+                }
+            }
+            return "Waiting for " + modName(mods.get(index));
         }
 
         private void complete(DispatchResult result) {
             pending = Math.max(0, pending - 1);
             if (result != null && result.mod != null) {
-                mods.remove(result.mod);
+                int index = mods.indexOf(result.mod);
+                if (index >= 0) {
+                    mods.remove(index);
+                    if (index < futures.size()) {
+                        futures.remove(index);
+                    }
+                    if (index < submittedAtNanos.size()) {
+                        submittedAtNanos.remove(index);
+                    }
+                }
             }
             if (pending == 0) {
                 mods.clear();
                 futures.clear();
+                submittedAtNanos.clear();
             }
         }
 
@@ -903,6 +1625,11 @@ public final class FmlParallelLoadingScheduler {
             pending = 0;
             mods.clear();
             futures.clear();
+            submittedAtNanos.clear();
+        }
+
+        private static String modName(ModContainer mod) {
+            return mod == null ? "unknown" : mod.getName();
         }
     }
 

@@ -1,6 +1,7 @@
 package com.l.gpom.core;
 
 import com.l.gpom.client.EarlySplashWindow;
+import com.l.gpom.optimization.ForgeEventSubscriptionTransformerOptimizations;
 import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.launch.MixinBootstrap;
@@ -26,7 +27,10 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
     @Override
     public @Nullable String[] getASMTransformerClass() {
         return new String[] {
+                "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
+                "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
+                "com.l.gpom.core.HammerCoreConstructionTransformer",
                 "com.l.gpom.core.HeiStartupProfilerTransformer",
                 "com.l.gpom.core.ModularMachineryStartupProfilerTransformer",
                 "com.l.gpom.core.ThaumcraftStartupProfilerTransformer",
@@ -54,6 +58,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
 
     @Override
     public void injectData(Map<String, Object> data) {
+        ForgeEventSubscriptionTransformerOptimizations.install();
     }
 
     @Override

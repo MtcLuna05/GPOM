@@ -39,6 +39,8 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static volatile Method itemStackInternalMethod;
     private static volatile Method craftTweakerStackForMatchingMethod;
     private static volatile Method craftTweakerOreDictMethod;
+    private static volatile Method recipeOutputMethod;
+    private static volatile Method recipeIngredientsMethod;
     private static volatile RecipeIndex recipeIndex;
     private static volatile boolean fallbackLogged;
 
@@ -63,7 +65,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : candidatesForOutput(context, output)) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipe.getRecipeOutput()) || !matchesItem(recipe.getRecipeOutput(), output)) {
+                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
                     continue;
                 }
                 if (!(recipe instanceof IShapedRecipe)) {
@@ -98,7 +100,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : candidatesForOutput(context, output)) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipe.getRecipeOutput()) || !matchesItem(recipe.getRecipeOutput(), output)) {
+                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe) {
@@ -134,7 +136,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 if (recipe == null) {
                     continue;
                 }
-                Object itemStack = craftTweakerStackForMatching(recipe.getRecipeOutput());
+                Object itemStack = craftTweakerStackForMatching(recipeOutput(recipe));
                 if (itemStack != null && matchesAnyOutput(outputs, itemStack)) {
                     removed.add(entry);
                 }
@@ -164,7 +166,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : context.index.allEntries()) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipe.getRecipeOutput()) || !matchesItem(recipe.getRecipeOutput(), output)) {
+                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe && (ingredients == null || matchesShaped((IShapedRecipe) recipe, ingredients, width, height))) {
@@ -190,7 +192,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : context.index.allEntries()) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipe.getRecipeOutput()) || !matchesItem(recipe.getRecipeOutput(), output)) {
+                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe) {
@@ -218,7 +220,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 if (recipe == null) {
                     continue;
                 }
-                Object itemStack = craftTweakerStackForMatching(recipe.getRecipeOutput());
+                Object itemStack = craftTweakerStackForMatching(recipeOutput(recipe));
                 if (itemStack != null && matchesAnyOutput(outputs, itemStack)) {
                     removed.add(entry);
                 }
@@ -267,7 +269,10 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         if (width != recipe.getRecipeWidth() || height != recipe.getRecipeHeight()) {
             return false;
         }
-        NonNullList<Ingredient> recipeIngredients = recipe.getIngredients();
+        NonNullList<Ingredient> recipeIngredients = recipeIngredients(recipe);
+        if (recipeIngredients == null || recipeIngredients.size() < width * height) {
+            return false;
+        }
         for (int rowIndex = 0; rowIndex < height; rowIndex++) {
             Object[] row = ingredients[rowIndex];
             for (int column = 0; column < width; column++) {
@@ -283,7 +288,10 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     }
 
     private static boolean matchesShapeless(IRecipe recipe, Object[] expectedIngredients, boolean wildcard) {
-        NonNullList<Ingredient> recipeIngredients = recipe.getIngredients();
+        NonNullList<Ingredient> recipeIngredients = recipeIngredients(recipe);
+        if (recipeIngredients == null) {
+            return false;
+        }
         if (recipeIngredients.size() < expectedIngredients.length) {
             return false;
         }
@@ -435,6 +443,35 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         return stacks.length == 0 ? ItemStack.EMPTY : stacks[0];
     }
 
+    @SuppressWarnings("unchecked")
+    private static NonNullList<Ingredient> recipeIngredients(IRecipe recipe) {
+        if (recipe == null) {
+            return null;
+        }
+        try {
+            Method method = recipeIngredientsMethod();
+            Object value = method == null ? null : method.invoke(recipe);
+            return value instanceof NonNullList ? (NonNullList<Ingredient>) value : null;
+        } catch (Throwable throwable) {
+            logFallback("CraftTweaker IRecipe.getIngredients bridge failed", throwable);
+            return null;
+        }
+    }
+
+    private static ItemStack recipeOutput(IRecipe recipe) {
+        if (recipe == null) {
+            return ItemStack.EMPTY;
+        }
+        try {
+            Method method = recipeOutputMethod();
+            Object value = method == null ? null : method.invoke(recipe);
+            return value instanceof ItemStack ? (ItemStack) value : ItemStack.EMPTY;
+        } catch (Throwable throwable) {
+            logFallback("CraftTweaker IRecipe.getRecipeOutput bridge failed", throwable);
+            return ItemStack.EMPTY;
+        }
+    }
+
     private static Object craftTweakerStackForMatching(ItemStack stack) {
         if (isEmpty(stack)) {
             return null;
@@ -456,6 +493,32 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             logFallback("CraftTweaker ore dictionary bridge failed", throwable);
             return null;
         }
+    }
+
+    private static Method recipeOutputMethod() {
+        Method method = recipeOutputMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(IRecipe.class, "func_77571_b");
+        if (method == null) {
+            method = findMethod(IRecipe.class, "getRecipeOutput");
+        }
+        recipeOutputMethod = method;
+        return method;
+    }
+
+    private static Method recipeIngredientsMethod() {
+        Method method = recipeIngredientsMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(IRecipe.class, "func_192400_c");
+        if (method == null) {
+            method = findMethod(IRecipe.class, "getIngredients");
+        }
+        recipeIngredientsMethod = method;
+        return method;
     }
 
     private static boolean invokeBoolean(Method method, Object target, Object argument) {
@@ -637,6 +700,16 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         return null;
     }
 
+    private static Method findMethod(Class<?> owner, String name, Class<?>... parameterTypes) {
+        try {
+            Method method = owner.getMethod(name, parameterTypes);
+            method.setAccessible(true);
+            return method;
+        } catch (NoSuchMethodException ignored) {
+            return null;
+        }
+    }
+
     private static boolean isEmpty(ItemStack stack) {
         return stack == null || stack.isEmpty();
     }
@@ -684,7 +757,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 }
                 Entry entry = new Entry(sourceEntry.getKey(), sourceEntry.getValue());
                 byKey.put(entry.key, entry);
-                Item item = item(entry.recipe.getRecipeOutput());
+                Item item = item(recipeOutput(entry.recipe));
                 if (item != null) {
                     byItem.computeIfAbsent(item, ignored -> new ArrayList<>()).add(entry);
                 }
@@ -713,7 +786,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         private void remove(List<Entry> entries) {
             for (Entry entry : entries) {
                 byKey.remove(entry.key);
-                Item item = item(entry.recipe.getRecipeOutput());
+                Item item = item(recipeOutput(entry.recipe));
                 List<Entry> itemEntries = item == null ? null : byItem.get(item);
                 if (itemEntries != null) {
                     itemEntries.remove(entry);

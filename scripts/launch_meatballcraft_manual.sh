@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/home/luna/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher"
-INSTANCE_ID="MeatballCraft, Dimensional Ascension"
+ROOT="${PRISM_ROOT:-$HOME/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher}"
+INSTANCE_ID="${PRISM_INSTANCE_ID:-MeatballCraft, Dimensional Ascension}"
 INSTANCE="$ROOT/instances/$INSTANCE_ID"
 MC="$INSTANCE/minecraft"
 LOG="$MC/logs/latest.log"
@@ -12,13 +12,18 @@ UUID="${CRO_OFFLINE_UUID:-00000000-0000-0000-0000-000000000000}"
 NATIVES="$INSTANCE/natives"
 CLEANROOM="$ROOT/libraries/com/cleanroommc/cleanroom/0.3.24-alpha/cleanroom-0.3.24-alpha.jar"
 MINECRAFT_CLIENT="$ROOT/libraries/com/mojang/minecraft/1.12.2/minecraft-1.12.2-client.jar"
+TMP_DIR="${CRO_TMP_DIR:-/tmp}"
+MANUAL_NATIVES="$TMP_DIR/cro-manual-natives"
+MANUAL_OUT="$TMP_DIR/cro-manual-launch.out"
+MANUAL_ERR="$TMP_DIR/cro-manual-launch.err"
+MANUAL_PID="$TMP_DIR/cro-manual-launch.pid"
 
 if [ "${CRO_KILL_STALE:-0}" = "1" ]; then
   ps -eo pid,args | awk '/java.*com\.cleanroommc\.boot\.MainClient|java.*net\.minecraft\.launchwrapper\.Launch/ && !/awk/ {print $1}' | xargs -r kill 2>/dev/null || true
   sleep 1
 fi
 
-mkdir -p "$MC/logs" "$MC/crash-reports" /tmp/cro-manual-natives
+mkdir -p "$MC/logs" "$MC/crash-reports" "$MANUAL_NATIVES"
 : > "$LOG"
 
 CLASSPATH=$(
@@ -103,7 +108,7 @@ nohup setsid "$JAVA" \
   -XX:+UseZGC \
   -XX:+UseCompactObjectHeaders \
   -Dfile.encoding=UTF-8 \
-  -Djava.library.path="$NATIVES:/tmp/cro-manual-natives" \
+  -Djava.library.path="$NATIVES:$MANUAL_NATIVES" \
   -Dfml.ignoreInvalidMinecraftCertificates=true \
   -Dfml.ignorePatchDiscrepancies=true \
   -cp "$CLASSPATH" \
@@ -118,9 +123,9 @@ nohup setsid "$JAVA" \
   --assetIndex "1.12" \
   --width 854 \
   --height 480 \
-  </dev/null >/tmp/cro-manual-launch.out 2>/tmp/cro-manual-launch.err &
+  </dev/null >"$MANUAL_OUT" 2>"$MANUAL_ERR" &
 
-echo $! > /tmp/cro-manual-launch.pid
+echo $! > "$MANUAL_PID"
 
 TIMEOUT_SECONDS="${CRO_LOG_TIMEOUT_SECONDS:-90}"
 for i in $(seq 1 "$TIMEOUT_SECONDS"); do
@@ -128,12 +133,12 @@ for i in $(seq 1 "$TIMEOUT_SECONDS"); do
     echo "log-started:$i"
     exit 0
   fi
-  if ! kill -0 "$(cat /tmp/cro-manual-launch.pid)" 2>/dev/null; then
+  if ! kill -0 "$(cat "$MANUAL_PID")" 2>/dev/null; then
     echo "client-exited-before-log:$i" >&2
     printf '%s\n' '--- manual stdout ---' >&2
-    tail -120 /tmp/cro-manual-launch.out >&2 2>/dev/null || true
+    tail -120 "$MANUAL_OUT" >&2 2>/dev/null || true
     printf '%s\n' '--- manual stderr ---' >&2
-    tail -160 /tmp/cro-manual-launch.err >&2 2>/dev/null || true
+    tail -160 "$MANUAL_ERR" >&2 2>/dev/null || true
     exit 1
   fi
   if (( i % 15 == 0 )); then
@@ -145,7 +150,7 @@ done
 
 echo "no-log-after-${TIMEOUT_SECONDS}s" >&2
 printf '%s\n' '--- manual stdout ---' >&2
-tail -120 /tmp/cro-manual-launch.out >&2 2>/dev/null || true
+tail -120 "$MANUAL_OUT" >&2 2>/dev/null || true
 printf '%s\n' '--- manual stderr ---' >&2
-tail -160 /tmp/cro-manual-launch.err >&2 2>/dev/null || true
+tail -160 "$MANUAL_ERR" >&2 2>/dev/null || true
 exit 1

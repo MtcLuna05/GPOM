@@ -1,7 +1,6 @@
 package com.l.gpom.mixin.fml;
 
-import com.l.gpom.optimization.AoAConstructionOptimizations;
-import com.l.gpom.optimization.EnderIOConstructionOptimizations;
+import com.l.gpom.optimization.ForgeConstructionAnnotationOptimizations;
 import com.l.gpom.optimization.FmlConstructionSafety;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.fml.common.AutomaticEventSubscriber;
@@ -28,8 +27,7 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     private static void gpom$beginInject(ModContainer mod, ASMDataTable asmData, Side side, CallbackInfo ci) {
         gpom$currentModId.set(mod == null ? null : mod.getModId());
         gpom$currentMod.set(mod);
-        if (EnderIOConstructionOptimizations.tryInjectAutomaticSubscribers(mod, asmData, side)
-                || AoAConstructionOptimizations.tryInjectAutomaticSubscribers(mod, asmData, side)) {
+        if (ForgeConstructionAnnotationOptimizations.tryInjectAutomaticSubscribers(mod, asmData, side)) {
             gpom$currentModId.remove();
             gpom$currentMod.remove();
             ci.cancel();
@@ -69,12 +67,8 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
         long startedAt = StartupProfiler.beginAutomaticSubscriberProbe();
         try {
             String modId = gpom$currentModId.get();
-            ModContainer owner = gpom$currentMod.get();
             FmlConstructionSafety.subscriberRegistration("automatic subscriber register " + modId + " " + subscriberName(target), () -> {
-                if (!EnderIOConstructionOptimizations.tryRegisterAutomaticSubscriber(eventBus, modId, target, owner)
-                        && !AoAConstructionOptimizations.tryRegisterAutomaticSubscriber(modId, target, owner)) {
-                    eventBus.register(target);
-                }
+                eventBus.register(target);
             });
         } finally {
             StartupProfiler.endAutomaticSubscriberRegister(gpom$currentModId.get(), subscriberName(target), startedAt);

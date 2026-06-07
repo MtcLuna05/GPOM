@@ -4,6 +4,24 @@ General Purpose Optimization Mod, or GPOM, is a Minecraft 1.12.2 Cleanroom/Forge
 
 The shipped defaults are conservative. The MeatballCraft validation profile enables broader experiments through `config/gpom-early.properties`.
 
+## Building
+
+GPOM uses Gradle and compiles Java sources with `--release 8`. The Gradle toolchain is configured for Java 25 because this repository is developed against Cleanroom's current Java toolchain.
+
+Some exact-version helpers directly reference MeatballCraft mod classes at compile time. Point Gradle at a Minecraft instance containing the required mod jars:
+
+```bash
+MEATBALL_MINECRAFT_DIR="/path/to/instance/minecraft" ./gradlew build
+```
+
+Equivalent Gradle property form:
+
+```bash
+./gradlew -Pmeatball_minecraft_dir="/path/to/instance/minecraft" build
+```
+
+If neither is set, the build falls back to the common Flatpak PrismLauncher MeatballCraft instance path under `$HOME`.
+
 ## Features
 
 - Threaded FML lifecycle phases: `FMLConstructionEvent`, `FMLPreInitializationEvent`, `FMLInitializationEvent`, `FMLPostInitializationEvent`, and `FMLLoadCompleteEvent` can be enabled independently.
@@ -127,6 +145,11 @@ Caches are compressed for load speed and storage size, not security. GPOM valida
 ## Operational Notes
 
 - Do not replace the GPOM jar while Minecraft is running. Cleanroom can lazily load classes from the jar after startup, so mutating the jar in place can create false classloading failures.
+- Helper scripts use `PRISM_ROOT` and `PRISM_INSTANCE_ID` when set; otherwise they default to the common Flatpak PrismLauncher data path and `MeatballCraft, Dimensional Ascension`.
 - After changing threaded phase allowlists, validate both menu startup and existing-world entry.
 - If a threaded mod fails, put its mod id in that phase's denylist first. Only patch the mod when the failure is stable and worth the gain.
 - Use `docs/OPTIMIZATION_LOG.md` for measured changes and `docs/MULTITHREADED_LOADING_FEASIBILITY.md` for threading design notes.
+
+## License
+
+GPOM is licensed under the MIT License. See `LICENSE`.

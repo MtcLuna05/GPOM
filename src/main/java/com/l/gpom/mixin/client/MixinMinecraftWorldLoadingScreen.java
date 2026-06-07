@@ -161,6 +161,9 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         if (!WorldLoadingProgress.isActive()) {
             return;
         }
+        if (!WorldLoadingProgress.canRenderOverCurrentScreen()) {
+            return;
+        }
         WorldLoadingProgress.update(stage, detail, progress);
         LoadingScreenRenderer renderer = gpom$getLoadingScreen();
         if (renderer == null || !gpom$callLoadingScreen(renderer, stage, detail)) {

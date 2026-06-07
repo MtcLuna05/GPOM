@@ -201,7 +201,9 @@ public final class BetweenlandsClientRendererOptimizations {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static void registerTileEntityRenderer(String tileClassName, String rendererClassName) {
+        long startedAt = StartupProfiler.beginProbe();
         if (!TILE_RENDERERS_ENABLED || !TargetedModVersions.isBetweenlandsClass("thebetweenlands.client.proxy.ClientProxy")) {
+            StartupProfiler.endProbeAlways("BL ClientProxy.preInit lazy tile renderer registration calls", startedAt);
             return;
         }
 
@@ -218,6 +220,8 @@ public final class BetweenlandsClientRendererOptimizations {
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[StartupProfiler] Betweenlands lazy tile renderer registration failed for {} -> {}", tileClassName, rendererClassName, throwable);
             throw new RuntimeException("Failed to register Betweenlands lazy tile renderer " + rendererClassName, throwable);
+        } finally {
+            StartupProfiler.endProbeAlways("BL ClientProxy.preInit lazy tile renderer registration calls", startedAt);
         }
     }
 

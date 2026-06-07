@@ -34,6 +34,9 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         if ("net.minecraftforge.registries.GameData".equals(className)) {
             return synchronizeGameData(basicClass);
         }
+        if ("net.minecraftforge.oredict.OreDictionary".equals(className)) {
+            return synchronizeOreDictionary(basicClass);
+        }
         return basicClass;
     }
 
@@ -73,6 +76,26 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
             return write(node);
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install GameData registry serialization; continuing without it", throwable);
+            return basicClass;
+        }
+    }
+
+    private static byte[] synchronizeOreDictionary(byte[] basicClass) {
+        try {
+            ClassNode node = read(basicClass);
+            int changed = 0;
+            for (MethodNode method : node.methods) {
+                if (isOreDictionaryAccess(method) && markSynchronized(method)) {
+                    changed++;
+                }
+            }
+            if (changed <= 0) {
+                return basicClass;
+            }
+            GPOM.LOGGER.info("[FmlParallelLoading] Serialized {} OreDictionary access method(s)", changed);
+            return write(node);
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install OreDictionary serialization; continuing without it", throwable);
             return basicClass;
         }
     }
@@ -169,6 +192,24 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         }
         return "fireRegistryEvents".equals(name)
                 && ("()V".equals(desc) || "(Ljava/util/function/Predicate;)V".equals(desc));
+    }
+
+    private static boolean isOreDictionaryAccess(MethodNode method) {
+        if ((method.access & Opcodes.ACC_STATIC) == 0 || "<clinit>".equals(method.name)) {
+            return false;
+        }
+
+        String name = method.name;
+        return "initVanillaEntries".equals(name)
+                || "getOreID".equals(name)
+                || "getOreName".equals(name)
+                || "getOreIDs".equals(name)
+                || "getOres".equals(name)
+                || "doesOreNameExist".equals(name)
+                || "getOreNames".equals(name)
+                || "registerOre".equals(name)
+                || "registerOreImpl".equals(name)
+                || "rebakeMap".equals(name);
     }
 
     private static boolean registrySerializationEnabled() {

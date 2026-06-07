@@ -5,9 +5,12 @@
   "refmap": "gpom.refmap.json",
   "mixins": [
     "fml.MixinAutomaticEventSubscriberStartupProfiler",
+    "fml.MixinASMDataTableAnnotationCache",
     "fml.MixinEventBusStartupProfiler",
+    "fml.MixinFMLContainerConstructionProfiler",
     "fml.MixinFMLCommonHandlerBranding",
     "fml.MixinFMLModContainerStartupProfiler",
+    "fml.MixinForgeModContainerConstructionProfiler",
     "fml.MixinLoadControllerStartupProfiler"
   ],
   "client": [

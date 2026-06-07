@@ -3,7 +3,7 @@ package com.l.gpom.mixin.fml;
 import com.l.gpom.profiling.StartupProfiler;
 import com.l.gpom.optimization.AoAConfigSyncOptimizations;
 import com.l.gpom.optimization.FmlConstructionSafety;
-import com.l.gpom.optimization.ForgeNetworkConstructionOptimizations;
+import com.l.gpom.optimization.ForgeConstructionAnnotationOptimizations;
 import com.google.common.eventbus.EventBus;
 import net.minecraftforge.fml.common.FMLModContainer;
 import net.minecraftforge.fml.common.ILanguageAdapter;
@@ -72,12 +72,21 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
 
     @Inject(method = "handleModStateEvent", at = @At("HEAD"))
     private void gpom$beginStateEvent(FMLEvent event, CallbackInfo ci) {
+        if (event instanceof FMLConstructionEvent) {
+            // constructMod has dedicated construction probes; counting the outer state event double-counts this phase.
+            gpom$eventStartedAt = 0L;
+            gpom$eventStackSampler = null;
+            return;
+        }
         gpom$eventStartedAt = StartupProfiler.beginMod(this, event);
         gpom$eventStackSampler = StartupProfiler.beginModStackSampler(this, event, gpom$eventStartedAt);
     }
 
     @Inject(method = "handleModStateEvent", at = @At("RETURN"))
     private void gpom$endStateEvent(FMLEvent event, CallbackInfo ci) {
+        if (gpom$eventStartedAt == 0L) {
+            return;
+        }
         StartupProfiler.endModStackSampler(gpom$eventStackSampler);
         StartupProfiler.endMod(this, event, gpom$eventStartedAt);
         gpom$eventStackSampler = null;
@@ -196,20 +205,18 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionNetworkRegister(NetworkRegistry registry, ModContainer container, Class<?> modClass, String acceptableRemoteVersions, ASMDataTable asmData) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            FmlConstructionSafety.networkRegistration(
-                    gpom$constructionStage("networkRegister"),
-                    () -> {
-                        if (!ForgeNetworkConstructionOptimizations.tryFastRegisterKnownNoNetworkChecker(
-                                registry,
-                                container,
-                                modClass,
-                                acceptableRemoteVersions,
-                                asmData
-                        )) {
-                            registry.register(container, modClass, acceptableRemoteVersions, asmData);
-                        }
-                    }
-            );
+            if (!ForgeConstructionAnnotationOptimizations.tryRegisterNetwork(
+                    registry,
+                    container,
+                    modClass,
+                    acceptableRemoteVersions,
+                    asmData
+            )) {
+                FmlConstructionSafety.networkRegistration(
+                        gpom$constructionStage("networkRegister"),
+                        () -> registry.register(container, modClass, acceptableRemoteVersions, asmData)
+                );
+            }
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("networkRegister"), startedAt);
         }
@@ -241,18 +248,17 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionProxyInject(ModContainer container, ASMDataTable asmData, Side side, ILanguageAdapter adapter) {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            FmlConstructionSafety.proxyInjection(
-                    gpom$constructionStage("proxyInject"),
-                    () -> {
-                        if (!ForgeNetworkConstructionOptimizations.tryFastInjectKnownProxy(
-                                container,
-                                side,
-                                adapter
-                        )) {
-                            ProxyInjector.inject(container, asmData, side, adapter);
-                        }
-                    }
-            );
+            if (!ForgeConstructionAnnotationOptimizations.tryInjectSidedProxies(
+                    container,
+                    asmData,
+                    side,
+                    adapter
+            )) {
+                FmlConstructionSafety.proxyInjection(
+                        gpom$constructionStage("proxyInject"),
+                        () -> ProxyInjector.inject(container, asmData, side, adapter)
+                );
+            }
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("proxyInject"), startedAt);
         }
@@ -304,10 +310,12 @@ public abstract class MixinFMLModContainerStartupProfiler implements ModContaine
     private void gpom$timeConstructionProcessFieldAnnotations(FMLModContainer container, ASMDataTable asmData) throws IllegalAccessException {
         long startedAt = StartupProfiler.beginProbe();
         try {
-            FmlConstructionSafety.annotationProcessing(
-                    gpom$constructionStage("processFieldAnnotations"),
-                    () -> processFieldAnnotations(asmData)
-            );
+            if (!ForgeConstructionAnnotationOptimizations.tryProcessFieldAnnotations(container, asmData)) {
+                FmlConstructionSafety.annotationProcessing(
+                        gpom$constructionStage("processFieldAnnotations"),
+                        () -> processFieldAnnotations(asmData)
+                );
+            }
         } finally {
             StartupProfiler.endProbe(gpom$constructionStage("processFieldAnnotations"), startedAt);
         }

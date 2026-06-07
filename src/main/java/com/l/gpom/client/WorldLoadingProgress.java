@@ -4,7 +4,9 @@ import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.GPOM;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiDownloadTerrain;
 import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiScreenWorking;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
@@ -36,6 +38,7 @@ public final class WorldLoadingProgress {
     private static volatile Method minecraftUpdateDisplayMethod;
     private static volatile Method scaledResolutionGetWidthMethod;
     private static volatile Method scaledResolutionGetHeightMethod;
+    private static volatile Field minecraftCurrentScreenField;
     private static final DirtBackgroundScreen DIRT_BACKGROUND_SCREEN = new DirtBackgroundScreen();
 
     private WorldLoadingProgress() {
@@ -47,6 +50,18 @@ public final class WorldLoadingProgress {
 
     public static boolean isActive() {
         return enabled() && active;
+    }
+
+    public static boolean canRenderOverCurrentScreen() {
+        if (!enabled()) {
+            return false;
+        }
+        try {
+            Minecraft minecraft = currentMinecraft();
+            return canRenderOverCurrentScreen(minecraft);
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     public static void beginIntegrated(String folderName, String displayName) {
@@ -130,6 +145,9 @@ public final class WorldLoadingProgress {
         if (minecraft == null) {
             return false;
         }
+        if (!canRenderOverCurrentScreen(minecraft)) {
+            return false;
+        }
         Object font = fontRenderer(minecraft);
         if (font == null) {
             return false;
@@ -144,7 +162,7 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean safeRender(Minecraft minecraft, int width, int height, int progressOverride) {
-        if (!enabled()) {
+        if (!enabled() || !canRenderOverCurrentScreen(minecraft)) {
             return false;
         }
         try {
@@ -162,7 +180,7 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean safeRenderAndUpdate(Minecraft minecraft, int width, int height, int progressOverride) {
-        if (!enabled()) {
+        if (!enabled() || !canRenderOverCurrentScreen(minecraft)) {
             return false;
         }
         try {
@@ -187,6 +205,9 @@ public final class WorldLoadingProgress {
         try {
             Minecraft minecraft = currentMinecraft();
             if (minecraft == null) {
+                return false;
+            }
+            if (!canRenderOverCurrentScreen(minecraft)) {
                 return false;
             }
             int[] dimensions = currentScaledDimensions(minecraft);
@@ -534,6 +555,31 @@ public final class WorldLoadingProgress {
         }
         Object value = method.invoke(null);
         return value instanceof Minecraft ? (Minecraft) value : null;
+    }
+
+    private static boolean canRenderOverCurrentScreen(Minecraft minecraft) {
+        if (minecraft == null) {
+            return false;
+        }
+        GuiScreen screen = currentScreen(minecraft);
+        return screen == null || screen instanceof GuiScreenWorking || screen instanceof GuiDownloadTerrain;
+    }
+
+    private static GuiScreen currentScreen(Minecraft minecraft) {
+        if (minecraft == null) {
+            return null;
+        }
+        try {
+            Field field = minecraftCurrentScreenField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71462_r", "currentScreen");
+                minecraftCurrentScreenField = field;
+            }
+            Object value = field.get(minecraft);
+            return value instanceof GuiScreen ? (GuiScreen) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static int[] currentScaledDimensions(Minecraft minecraft) {

@@ -30,6 +30,11 @@ public final class RailcraftStartupProfilerTransformer implements IClassTransfor
     private static final boolean DEFER_MODULE_CONTAINERS = Boolean.parseBoolean(System.getProperty(
             "gpom.railcraft.deferModuleContainers",
             System.getProperty("gpom.railcraft.deferModuleIC2Containers", "false")));
+    private static final boolean DEFER_SELECTED_MODULE_CONTAINERS = Boolean.parseBoolean(System.getProperty(
+            "gpom.railcraft.deferSelectedModuleContainers", "false"));
+    private static final String DEFER_MODULE_CONTAINER_ALLOWLIST = System.getProperty(
+            "gpom.railcraft.deferModuleContainerAllowlist",
+            "mods.railcraft.common.modules.ModuleBuilding,mods.railcraft.common.modules.ModuleCharge,mods.railcraft.common.modules.ModuleCore,mods.railcraft.common.modules.ModuleLocomotives,mods.railcraft.common.modules.ModuleTracksStrapIron");
     private static final boolean LAZY_CART_CONFIG = Boolean.parseBoolean(System.getProperty("gpom.railcraft.lazyCartConfig", "false"));
     private static final Map<String, Set<String>> EXACT_TARGETS = createExactTargets();
     private static final Set<String> MODULE_METHODS = set("<clinit>", "<init>", "construction", "loadConfig", "preInit", "init", "postInit", "initClient");
@@ -72,7 +77,7 @@ public final class RailcraftStartupProfilerTransformer implements IClassTransfor
             return basicClass;
         }
 
-        if (DEFER_MODULE_CONTAINERS && className.startsWith("mods.railcraft.common.modules.Module")) {
+        if (shouldPatchModuleContainerAdds(className)) {
             basicClass = patchModuleContainerAdds(basicClass);
         } else if (DEFER_MODULE_IC2_CONTAINERS && "mods.railcraft.common.modules.ModuleIC2".equals(className)) {
             basicClass = patchModuleIC2Constructor(basicClass);
@@ -89,6 +94,30 @@ public final class RailcraftStartupProfilerTransformer implements IClassTransfor
         } catch (Throwable ignored) {
             return basicClass;
         }
+    }
+
+    private static boolean shouldPatchModuleContainerAdds(String className) {
+        if (className == null || !className.startsWith("mods.railcraft.common.modules.Module")) {
+            return false;
+        }
+        if (DEFER_MODULE_CONTAINERS) {
+            return true;
+        }
+        return DEFER_SELECTED_MODULE_CONTAINERS && matchesList(DEFER_MODULE_CONTAINER_ALLOWLIST, className);
+    }
+
+    private static boolean matchesList(String list, String value) {
+        if (list == null || value == null) {
+            return false;
+        }
+        String[] entries = list.split(",");
+        for (String entry : entries) {
+            String trimmed = entry.trim();
+            if ("*".equals(trimmed) || value.equals(trimmed)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static byte[] patchRailcraftConfigLoadCarts(byte[] basicClass) {
