@@ -189,9 +189,11 @@ public final class FmlParallelLoadingScheduler {
                         inFlight,
                         submittedAhead
                 );
+                String serialWaitMessage = waitingFor(mod);
+                setVisibleProgressMessage(progress, serialWaitMessage);
                 stepVisibleProgress(progress, mod, progressState);
                 EarlySplashWindow.setPhaseProgress(
-                        "FML " + progressState.displayPhaseName + " running " + progressLabel(mod),
+                        "FML " + progressState.displayPhaseName + " " + serialWaitMessage,
                         progressState.completedHandlers,
                         progressState.totalHandlers
                 );
@@ -201,6 +203,9 @@ public final class FmlParallelLoadingScheduler {
                     result = dispatchSingle(event, mod, eventChannels, modStates, true);
                 }
                 long serialElapsedMillis = elapsedMillis(serialStartedAt);
+                if (serialElapsedMillis >= 250L) {
+                    logVisibleWait(serialWaitMessage);
+                }
                 commitResult(result, modStates);
                 markHandlerCompleted(mod, progressState);
                 handleFailure(event, result, modStates, progressState, continueOnModError);
@@ -453,9 +458,7 @@ public final class FmlParallelLoadingScheduler {
                 inFlight.complete(result);
                 commitResult(result, modStates);
                 if (result != null && result.mod != null) {
-                    if (!result.visibleProgressStepped) {
-                        stepVisibleProgress(progress, result.mod, progressState);
-                    }
+                    stepVisibleProgress(progress, result.mod, progressState);
                     markHandlerCompleted(result.mod, progressState);
                     stepThreadedProgress(result.mod, progressState);
                 }
@@ -732,15 +735,21 @@ public final class FmlParallelLoadingScheduler {
                                          Multimap<String, LoaderState.ModState> modStates,
                                          ProgressManager.ProgressBar progress,
                                          ProgressState progressState,
-                                         boolean continueOnModError) {
+        boolean continueOnModError) {
         node.submitted = true;
+        String serialWaitMessage = waitingFor(node.mod);
+        setVisibleProgressMessage(progress, serialWaitMessage);
         stepVisibleProgress(progress, node.mod, progressState);
         EarlySplashWindow.setPhaseProgress(
-                "FML " + progressState.displayPhaseName + " running " + progressLabel(node.mod),
+                "FML " + progressState.displayPhaseName + " " + serialWaitMessage,
                 progressState.completedHandlers,
                 progressState.totalHandlers
         );
+        long serialStartedAt = System.nanoTime();
         DispatchResult result = dispatchSingle(event, node.mod, eventChannels, modStates, true);
+        if (elapsedMillis(serialStartedAt) >= 250L) {
+            logVisibleWait(serialWaitMessage);
+        }
         commitResult(result, modStates);
         markHandlerCompleted(node.mod, progressState);
         handleFailure(event, result, modStates, progressState, continueOnModError);
@@ -771,9 +780,7 @@ public final class FmlParallelLoadingScheduler {
             inFlight.complete(result);
             commitResult(result, modStates);
             if (result != null && result.mod != null) {
-                if (!result.visibleProgressStepped) {
-                    stepVisibleProgress(progress, result.mod, progressState);
-                }
+                stepVisibleProgress(progress, result.mod, progressState);
                 markHandlerCompleted(result.mod, progressState);
                 stepThreadedProgress(result.mod, progressState);
                 DagNode node = nodesByModId.get(normalize(result.mod.getModId()));
@@ -920,7 +927,15 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static String progressLabel(ModContainer mod) {
-        return mod.getName();
+        return waitingFor(mod);
+    }
+
+    private static String waitingFor(ModContainer mod) {
+        return "Waiting for " + modName(mod);
+    }
+
+    private static String modName(ModContainer mod) {
+        return mod == null ? "unknown" : mod.getName();
     }
 
     private static String phaseDisplayName(FMLEvent event) {
@@ -1556,9 +1571,7 @@ public final class FmlParallelLoadingScheduler {
 
         @Override
         public DispatchResult call() {
-            DispatchResult result = dispatchSingle(phaseEvent, mod, eventChannels, modStates, false);
-            stepVisibleProgress(progress, mod, progressState);
-            return result.withVisibleProgressStepped();
+            return dispatchSingle(phaseEvent, mod, eventChannels, modStates, false);
         }
     }
 
@@ -1594,7 +1607,7 @@ public final class FmlParallelLoadingScheduler {
                     index = i;
                 }
             }
-            return "Waiting for " + modName(mods.get(index));
+            return waitingFor(mods.get(index));
         }
 
         private void complete(DispatchResult result) {
@@ -1627,10 +1640,6 @@ public final class FmlParallelLoadingScheduler {
             futures.clear();
             submittedAtNanos.clear();
         }
-
-        private static String modName(ModContainer mod) {
-            return mod == null ? "unknown" : mod.getName();
-        }
     }
 
     private static final class ProgressState {
@@ -1659,17 +1668,11 @@ public final class FmlParallelLoadingScheduler {
         private final ModContainer mod;
         private final LoaderState.ModState state;
         private final Throwable throwable;
-        private final boolean visibleProgressStepped;
 
         private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable) {
-            this(mod, state, throwable, false);
-        }
-
-        private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable, boolean visibleProgressStepped) {
             this.mod = mod;
             this.state = state;
             this.throwable = throwable;
-            this.visibleProgressStepped = visibleProgressStepped;
         }
 
         private static DispatchResult ok(ModContainer mod) {
@@ -1682,13 +1685,6 @@ public final class FmlParallelLoadingScheduler {
 
         private static DispatchResult failed(ModContainer mod, Throwable throwable) {
             return new DispatchResult(mod, null, throwable);
-        }
-
-        private DispatchResult withVisibleProgressStepped() {
-            if (visibleProgressStepped) {
-                return this;
-            }
-            return new DispatchResult(mod, state, throwable, true);
         }
     }
 }

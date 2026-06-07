@@ -5,7 +5,10 @@ import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import java.io.BufferedInputStream;
@@ -43,16 +46,24 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
     private static byte[] synchronizeForgeRegistry(byte[] basicClass) {
         try {
             ClassNode node = read(basicClass);
-            int changed = 0;
+            int synchronizedMethods = 0;
+            int snapshotMethods = 0;
             for (MethodNode method : node.methods) {
-                if (isForgeRegistryMutation(method) && markSynchronized(method)) {
-                    changed++;
+                if ((isForgeRegistryMutation(method) || isForgeRegistryAccess(method)) && markSynchronized(method)) {
+                    synchronizedMethods++;
+                }
+                if (snapshotEscapingForgeRegistryView(method)) {
+                    snapshotMethods++;
                 }
             }
-            if (changed <= 0) {
+            if (synchronizedMethods <= 0 && snapshotMethods <= 0) {
                 return basicClass;
             }
-            GPOM.LOGGER.info("[FmlParallelLoading] Serialized {} ForgeRegistry mutation method(s)", changed);
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] Serialized {} ForgeRegistry method(s) and snapshotted {} escaping view method(s)",
+                    synchronizedMethods,
+                    snapshotMethods
+            );
             return write(node);
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install ForgeRegistry serialization; continuing without it", throwable);
@@ -163,6 +174,90 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         }
         return "processMissingEvent".equals(name)
                 && "(Lnet/minecraft/util/ResourceLocation;Lnet/minecraftforge/registries/ForgeRegistry;Ljava/util/List;Ljava/util/Map;Ljava/util/Map;Ljava/util/Collection;Ljava/util/Collection;Z)V".equals(desc);
+    }
+
+    private static boolean isForgeRegistryAccess(MethodNode method) {
+        String name = method.name;
+        String desc = method.desc;
+        if ("iterator".equals(name) && "()Ljava/util/Iterator;".equals(desc)) {
+            return true;
+        }
+        if ("containsKey".equals(name) && "(Lnet/minecraft/util/ResourceLocation;)Z".equals(desc)) {
+            return true;
+        }
+        if ("containsValue".equals(name) && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Z".equals(desc)) {
+            return true;
+        }
+        if ("getValue".equals(name)
+                && ("(Lnet/minecraft/util/ResourceLocation;)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(desc)
+                || "(I)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(desc))) {
+            return true;
+        }
+        if ("getKey".equals(name)
+                && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Lnet/minecraft/util/ResourceLocation;".equals(desc)) {
+            return true;
+        }
+        if ("getKeys".equals(name) && "()Ljava/util/Set;".equals(desc)) {
+            return true;
+        }
+        if ("getValues".equals(name) && "()Ljava/util/List;".equals(desc)) {
+            return true;
+        }
+        if ("getValuesCollection".equals(name) && "()Ljava/util/Collection;".equals(desc)) {
+            return true;
+        }
+        if ("getEntries".equals(name) && "()Ljava/util/Set;".equals(desc)) {
+            return true;
+        }
+        if ("getSlaveMap".equals(name) && "(Lnet/minecraft/util/ResourceLocation;Ljava/lang/Class;)Ljava/lang/Object;".equals(desc)) {
+            return true;
+        }
+        if ("getID".equals(name)
+                && ("(Lnet/minecraftforge/registries/IForgeRegistryEntry;)I".equals(desc)
+                || "(Lnet/minecraft/util/ResourceLocation;)I".equals(desc))) {
+            return true;
+        }
+        if ("getRaw".equals(name) && "(I)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(desc)) {
+            return true;
+        }
+        if ("makeSnapshot".equals(name) && "()Lnet/minecraftforge/registries/ForgeRegistry$Snapshot;".equals(desc)) {
+            return true;
+        }
+        return "getOverrideOwners".equals(name) && "()Ljava/util/Map;".equals(desc);
+    }
+
+    private static boolean snapshotEscapingForgeRegistryView(MethodNode method) {
+        String helperMethod;
+        String helperDesc;
+        if ("iterator".equals(method.name) && "()Ljava/util/Iterator;".equals(method.desc)) {
+            helperMethod = "iteratorSnapshot";
+            helperDesc = "(Ljava/util/Iterator;)Ljava/util/Iterator;";
+        } else if (("getKeys".equals(method.name) || "getEntries".equals(method.name)) && "()Ljava/util/Set;".equals(method.desc)) {
+            helperMethod = "immutableSetSnapshot";
+            helperDesc = "(Ljava/util/Set;)Ljava/util/Set;";
+        } else if ("getValuesCollection".equals(method.name) && "()Ljava/util/Collection;".equals(method.desc)) {
+            helperMethod = "immutableCollectionSnapshot";
+            helperDesc = "(Ljava/util/Collection;)Ljava/util/Collection;";
+        } else {
+            return false;
+        }
+
+        int changed = 0;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() == Opcodes.ARETURN) {
+                InsnList snapshot = new InsnList();
+                snapshot.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/ForgeRegistrySnapshotOptimizations",
+                        helperMethod,
+                        helperDesc,
+                        false
+                ));
+                method.instructions.insertBefore(insn, snapshot);
+                changed++;
+            }
+        }
+        return changed > 0;
     }
 
     private static boolean isGameDataRegistryMutation(MethodNode method) {

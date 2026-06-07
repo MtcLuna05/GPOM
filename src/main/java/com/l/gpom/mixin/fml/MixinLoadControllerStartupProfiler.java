@@ -29,6 +29,11 @@ import java.util.List;
 
 @Mixin(value = LoadController.class, remap = false)
 public abstract class MixinLoadControllerStartupProfiler {
+    @Unique
+    private static final int gpom$phaseTransitionSteps = 24;
+    @Unique
+    private static final long gpom$phaseTransitionHeartbeatMillis = 250L;
+
     @Shadow
     private List<ModContainer> activeModList;
 
@@ -48,6 +53,8 @@ public abstract class MixinLoadControllerStartupProfiler {
     private String gpom$stateDispatchName;
     @Unique
     private ProgressManager.ProgressBar gpom$phaseTransitionProgress;
+    @Unique
+    private int gpom$phaseTransitionStep;
 
     @Inject(method = "distributeStateMessage(Lnet/minecraftforge/fml/common/LoaderState;[Ljava/lang/Object;)V", at = @At("HEAD"))
     private void gpom$beginStatePhase(LoaderState state, Object[] eventData, CallbackInfo ci) {
@@ -119,28 +126,99 @@ public abstract class MixinLoadControllerStartupProfiler {
     @Unique
     private void gpom$openPhaseTransitionProgress(LoaderState state) {
         gpom$closePhaseTransitionProgress();
+        String stateName = state == null ? "FML" : state.name();
         try {
-            ProgressManager.ProgressBar progress = ProgressManager.push("GPOM Phase Transition", 1, true);
-            progress.step("Preparing " + state.name());
-            gpom$phaseTransitionProgress = progress;
+            ProgressManager.ProgressBar progress = ProgressManager.push("GPOM Phase Transition", gpom$phaseTransitionSteps, true);
+            synchronized (this) {
+                gpom$phaseTransitionProgress = progress;
+                gpom$phaseTransitionStep = 0;
+            }
+            gpom$stepPhaseTransitionProgress(progress, stateName, "Preparing " + stateName);
+            gpom$startPhaseTransitionHeartbeat(progress, stateName);
         } catch (Throwable ignored) {
-            gpom$phaseTransitionProgress = null;
+            synchronized (this) {
+                gpom$phaseTransitionProgress = null;
+                gpom$phaseTransitionStep = 0;
+            }
         }
     }
 
     @Unique
     private void gpom$closePhaseTransitionProgress() {
-        ProgressManager.ProgressBar progress = gpom$phaseTransitionProgress;
+        ProgressManager.ProgressBar progress;
+        synchronized (this) {
+            progress = gpom$phaseTransitionProgress;
+            gpom$phaseTransitionProgress = null;
+            gpom$phaseTransitionStep = 0;
+        }
         if (progress == null) {
             return;
         }
-        gpom$phaseTransitionProgress = null;
         try {
-            while (progress.getStep() < progress.getSteps()) {
-                progress.step("Starting phase");
-            }
             ProgressManager.pop(progress);
         } catch (Throwable ignored) {
+        }
+    }
+
+    @Unique
+    private void gpom$startPhaseTransitionHeartbeat(ProgressManager.ProgressBar progress, String stateName) {
+        Thread heartbeat = new Thread(() -> {
+            int frame = 0;
+            while (true) {
+                try {
+                    Thread.sleep(gpom$phaseTransitionHeartbeatMillis);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+
+                synchronized (this) {
+                    if (gpom$phaseTransitionProgress != progress) {
+                        return;
+                    }
+                }
+
+                frame = (frame + 1) & 3;
+                gpom$stepPhaseTransitionProgress(progress, stateName, "Preparing " + stateName + gpom$ellipsis(frame));
+            }
+        }, "GPOM phase transition heartbeat");
+        heartbeat.setDaemon(true);
+        heartbeat.start();
+    }
+
+    @Unique
+    private void gpom$stepPhaseTransitionProgress(ProgressManager.ProgressBar progress, String stateName, String message) {
+        synchronized (this) {
+            if (gpom$phaseTransitionProgress != progress || progress == null) {
+                return;
+            }
+            if (gpom$phaseTransitionStep < gpom$phaseTransitionSteps) {
+                try {
+                    progress.step(message);
+                    gpom$phaseTransitionStep++;
+                } catch (Throwable ignored) {
+                    return;
+                }
+            }
+            EarlySplashWindow.setPhaseProgress(
+                    "Forge " + stateName + " preparing" + gpom$ellipsis(gpom$phaseTransitionStep & 3),
+                    gpom$phaseTransitionStep,
+                    gpom$phaseTransitionSteps
+            );
+        }
+    }
+
+    @Unique
+    private static String gpom$ellipsis(int frame) {
+        switch (frame & 3) {
+            case 1:
+                return ".";
+            case 2:
+                return "..";
+            case 3:
+                return "...";
+            default:
+                return "";
         }
     }
 
