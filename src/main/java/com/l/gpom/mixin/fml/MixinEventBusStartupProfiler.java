@@ -48,6 +48,7 @@ public abstract class MixinEventBusStartupProfiler {
 
     @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("HEAD"))
     private void gpom$beginPost(Event event, CallbackInfoReturnable<Boolean> cir) {
+        StartupProfiler.postPreInitProgressStage(gpom$postPreInitProgressStage(event));
         if (!StartupProfiler.isPostPreInitTransitionActive()) {
             gpom$postStarts.get().push(0L);
             gpom$postNames.get().push("");
@@ -90,5 +91,33 @@ public abstract class MixinEventBusStartupProfiler {
             }
         }
         return name;
+    }
+
+    @Unique
+    private static String gpom$postPreInitProgressStage(Event event) {
+        if (event == null) {
+            return null;
+        }
+        String name = event.getClass().getName();
+        if ("net.minecraftforge.client.event.TextureStitchEvent$Pre".equals(name)) {
+            return "Texture stitching";
+        }
+        if ("net.minecraftforge.client.event.ModelRegistryEvent".equals(name)) {
+            return "Model registration";
+        }
+        if ("net.minecraftforge.client.event.ModelBakeEvent".equals(name)
+                || "org.embeddedt.vintagefix.event.DynamicModelBakeEvent".equals(name)) {
+            return "Model baking";
+        }
+        if ("team.chisel.ctm.api.event.TextureCollectedEvent".equals(name)) {
+            return "CTM texture collection";
+        }
+        if (event instanceof RegistryEvent.Register) {
+            Object registryName = ((RegistryEvent.Register<?>) event).getName();
+            if (registryName != null) {
+                return "Registry " + registryName;
+            }
+        }
+        return null;
     }
 }

@@ -38,6 +38,7 @@ public abstract class MixinASMEventHandlerStartupProfiler {
         }
         gpom$invokeStartedAt = StartupProfiler.beginProbe();
         gpom$invokeEventName = gpom$eventName(event);
+        StartupProfiler.postPreInitProgressStage(gpom$postPreInitHandlerStage(gpom$invokeEventName));
     }
 
     @Inject(method = "invoke", at = @At("RETURN"))
@@ -77,5 +78,44 @@ public abstract class MixinASMEventHandlerStartupProfiler {
             }
         }
         return name;
+    }
+
+    @Unique
+    private String gpom$postPreInitHandlerStage(String eventName) {
+        if (eventName == null) {
+            return null;
+        }
+        String modId = gpom$ownerName();
+        if (eventName.contains("RegistryEvent$Register minecraft:recipes")) {
+            if ("crafttweaker".equals(modId)) {
+                return "CraftTweaker scripts";
+            }
+            if ("nuclearcraft".equals(modId)) {
+                return "NuclearCraft recipes";
+            }
+            if ("integrateddynamics".equals(modId)) {
+                return "IntegratedDynamics recipes";
+            }
+            if ("techreborn".equals(modId)) {
+                return "TechReborn recipes";
+            }
+            return "Recipe registry handlers";
+        }
+        if (eventName.contains("TextureStitchEvent$Pre")) {
+            if ("thebetweenlands".equals(modId)) {
+                return "Betweenlands textures";
+            }
+            if ("vintagefix".equals(modId)) {
+                return "VintageFix textures";
+            }
+            return "Texture stitching";
+        }
+        if (eventName.contains("ModelRegistryEvent")) {
+            return "Model registration";
+        }
+        if (eventName.contains("ModelBakeEvent")) {
+            return "Model baking";
+        }
+        return null;
     }
 }

@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.fml;
 
 import com.l.gpom.profiling.StartupProfiler;
+import com.l.gpom.optimization.RegistryEventParallelDispatcher;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.EventBus;
@@ -47,6 +48,7 @@ public abstract class MixinGameDataStartupProfiler {
 
     @Inject(method = "fireRegistryEvents(Ljava/util/function/Predicate;)V", at = @At("HEAD"))
     private static void gpom$beginFireRegistryEventsFiltered(Predicate<?> predicate, CallbackInfo ci) {
+        StartupProfiler.postPreInitProgressStage("Forge registry events");
         gpom$beginGameDataProbe();
     }
 
@@ -80,9 +82,10 @@ public abstract class MixinGameDataStartupProfiler {
             )
     )
     private static boolean gpom$timeRegistryEventPost(EventBus eventBus, Event event) {
+        StartupProfiler.postPreInitProgressStage("Registry " + gpom$registryStageName(event));
         long startedAt = gpom$beginPostPreProbe();
         try {
-            return eventBus.post(event);
+            return RegistryEventParallelDispatcher.postOrFallback(eventBus, event);
         } finally {
             gpom$endPostPreProbe("GameData.fireRegistryEvents EventBus.post " + gpom$eventName(event), startedAt);
         }
@@ -96,6 +99,7 @@ public abstract class MixinGameDataStartupProfiler {
             )
     )
     private static void gpom$timeApplyObjectHolders(ObjectHolderRegistry registry) {
+        StartupProfiler.postPreInitProgressStage("Applying object holders");
         long startedAt = gpom$beginPostPreProbe();
         try {
             registry.applyObjectHolders();
@@ -106,6 +110,7 @@ public abstract class MixinGameDataStartupProfiler {
 
     @Inject(method = "freezeData()V", at = @At("HEAD"))
     private static void gpom$beginFreezeData(CallbackInfo ci) {
+        StartupProfiler.postPreInitProgressStage("Freezing registries");
         gpom$beginGameDataProbe();
     }
 
@@ -116,6 +121,7 @@ public abstract class MixinGameDataStartupProfiler {
 
     @Inject(method = "vanillaSnapshot()V", at = @At("HEAD"))
     private static void gpom$beginVanillaSnapshot(CallbackInfo ci) {
+        StartupProfiler.postPreInitProgressStage("Capturing vanilla snapshot");
         gpom$beginGameDataProbe();
     }
 
@@ -163,5 +169,16 @@ public abstract class MixinGameDataStartupProfiler {
             }
         }
         return name;
+    }
+
+    @Unique
+    private static String gpom$registryStageName(Event event) {
+        if (event instanceof RegistryEvent.Register) {
+            Object registryName = ((RegistryEvent.Register<?>) event).getName();
+            if (registryName != null) {
+                return registryName.toString();
+            }
+        }
+        return "event dispatch";
     }
 }

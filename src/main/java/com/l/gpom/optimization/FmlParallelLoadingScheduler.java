@@ -476,8 +476,8 @@ public final class FmlParallelLoadingScheduler {
                     parallelMods,
                     deniedMods
             );
-            diagnostics.logSummary(elapsedMillis);
         }
+        diagnostics.logSummary(elapsedMillis);
     }
 
     private static void drainInFlight(FMLEvent phaseEvent,
@@ -491,7 +491,8 @@ public final class FmlParallelLoadingScheduler {
         int initialPending = inFlight.pending;
         int drained = 0;
         String waitMessage = "Waiting for none";
-        long startedAt = StartupProfiler.beginProbe();
+        long waitStartedAt = System.nanoTime();
+        long probeStartedAt = StartupProfiler.beginProbe();
         while (inFlight.pending > 0) {
             Future<DispatchResult> future;
             try {
@@ -510,7 +511,7 @@ public final class FmlParallelLoadingScheduler {
                     if (drained > 0) {
                         StartupProfiler.endProbeAlways(
                                 "FML scheduler " + eventType(phaseEvent) + " drainInFlight poll " + safeReason(reason),
-                                startedAt
+                                probeStartedAt
                         );
                     }
                     return;
@@ -542,10 +543,10 @@ public final class FmlParallelLoadingScheduler {
                             + (blockUntilEmpty ? "block " : "poll ")
                             + safeReason(reason)
                             + (blockUntilEmpty ? " " + waitMessage : ""),
-                    startedAt
+                    probeStartedAt
             );
         }
-        if (blockUntilEmpty && initialPending > 0 && elapsedMillis(startedAt) >= 250L) {
+        if (blockUntilEmpty && initialPending > 0 && elapsedMillis(waitStartedAt) >= 250L) {
             logVisibleWait(waitMessage);
         }
     }
@@ -712,11 +713,29 @@ public final class FmlParallelLoadingScheduler {
                 }
             }
         }
+        addKnownLifecycleDagEdges(event, nodesByModId);
 
         // Barrier phases use serialCutoff at runtime. Encoding serial barriers
         // as graph edges can deadlock when a later mod is an explicit dependency
         // of an earlier serial handler.
         return nodes;
+    }
+
+    private static void addKnownLifecycleDagEdges(FMLEvent event, Map<String, DagNode> nodesByModId) {
+        if (event instanceof FMLPostInitializationEvent) {
+            addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integratedtunnels");
+            addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integrateddynamicscompat");
+            addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integratedtunnelscompat");
+            addKnownDagEdge(event, nodesByModId, "integratedtunnels", "integratedtunnelscompat");
+        }
+    }
+
+    private static void addKnownDagEdge(FMLEvent event, Map<String, DagNode> nodesByModId, String before, String after) {
+        DagNode beforeNode = nodesByModId.get(normalize(before));
+        DagNode afterNode = nodesByModId.get(normalize(after));
+        if (beforeNode != null && afterNode != null) {
+            addDagEdge(event, beforeNode, afterNode);
+        }
     }
 
     private static void addDagEdge(FMLEvent event, DagNode before, DagNode after) {
@@ -965,14 +984,15 @@ public final class FmlParallelLoadingScheduler {
         String waitMessage = inFlight.longestRunningWaitMessage();
         setVisibleProgressMessage(progress, waitMessage);
         int pendingBeforeWait = inFlight.pending;
-        long startedAt = StartupProfiler.beginProbe();
+        long waitStartedAt = System.nanoTime();
+        long probeStartedAt = StartupProfiler.beginProbe();
         try {
             Future<DispatchResult> future;
             try (PreInitClassPrewarmer.SerialPause ignored = PreInitClassPrewarmer.pauseDuringBlockingWait()) {
                 future = inFlight.completionService.take();
             }
             DispatchResult result = future.get();
-            long waitNanos = System.nanoTime() - startedAt;
+            long waitNanos = System.nanoTime() - waitStartedAt;
             if (diagnostics != null) {
                 diagnostics.recordParallel(result);
                 diagnostics.recordWait(reason, waitMessage, pendingBeforeWait, result, waitNanos);
@@ -1004,9 +1024,9 @@ public final class FmlParallelLoadingScheduler {
             StartupProfiler.endProbeAlways(
                     "FML scheduler " + eventType(phaseEvent) + " dag drainOne "
                             + safeReason(reason) + " " + waitMessage,
-                    startedAt
+                    probeStartedAt
             );
-            if (elapsedMillis(startedAt) >= 250L) {
+            if (elapsedMillis(waitStartedAt) >= 250L) {
                 logVisibleWait(waitMessage);
             }
         }
@@ -2095,13 +2115,18 @@ public final class FmlParallelLoadingScheduler {
         private static final int TOP_LIMIT = 12;
         private final boolean enabled;
         private final String eventType;
+        private final String logPrefix;
         private final List<HandlerTiming> serialHandlers = new ArrayList<>();
         private final List<HandlerTiming> parallelHandlers = new ArrayList<>();
         private final List<WaitTiming> waits = new ArrayList<>();
 
         private DagDiagnostics(FMLEvent event) {
-            this.enabled = event instanceof FMLPreInitializationEvent;
+            boolean preInit = event instanceof FMLPreInitializationEvent;
+            boolean loadComplete = event instanceof FMLLoadCompleteEvent;
+            this.enabled = (preInit && GpomEarlyConfig.startupProfilerPreInitCriticalPathLogsEnabled())
+                    || (loadComplete && GpomEarlyConfig.startupProfilerLoadCompleteCriticalPathLogsEnabled());
             this.eventType = eventType(event);
+            this.logPrefix = loadComplete ? "LoadCompleteCriticalPath" : "PreInitCriticalPath";
         }
 
         private void recordSerial(DagNode node, long elapsedNanos) {
@@ -2127,14 +2152,16 @@ public final class FmlParallelLoadingScheduler {
         }
 
         private void logSummary(long wallMillis) {
-            if (!enabled || !schedulerLogsEnabled()) {
+            if (!enabled) {
                 return;
             }
             long serialTotal = totalHandlerNanos(serialHandlers);
             long parallelTotal = totalHandlerNanos(parallelHandlers);
             long waitTotal = totalWaitNanos(waits);
+            long remainingWall = Math.max(0L, wallMillis * 1_000_000L - serialTotal - waitTotal);
             GPOM.LOGGER.info(
-                    "[FmlParallelLoading] {} DAG diagnostics wall={} ms serialTotal={} ms serialHandlers={} parallelInclusive={} ms parallelHandlers={} blockingWaitTotal={} ms waits={}",
+                    "[{}] {} DAG wall={} ms serialMainThread={} ms serialHandlers={} parallelInclusive={} ms parallelHandlers={} blockingWait={} ms waits={} remainingWall={} ms",
+                    logPrefix,
                     eventType,
                     wallMillis,
                     serialTotal / 1_000_000L,
@@ -2142,7 +2169,8 @@ public final class FmlParallelLoadingScheduler {
                     parallelTotal / 1_000_000L,
                     parallelHandlers.size(),
                     waitTotal / 1_000_000L,
-                    waits.size()
+                    waits.size(),
+                    remainingWall / 1_000_000L
             );
             logTopHandlers("serial", serialHandlers);
             logTopHandlers("parallel", parallelHandlers);
@@ -2156,7 +2184,8 @@ public final class FmlParallelLoadingScheduler {
             for (int i = 0; i < limit; i++) {
                 HandlerTiming timing = sorted.get(i);
                 GPOM.LOGGER.info(
-                        "[FmlParallelLoading]   PreInit DAG top {} #{} {} ms index={} - {} ({})",
+                        "[{}] top {} #{} {} ms index={} - {} ({})",
+                        logPrefix,
                         label,
                         i + 1,
                         timing.elapsedNanos / 1_000_000L,
@@ -2174,7 +2203,8 @@ public final class FmlParallelLoadingScheduler {
             for (int i = 0; i < limit; i++) {
                 WaitTiming timing = sorted.get(i);
                 GPOM.LOGGER.info(
-                        "[FmlParallelLoading]   PreInit DAG top wait #{} {} ms reason={} pending={} waitedFor={} completed={} ({})",
+                        "[{}] top wait #{} {} ms reason={} pending={} waitedFor={} completed={} ({})",
+                        logPrefix,
                         i + 1,
                         timing.elapsedNanos / 1_000_000L,
                         timing.reason,

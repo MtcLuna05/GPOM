@@ -49,6 +49,7 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
     private static final boolean CRAFTTWEAKER_FAST_RECIPE_REMOVAL = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastRecipeRemoval", "true"));
     private static final boolean CRAFTTWEAKER_FAST_ZEN_REGISTER = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.fastZenRegister", "false"));
     private static final boolean CRAFTTWEAKER_LAZY_ITEM_LIST = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.lazyItemList", "true"));
+    private static final boolean CRAFTTWEAKER_PARALLEL_SCRIPT_PARSING = Boolean.parseBoolean(System.getProperty("gpom.crafttweaker.parallelScriptParsing.enabled", "false"));
     private static final boolean NUCLEARCRAFT_FAST_MANUFACTORY_METAL_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.nuclearcraft.fastManufactoryMetalRecipes", "false"));
     private static final boolean NUCLEARCRAFT_CACHE_MANUFACTORY_LOG_CRAFTING_RESULTS = Boolean.parseBoolean(System.getProperty("gpom.nuclearcraft.cacheManufactoryLogCraftingResults", "true"));
     private static final boolean THERMAL_EXPANSION_FAST_SAWMILL_CRAFTING_RESULT = Boolean.parseBoolean(System.getProperty("gpom.thermalexpansion.fastSawmillCraftingResult", "true"));
@@ -153,6 +154,11 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                 && "crafttweaker.mc1120.item.MCItemUtils".equals(className)
                 && TargetedModVersions.isCraftTweakerClass(className)) {
             basicClass = patchCraftTweakerItemUtils(basicClass);
+        }
+        if (CRAFTTWEAKER_PARALLEL_SCRIPT_PARSING
+                && "crafttweaker.runtime.CrTTweaker".equals(className)
+                && TargetedModVersions.isCraftTweakerClass(className)) {
+            basicClass = patchCraftTweakerScriptLoad(basicClass);
         }
         if ((NUCLEARCRAFT_FAST_MANUFACTORY_METAL_RECIPES || NUCLEARCRAFT_CACHE_MANUFACTORY_LOG_CRAFTING_RESULTS)
                 && "nc.recipe.processor.ManufactoryRecipes".equals(className)
@@ -1448,6 +1454,58 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         }
     }
 
+    private static byte[] patchCraftTweakerScriptLoad(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"loadScript".equals(method.name)
+                        || !"(ZLcrafttweaker/runtime/ScriptLoader;Ljava/util/List;Z)Z".equals(method.desc)) {
+                    continue;
+                }
+                org.objectweb.asm.tree.LabelNode fallback = new org.objectweb.asm.tree.LabelNode();
+                InsnList prefix = new InsnList();
+                prefix.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                prefix.add(new VarInsnNode(Opcodes.ILOAD, 1));
+                prefix.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                prefix.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                prefix.add(new VarInsnNode(Opcodes.ILOAD, 4));
+                prefix.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/CraftTweakerScriptLoadOptimizations",
+                        "tryLoadScript",
+                        "(Ljava/lang/Object;ZLjava/lang/Object;Ljava/util/List;Z)Ljava/lang/Boolean;",
+                        false
+                ));
+                prefix.add(new InsnNode(Opcodes.DUP));
+                prefix.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFNULL, fallback));
+                prefix.add(new MethodInsnNode(
+                        Opcodes.INVOKEVIRTUAL,
+                        "java/lang/Boolean",
+                        "booleanValue",
+                        "()Z",
+                        false
+                ));
+                prefix.add(new InsnNode(Opcodes.IRETURN));
+                prefix.add(fallback);
+                prefix.add(new InsnNode(Opcodes.POP));
+                method.instructions.insert(prefix);
+                method.maxStack = Math.max(method.maxStack, 5);
+                changed = true;
+                break;
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = frameComputingWriter();
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
     private static byte[] patchThermalExpansionSawmillManager(byte[] basicClass) {
         try {
             ClassNode node = new ClassNode();
@@ -2042,6 +2100,16 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
 
         add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.mc1120.events.CommonEventHandler", "registerRecipes");
         add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.mc1120.brackets.BracketHandlerItem", "rebuildItemRegistry");
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.CraftTweakerAPI",
+                "apply", "logInfo", "logError");
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.runtime.CrTTweaker",
+                "apply", "getOrCreateLoader", "loadScript", "loadPreprocessor", "collectScriptFiles");
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.runtime.ScriptFile",
+                "<init>", "open");
+        add(targets, ModTarget.CRAFTTWEAKER, "crafttweaker.preprocessor.PreprocessorManager",
+                "checkFileForPreprocessors", "postLoadEvent");
+        add(targets, ModTarget.CRAFTTWEAKER, "stanhebben.zenscript.ZenModule",
+                "<init>", "compileScripts", "getMain");
 
         add(targets, ModTarget.RANDOMTHINGS, "lumien.randomthings.RandomThings", "<clinit>", "<init>", "preInit");
         add(targets, ModTarget.RANDOMTHINGS, "lumien.randomthings.config.ModConfiguration", "<clinit>", "<init>", "preInit");
@@ -2338,6 +2406,23 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         }
         if (className.equals("crafttweaker.mc1120.events.CommonEventHandler")) {
             return methodName.equals("registerRecipes");
+        }
+        if (className.equals("crafttweaker.CraftTweakerAPI")) {
+            return methodName.equals("apply") || methodName.equals("logInfo") || methodName.equals("logError");
+        }
+        if (className.equals("crafttweaker.runtime.CrTTweaker")) {
+            return methodName.equals("apply") || methodName.equals("getOrCreateLoader")
+                    || methodName.equals("loadScript") || methodName.equals("loadPreprocessor")
+                    || methodName.equals("collectScriptFiles");
+        }
+        if (className.equals("crafttweaker.runtime.ScriptFile")) {
+            return methodName.equals("<init>") || methodName.equals("open");
+        }
+        if (className.equals("crafttweaker.preprocessor.PreprocessorManager")) {
+            return methodName.equals("checkFileForPreprocessors") || methodName.equals("postLoadEvent");
+        }
+        if (className.equals("stanhebben.zenscript.ZenModule")) {
+            return methodName.equals("<init>") || methodName.equals("compileScripts") || methodName.equals("getMain");
         }
         if (className.equals("nc.recipe.NCRecipes")) {
             return methodName.equals("registerRecipes");
@@ -2996,6 +3081,37 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             }
             if (owner.equals("crafttweaker/runtime/ScriptLoader") && name.equals("setMainName")) {
                 return "POSTPRE CT script " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/runtime/CrTTweaker")
+                    && (name.equals("apply") || name.equals("getOrCreateLoader") || name.equals("loadScript")
+                    || name.equals("loadPreprocessor") || name.equals("collectScriptFiles"))) {
+                return "POSTPRE CT script " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/runtime/ScriptFile") && name.equals("open")) {
+                return "POSTPRE CT script IO " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/preprocessor/PreprocessorManager")
+                    && (name.equals("checkFileForPreprocessors") || name.equals("postLoadEvent"))) {
+                return "POSTPRE CT preprocessor " + className + '.' + name + desc;
+            }
+            if (owner.equals("stanhebben/zenscript/ZenModule")
+                    && (name.equals("compileScripts") || name.equals("<init>") || name.equals("getMain"))) {
+                return "POSTPRE CT zenscript " + className + '.' + name + desc;
+            }
+            if ((owner.equals("stanhebben/zenscript/ZenTokener") || owner.equals("stanhebben/zenscript/ZenParsedFile"))
+                    && name.equals("<init>")) {
+                return "POSTPRE CT zenscript " + className + '.' + name + desc;
+            }
+            if (owner.equals("java/lang/Runnable") && name.equals("run")) {
+                return "POSTPRE CT script execution " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/CraftTweakerAPI")
+                    && (name.equals("apply") || name.equals("logInfo") || name.equals("logError"))) {
+                return "POSTPRE CT action " + className + '.' + name + desc;
+            }
+            if (owner.equals("crafttweaker/IAction")
+                    && (name.equals("validate") || name.equals("describe") || name.equals("describeInvalid") || name.equals("apply"))) {
+                return "POSTPRE CT action " + className + '.' + name + desc;
             }
             if (owner.equals("net/minecraftforge/fml/common/eventhandler/EventBus") && name.equals("post")) {
                 return "POSTPRE CT event " + className + '.' + name + desc;

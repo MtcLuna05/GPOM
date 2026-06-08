@@ -7,9 +7,15 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -40,6 +46,9 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         if ("net.minecraftforge.oredict.OreDictionary".equals(className)) {
             return synchronizeOreDictionary(basicClass);
         }
+        if ("net.minecraft.item.crafting.Ingredient".equals(className)) {
+            return guardIngredientInstances(basicClass);
+        }
         return basicClass;
     }
 
@@ -48,7 +57,13 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
             ClassNode node = read(basicClass);
             int synchronizedMethods = 0;
             int snapshotMethods = 0;
+            int registerQueuePatches = 0;
             for (MethodNode method : node.methods) {
+                if (isForgeRegistryRegister(method)) {
+                    if (patchForgeRegistryRegisterWorkerQueue(method)) {
+                        registerQueuePatches++;
+                    }
+                }
                 if ((isForgeRegistryMutation(method) || isForgeRegistryAccess(method)) && markSynchronized(method)) {
                     synchronizedMethods++;
                 }
@@ -56,13 +71,14 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
                     snapshotMethods++;
                 }
             }
-            if (synchronizedMethods <= 0 && snapshotMethods <= 0) {
+            if (synchronizedMethods <= 0 && snapshotMethods <= 0 && registerQueuePatches <= 0) {
                 return basicClass;
             }
             GPOM.LOGGER.info(
-                    "[FmlParallelLoading] Serialized {} ForgeRegistry method(s) and snapshotted {} escaping view method(s)",
+                    "[FmlParallelLoading] Serialized {} ForgeRegistry method(s), snapshotted {} escaping view method(s), and queue-patched {} direct register method(s)",
                     synchronizedMethods,
-                    snapshotMethods
+                    snapshotMethods,
+                    registerQueuePatches
             );
             return write(node);
         } catch (Throwable throwable) {
@@ -75,15 +91,26 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         try {
             ClassNode node = read(basicClass);
             int changed = 0;
+            int registerQueuePatches = 0;
             for (MethodNode method : node.methods) {
+                if (isGameDataRegisterImpl(method)) {
+                    if (patchGameDataRegisterImplWorkerQueue(method)) {
+                        registerQueuePatches++;
+                    }
+                    continue;
+                }
                 if (isGameDataRegistryMutation(method) && markSynchronized(method)) {
                     changed++;
                 }
             }
-            if (changed <= 0) {
+            if (changed <= 0 && registerQueuePatches <= 0) {
                 return basicClass;
             }
-            GPOM.LOGGER.info("[FmlParallelLoading] Serialized {} GameData registry mutation method(s)", changed);
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] Serialized {} GameData registry mutation method(s) and queue-patched {} register_impl method(s)",
+                    changed,
+                    registerQueuePatches
+            );
             return write(node);
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install GameData registry serialization; continuing without it", throwable);
@@ -107,6 +134,33 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
             return write(node);
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install OreDictionary serialization; continuing without it", throwable);
+            return basicClass;
+        }
+    }
+
+    private static byte[] guardIngredientInstances(byte[] basicClass) {
+        try {
+            ClassNode node = read(basicClass);
+            boolean synchronizedInstances = false;
+            boolean snapshotIterator = false;
+            for (MethodNode method : node.methods) {
+                if ("<clinit>".equals(method.name) && "()V".equals(method.desc)) {
+                    synchronizedInstances = patchIngredientClinit(node.name, method) || synchronizedInstances;
+                } else if ("invalidateAll".equals(method.name) && "()V".equals(method.desc)) {
+                    snapshotIterator = patchIngredientInvalidateAll(method) || snapshotIterator;
+                }
+            }
+            if (!synchronizedInstances && !snapshotIterator) {
+                return basicClass;
+            }
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] Guarded Ingredient instances synchronizedSet={} snapshotIterator={}",
+                    synchronizedInstances,
+                    snapshotIterator
+            );
+            return write(node);
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[FmlParallelLoading] Failed to guard Ingredient instance tracking; continuing without it", throwable);
             return basicClass;
         }
     }
@@ -174,6 +228,11 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
         }
         return "processMissingEvent".equals(name)
                 && "(Lnet/minecraft/util/ResourceLocation;Lnet/minecraftforge/registries/ForgeRegistry;Ljava/util/List;Ljava/util/Map;Ljava/util/Map;Ljava/util/Collection;Ljava/util/Collection;Z)V".equals(desc);
+    }
+
+    private static boolean isForgeRegistryRegister(MethodNode method) {
+        return "register".equals(method.name)
+                && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)V".equals(method.desc);
     }
 
     private static boolean isForgeRegistryAccess(MethodNode method) {
@@ -263,10 +322,6 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
     private static boolean isGameDataRegistryMutation(MethodNode method) {
         String name = method.name;
         String desc = method.desc;
-        if ("register_impl".equals(name)
-                && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(desc)) {
-            return true;
-        }
         if ("registerEntity".equals(name)
                 && "(ILnet/minecraft/util/ResourceLocation;Ljava/lang/Class;Ljava/lang/String;)V".equals(desc)) {
             return true;
@@ -289,6 +344,70 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
                 && ("()V".equals(desc) || "(Ljava/util/function/Predicate;)V".equals(desc));
     }
 
+    private static boolean isGameDataRegisterImpl(MethodNode method) {
+        return "register_impl".equals(method.name)
+                && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(method.desc);
+    }
+
+    private static boolean patchGameDataRegisterImplWorkerQueue(MethodNode method) {
+        method.access &= ~Opcodes.ACC_SYNCHRONIZED;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() == Opcodes.INVOKESTATIC
+                    && insn instanceof MethodInsnNode
+                    && "com/l/gpom/optimization/RegistryEventParallelDispatcher".equals(((MethodInsnNode) insn).owner)
+                    && "queueWorkerRegistration".equals(((MethodInsnNode) insn).name)) {
+                return false;
+            }
+        }
+
+        LabelNode originalBody = new LabelNode();
+        InsnList injected = new InsnList();
+        injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        injected.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/RegistryEventParallelDispatcher",
+                "queueWorkerRegistration",
+                "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Z",
+                false
+        ));
+        injected.add(new JumpInsnNode(Opcodes.IFEQ, originalBody));
+        injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        injected.add(new InsnNode(Opcodes.ARETURN));
+        injected.add(originalBody);
+        injected.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+        method.instructions.insert(injected);
+        return true;
+    }
+
+    private static boolean patchForgeRegistryRegisterWorkerQueue(MethodNode method) {
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() == Opcodes.INVOKESTATIC
+                    && insn instanceof MethodInsnNode
+                    && "com/l/gpom/optimization/RegistryEventParallelDispatcher".equals(((MethodInsnNode) insn).owner)
+                    && "queueWorkerRegistration".equals(((MethodInsnNode) insn).name)) {
+                return false;
+            }
+        }
+
+        LabelNode originalBody = new LabelNode();
+        InsnList injected = new InsnList();
+        injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        injected.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/RegistryEventParallelDispatcher",
+                "queueWorkerRegistration",
+                "(Lnet/minecraftforge/registries/IForgeRegistry;Lnet/minecraftforge/registries/IForgeRegistryEntry;)Z",
+                false
+        ));
+        injected.add(new JumpInsnNode(Opcodes.IFEQ, originalBody));
+        injected.add(new InsnNode(Opcodes.RETURN));
+        injected.add(originalBody);
+        injected.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+        method.instructions.insert(injected);
+        return true;
+    }
+
     private static boolean isOreDictionaryAccess(MethodNode method) {
         if ((method.access & Opcodes.ACC_STATIC) == 0 || "<clinit>".equals(method.name)) {
             return false;
@@ -305,6 +424,98 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
                 || "registerOre".equals(name)
                 || "registerOreImpl".equals(name)
                 || "rebakeMap".equals(name);
+    }
+
+    private static boolean patchIngredientClinit(String classInternalName, MethodNode method) {
+        if (hasHelperCall(method, "synchronizedIngredientSet")) {
+            return false;
+        }
+
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() != Opcodes.PUTSTATIC || !(insn instanceof FieldInsnNode)) {
+                continue;
+            }
+            FieldInsnNode field = (FieldInsnNode) insn;
+            if (!isIngredientSetField(classInternalName, field)) {
+                continue;
+            }
+
+            InsnList wrap = new InsnList();
+            wrap.add(new FieldInsnNode(
+                    Opcodes.GETSTATIC,
+                    field.owner,
+                    field.name,
+                    field.desc
+            ));
+            wrap.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/l/gpom/optimization/IngredientConcurrencyGuards",
+                    "synchronizedIngredientSet",
+                    "(Ljava/util/Set;)Ljava/util/Set;",
+                    false
+            ));
+            wrap.add(new FieldInsnNode(
+                    Opcodes.PUTSTATIC,
+                    field.owner,
+                    field.name,
+                    field.desc
+            ));
+            method.instructions.insert(insn, wrap);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isIngredientSetField(String classInternalName, FieldInsnNode field) {
+        if (!"Ljava/util/Set;".equals(field.desc)) {
+            return false;
+        }
+        if (!field.owner.equals(classInternalName)
+                && !"net/minecraft/item/crafting/Ingredient".equals(field.owner)
+                && !"akq".equals(field.owner)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean patchIngredientInvalidateAll(MethodNode method) {
+        if (hasHelperCall(method, "ingredientInstanceIterator")) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() != Opcodes.INVOKEINTERFACE || !(insn instanceof MethodInsnNode)) {
+                continue;
+            }
+            MethodInsnNode call = (MethodInsnNode) insn;
+            if (!"java/util/Set".equals(call.owner)
+                    || !"iterator".equals(call.name)
+                    || !"()Ljava/util/Iterator;".equals(call.desc)) {
+                continue;
+            }
+            method.instructions.set(call, new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    "com/l/gpom/optimization/IngredientConcurrencyGuards",
+                    "ingredientInstanceIterator",
+                    "(Ljava/util/Set;)Ljava/util/Iterator;",
+                    false
+            ));
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean hasHelperCall(MethodNode method, String helperMethod) {
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() == Opcodes.INVOKESTATIC
+                    && insn instanceof MethodInsnNode
+                    && "com/l/gpom/optimization/IngredientConcurrencyGuards".equals(((MethodInsnNode) insn).owner)
+                    && helperMethod.equals(((MethodInsnNode) insn).name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean registrySerializationEnabled() {

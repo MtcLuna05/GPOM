@@ -51,6 +51,8 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static volatile boolean emptyIngredientResolved;
     private static volatile RecipeIndex recipeIndex;
     private static volatile boolean fallbackLogged;
+    private static final Map<Class<?>, Method> PAIR_KEY_METHODS = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Class<?>, Method> PAIR_VALUE_METHODS = Collections.synchronizedMap(new IdentityHashMap<>());
 
     private CraftTweakerRecipeRemovalOptimizations() {
     }
@@ -73,7 +75,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : candidatesForOutput(context, output)) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
+                if (recipe == null || !matchesRecipeOutput(entry, output)) {
                     continue;
                 }
                 if (!(recipe instanceof IShapedRecipe)) {
@@ -108,7 +110,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : candidatesForOutput(context, output)) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
+                if (recipe == null || !matchesRecipeOutput(entry, output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe) {
@@ -144,7 +146,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 if (recipe == null) {
                     continue;
                 }
-                Object itemStack = craftTweakerStackForMatching(recipeOutput(recipe));
+                Object itemStack = entry.craftTweakerOutput();
                 if (itemStack != null && matchesAnyOutput(outputs, itemStack)) {
                     removed.add(entry);
                 }
@@ -174,7 +176,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : context.index.allEntries()) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
+                if (recipe == null || !matchesRecipeOutput(entry, output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe && (ingredients == null || matchesShaped((IShapedRecipe) recipe, ingredients, width, height))) {
@@ -200,7 +202,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             List<Entry> removed = new ArrayList<>();
             for (Entry entry : context.index.allEntries()) {
                 IRecipe recipe = entry.recipe;
-                if (recipe == null || isEmpty(recipeOutput(recipe)) || !matchesItem(recipeOutput(recipe), output)) {
+                if (recipe == null || !matchesRecipeOutput(entry, output)) {
                     continue;
                 }
                 if (recipe instanceof IShapedRecipe) {
@@ -228,7 +230,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 if (recipe == null) {
                     continue;
                 }
-                Object itemStack = craftTweakerStackForMatching(recipeOutput(recipe));
+                Object itemStack = entry.craftTweakerOutput();
                 if (itemStack != null && matchesAnyOutput(outputs, itemStack)) {
                     removed.add(entry);
                 }
@@ -344,6 +346,20 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             return false;
         }
         Object craftTweakerStack = craftTweakerStackForMatching(stack);
+        return craftTweakerStack != null && invokeBoolean(ingredientMatchesMethod(expected), expected, craftTweakerStack);
+    }
+
+    private static boolean matchesRecipeOutput(Entry entry, Object expected) {
+        if (entry == null) {
+            return false;
+        }
+        if (expected == null) {
+            return isEmpty(entry.output);
+        }
+        if (isEmpty(entry.output)) {
+            return false;
+        }
+        Object craftTweakerStack = entry.craftTweakerOutput();
         return craftTweakerStack != null && invokeBoolean(ingredientMatchesMethod(expected), expected, craftTweakerStack);
     }
 
@@ -627,11 +643,32 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             return null;
         }
         try {
-            Method method = pair.getClass().getMethod(methodName);
-            method.setAccessible(true);
+            Method method = pairMethod(pair.getClass(), methodName);
+            if (method == null) {
+                return null;
+            }
             return method.invoke(pair);
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    private static Method pairMethod(Class<?> type, String methodName) {
+        Map<Class<?>, Method> cache = "getKey".equals(methodName) ? PAIR_KEY_METHODS : PAIR_VALUE_METHODS;
+        synchronized (cache) {
+            Method method = cache.get(type);
+            if (method != null || cache.containsKey(type)) {
+                return method;
+            }
+            try {
+                method = type.getMethod(methodName);
+                method.setAccessible(true);
+                cache.put(type, method);
+                return method;
+            } catch (Throwable ignored) {
+                cache.put(type, null);
+                return null;
+            }
         }
     }
 
@@ -915,11 +952,12 @@ public final class CraftTweakerRecipeRemovalOptimizations {
                 if (sourceEntry == null || sourceEntry.getKey() == null || sourceEntry.getValue() == null) {
                     continue;
                 }
-                Entry entry = new Entry(sourceEntry.getKey(), sourceEntry.getValue());
+                ItemStack output = recipeOutput(sourceEntry.getValue());
+                Item item = item(output);
+                Entry entry = new Entry(sourceEntry.getKey(), sourceEntry.getValue(), output, item);
                 byKey.put(entry.key, entry);
-                Item item = item(recipeOutput(entry.recipe));
-                if (item != null) {
-                    byItem.computeIfAbsent(item, ignored -> new ArrayList<>()).add(entry);
+                if (entry.item != null) {
+                    byItem.computeIfAbsent(entry.item, ignored -> new ArrayList<>()).add(entry);
                 }
             }
         }
@@ -946,12 +984,11 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         private void remove(List<Entry> entries) {
             for (Entry entry : entries) {
                 byKey.remove(entry.key);
-                Item item = item(recipeOutput(entry.recipe));
-                List<Entry> itemEntries = item == null ? null : byItem.get(item);
+                List<Entry> itemEntries = entry.item == null ? null : byItem.get(entry.item);
                 if (itemEntries != null) {
                     itemEntries.remove(entry);
                     if (itemEntries.isEmpty()) {
-                        byItem.remove(item);
+                        byItem.remove(entry.item);
                     }
                 }
             }
@@ -961,10 +998,24 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static final class Entry {
         private final ResourceLocation key;
         private final IRecipe recipe;
+        private final ItemStack output;
+        private final Item item;
+        private boolean craftTweakerOutputResolved;
+        private Object craftTweakerOutput;
 
-        private Entry(ResourceLocation key, IRecipe recipe) {
+        private Entry(ResourceLocation key, IRecipe recipe, ItemStack output, Item item) {
             this.key = key;
             this.recipe = recipe;
+            this.output = output == null ? emptyStack() : output;
+            this.item = item;
+        }
+
+        private Object craftTweakerOutput() {
+            if (!craftTweakerOutputResolved) {
+                craftTweakerOutput = craftTweakerStackForMatching(output);
+                craftTweakerOutputResolved = true;
+            }
+            return craftTweakerOutput;
         }
     }
 }

@@ -84,8 +84,14 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.startupProfiler.logs.wallDiagnostics.enabled", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.stackSamples.enabled", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.resourceLoadOrder.enabled", "true");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.nonFmlGaps.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.preInitCriticalPath.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.probeLogs.enabled", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.topCount", "40");
+        DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressBars", "true");
+        DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressSteps", "96");
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "false");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "Minecraft");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "false");
@@ -132,8 +138,23 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.enderio.fastSpawnerEntityValidation", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister", "false");
         DEFAULTS.setProperty("gpom.crafttweaker.lazyItemList", "true");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.enabled", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.workers", "0");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.allowlist", "*");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.denylist", "");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.offThreadZenParse", "false");
         DEFAULTS.setProperty("gpom.nuclearcraft.fastManufactoryMetalRecipes", "false");
         DEFAULTS.setProperty("gpom.nuclearcraft.cacheManufactoryLogCraftingResults", "true");
+        DEFAULTS.setProperty("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback", "false");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.enabled", "false");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:entities,ebwizardry:spells");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.workers", "0");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.queuedCommit", "true");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,natura@minecraft:blocks,natura@minecraft:items,tconstruct@minecraft:items");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "true");
         DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "true");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.enabled", "true");
@@ -408,8 +429,14 @@ public final class GpomEarlyConfig {
                 "gpom.startupProfiler.logs.wallDiagnostics.enabled",
                 "gpom.startupProfiler.logs.stackSamples.enabled",
                 "gpom.startupProfiler.logs.resourceLoadOrder.enabled",
+                "gpom.startupProfiler.logs.nonFmlGaps.enabled",
+                "gpom.startupProfiler.logs.preInitCriticalPath.enabled",
+                "gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled",
+                "gpom.startupProfiler.logs.postPreInitProbeSummary.enabled",
                 "gpom.startupProfiler.probeLogs.enabled",
-                "gpom.startupProfiler.topCount"
+                "gpom.startupProfiler.topCount",
+                "gpom.startupProfiler.postPreInitProgressBars",
+                "gpom.startupProfiler.postPreInitProgressSteps"
         );
         writeSection(writer, "Client Loading UI", "Optional client-only UI additions for early startup, world entry, and the main menu startup time display.",
                 "gpom.earlySplash.enabled",
@@ -451,8 +478,23 @@ public final class GpomEarlyConfig {
                 "gpom.enderio.fastSpawnerEntityValidation",
                 "gpom.crafttweaker.fastZenRegister",
                 "gpom.crafttweaker.lazyItemList",
+                "gpom.crafttweaker.parallelScriptParsing.enabled",
+                "gpom.crafttweaker.parallelScriptParsing.workers",
+                "gpom.crafttweaker.parallelScriptParsing.allowlist",
+                "gpom.crafttweaker.parallelScriptParsing.denylist",
+                "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse",
                 "gpom.nuclearcraft.fastManufactoryMetalRecipes",
                 "gpom.nuclearcraft.cacheManufactoryLogCraftingResults",
+                "gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback",
+                "gpom.registry.parallelRegisterEvents.enabled",
+                "gpom.registry.parallelRegisterEvents.registries",
+                "gpom.registry.parallelRegisterEvents.workers",
+                "gpom.registry.parallelRegisterEvents.queuedCommit",
+                "gpom.registry.parallelRegisterEvents.immediateCommitRegistries",
+                "gpom.registry.parallelRegisterEvents.dependencyGating",
+                "gpom.registry.parallelRegisterEvents.allowlist",
+                "gpom.registry.parallelRegisterEvents.denylist",
+                "gpom.registry.parallelRegisterEvents.deepDiagnostics",
                 "gpom.preInitHighSinkCallProfiler",
                 "gpom.postPreInitTopCallProfiler"
         );
@@ -623,10 +665,22 @@ public final class GpomEarlyConfig {
                 return "Logs stack-sample diagnostics for long-running startup sinks.";
             case "gpom.startupProfiler.logs.resourceLoadOrder.enabled":
                 return "Logs resource/model load-order diagnostics used to locate client-side loading stalls.";
+            case "gpom.startupProfiler.logs.nonFmlGaps.enabled":
+                return "Logs material wall-clock gaps between Forge lifecycle events, even when raw startup profiler probes are disabled.";
+            case "gpom.startupProfiler.logs.preInitCriticalPath.enabled":
+                return "Logs a compact PreInitialization DAG critical-path breakdown, even when scheduler chatter and raw probes are disabled.";
+            case "gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled":
+                return "Logs a compact LoadComplete DAG critical-path breakdown, separating true handler time from progress-bar wait labels.";
+            case "gpom.startupProfiler.logs.postPreInitProbeSummary.enabled":
+                return "Records and logs compact POST_PREINIT_TRANSITION probe summaries without enabling raw probe lines or broad startup profiler output.";
             case "gpom.startupProfiler.probeLogs.enabled":
                 return "Compatibility alias for older configs; false also disables raw [Probe] startup lines.";
             case "gpom.startupProfiler.topCount":
                 return "Number of top mods/probes included in startup profiler summaries.";
+            case "gpom.startupProfiler.postPreInitProgressBars":
+                return "Shows a coarse Forge loading bar during the long post-PreInit registry transition.";
+            case "gpom.startupProfiler.postPreInitProgressSteps":
+                return "Step budget for the GPOM post-PreInit loading bar. Raise this if the UI reaches the maximum before the transition ends.";
             case "gpom.earlySplash.enabled":
                 return "Shows GPOM's isolated early splash window before Minecraft creates its own display.";
             case "gpom.earlySplash.packName":
@@ -719,10 +773,40 @@ public final class GpomEarlyConfig {
                 return "Uses ASMData to register CraftTweaker ZenRegister classes without reflective annotation scans.";
             case "gpom.crafttweaker.lazyItemList":
                 return "Defers CraftTweaker's regex item-list build until the regex item APIs are actually used.";
+            case "gpom.crafttweaker.parallelScriptParsing.enabled":
+                return "Enables CraftTweaker script-loading acceleration inside each priority bucket while preserving sorted compile and execution order.";
+            case "gpom.crafttweaker.parallelScriptParsing.workers":
+                return "Worker count for CraftTweaker script source preloading or aggressive off-thread Zen parsing. 0 lets GPOM choose a bounded automatic value.";
+            case "gpom.crafttweaker.parallelScriptParsing.allowlist":
+                return "Comma-separated CraftTweaker script effective names, group names, or file names allowed to use the accelerated path; '*' allows all before denylist filtering.";
+            case "gpom.crafttweaker.parallelScriptParsing.denylist":
+                return "Comma-separated CraftTweaker script effective names, group names, or file names forced back to stock serial source-open and parse behavior.";
+            case "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse":
+                return "If true, runs ZenParsedFile parsing on workers. If false, only script source reads are off-thread and Zen parsing remains on the main thread.";
             case "gpom.nuclearcraft.fastManufactoryMetalRecipes":
                 return "Uses a cached ore-name set for NuclearCraft Manufactory metal recipe registration with stock fallback.";
             case "gpom.nuclearcraft.cacheManufactoryLogCraftingResults":
-                return "Caches NuclearCraft Manufactory log-to-plank crafting lookups and narrows misses to one-slot recipes before stock fallback.";
+                return "Caches NuclearCraft Manufactory log-to-plank crafting lookups and indexes one-input 3x3 recipe candidates before stock fallback.";
+            case "gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback":
+                return "Skips the expensive stock CraftingManager fallback when GPOM's one-input NuclearCraft Manufactory log index finds no result. Experimental; disable if log-derived recipes are missing.";
+            case "gpom.registry.parallelRegisterEvents.enabled":
+                return "Runs selected Forge RegistryEvent.Register listeners in worker threads during the post-PreInit registry transition.";
+            case "gpom.registry.parallelRegisterEvents.registries":
+                return "Comma-separated registry names eligible for parallel listener dispatch; '*' allows every register event.";
+            case "gpom.registry.parallelRegisterEvents.workers":
+                return "Worker count for parallel registry listener dispatch. 0 lets GPOM choose a bounded automatic value.";
+            case "gpom.registry.parallelRegisterEvents.queuedCommit":
+                return "Uses per-listener registry proxies and commits queued mutations back to Forge in original listener order.";
+            case "gpom.registry.parallelRegisterEvents.immediateCommitRegistries":
+                return "Comma-separated registry names whose worker-thread registrations are serialized into Forge immediately instead of queued until the listener batch commits.";
+            case "gpom.registry.parallelRegisterEvents.dependencyGating":
+                return "Splits registry worker batches at declared mod dependency edges so dependent listeners wait for required earlier listeners.";
+            case "gpom.registry.parallelRegisterEvents.allowlist":
+                return "Comma-separated mod ids whose registry listeners may run off-thread; '*' allows every identified mod before denylist filtering.";
+            case "gpom.registry.parallelRegisterEvents.denylist":
+                return "Comma-separated mod ids forced to stay on the main thread during registry events; use modid@registry:name to deny only one registry.";
+            case "gpom.registry.parallelRegisterEvents.deepDiagnostics":
+                return "Adds aggregated RegistryParallel probes by registry, mod, and scheduling reason so hidden serial or worker wait costs can be identified.";
             case "gpom.preInitHighSinkCallProfiler":
                 return "Enables exact-version deep PreInit profilers for current high-sink mods.";
             case "gpom.postPreInitTopCallProfiler":
@@ -768,6 +852,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.enabled");
         copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.queueSize");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
+        copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressBars");
+        copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressSteps");
         copySystemPropertyIfAbsent("gpom.railcraftLazyItemConditions");
         copySystemPropertyIfAbsent("gpom.railcraft.deferModuleIC2Containers");
         copySystemPropertyIfAbsent("gpom.railcraft.deferModuleContainers");
@@ -804,8 +890,23 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.enderio.fastSpawnerEntityValidation");
         copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister");
         copySystemPropertyIfAbsent("gpom.crafttweaker.lazyItemList");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.enabled");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.workers");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.allowlist");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.denylist");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.offThreadZenParse");
         copySystemPropertyIfAbsent("gpom.nuclearcraft.fastManufactoryMetalRecipes");
         copySystemPropertyIfAbsent("gpom.nuclearcraft.cacheManufactoryLogCraftingResults");
+        copySystemPropertyIfAbsent("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.enabled");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.registries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.workers");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.queuedCommit");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.immediateCommitRegistries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.dependencyGating");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.allowlist");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.denylist");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.deepDiagnostics");
         copySystemPropertyIfAbsent("gpom.preInitHighSinkCallProfiler");
         copySystemPropertyIfAbsent("gpom.postPreInitTopCallProfiler");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
@@ -920,6 +1021,30 @@ public final class GpomEarlyConfig {
 
     public static boolean startupProfilerResourceLoadOrderLogsEnabled() {
         return startupProfilerLogsEnabled() && booleanValue("gpom.startupProfiler.logs.resourceLoadOrder.enabled");
+    }
+
+    public static boolean startupProfilerNonFmlGapLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.nonFmlGaps.enabled");
+    }
+
+    public static boolean startupProfilerPreInitCriticalPathLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.preInitCriticalPath.enabled");
+    }
+
+    public static boolean startupProfilerLoadCompleteCriticalPathLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled");
+    }
+
+    public static boolean startupProfilerPostPreInitProbeSummaryLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled");
+    }
+
+    public static boolean startupProfilerPostPreInitProgressBarsEnabled() {
+        return booleanValue("gpom.startupProfiler.postPreInitProgressBars");
+    }
+
+    public static int startupProfilerPostPreInitProgressSteps() {
+        return Math.max(18, intValue("gpom.startupProfiler.postPreInitProgressSteps", 96));
     }
 
     public static boolean earlySplashEnabled() {
@@ -1070,8 +1195,68 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.nuclearcraft.cacheManufactoryLogCraftingResults");
     }
 
+    public static boolean nuclearCraftSkipEmptyManufactoryLogCraftingFallbackEnabled() {
+        return booleanValue("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback");
+    }
+
+    public static boolean registryParallelRegisterEventsEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.enabled");
+    }
+
+    public static Set<String> registryParallelRegisterEventsRegistries() {
+        return setValue("gpom.registry.parallelRegisterEvents.registries");
+    }
+
+    public static int registryParallelRegisterEventsWorkers() {
+        return intValue("gpom.registry.parallelRegisterEvents.workers", 0);
+    }
+
+    public static boolean registryParallelRegisterEventsQueuedCommitEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.queuedCommit");
+    }
+
+    public static Set<String> registryParallelRegisterEventsImmediateCommitRegistries() {
+        return setValue("gpom.registry.parallelRegisterEvents.immediateCommitRegistries");
+    }
+
+    public static boolean registryParallelRegisterEventsDependencyGatingEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.dependencyGating");
+    }
+
+    public static Set<String> registryParallelRegisterEventsAllowlist() {
+        return setValue("gpom.registry.parallelRegisterEvents.allowlist");
+    }
+
+    public static Set<String> registryParallelRegisterEventsDenylist() {
+        return setValue("gpom.registry.parallelRegisterEvents.denylist");
+    }
+
+    public static boolean registryParallelRegisterEventsDeepDiagnosticsEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.deepDiagnostics");
+    }
+
     public static boolean craftTweakerLazyItemListEnabled() {
         return booleanValue("gpom.crafttweaker.lazyItemList");
+    }
+
+    public static boolean craftTweakerParallelScriptParsingEnabled() {
+        return booleanValue("gpom.crafttweaker.parallelScriptParsing.enabled");
+    }
+
+    public static int craftTweakerParallelScriptParsingWorkers() {
+        return intValue("gpom.crafttweaker.parallelScriptParsing.workers", 0);
+    }
+
+    public static Set<String> craftTweakerParallelScriptParsingAllowlist() {
+        return setValue("gpom.crafttweaker.parallelScriptParsing.allowlist");
+    }
+
+    public static Set<String> craftTweakerParallelScriptParsingDenylist() {
+        return setValue("gpom.crafttweaker.parallelScriptParsing.denylist");
+    }
+
+    public static boolean craftTweakerParallelScriptParsingOffThreadZenParseEnabled() {
+        return booleanValue("gpom.crafttweaker.parallelScriptParsing.offThreadZenParse");
     }
 
     public static boolean heiFastForestryBottlerEnabled() {

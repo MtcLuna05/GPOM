@@ -928,6 +928,11 @@ public final class ForgeConstructionAnnotationOptimizations {
             }
 
             if (spec.contextSetterEvent) {
+                if (FmlParallelLoadingContext.getActiveContainer() != null) {
+                    ((IContextSetter) event).setModContainer(owner);
+                    invokeHandler(event);
+                    return;
+                }
                 Loader loader = Loader.instance();
                 ModContainer previous = loader.activeModContainer();
                 try {

@@ -12,6 +12,7 @@
     "fml.MixinFMLCommonHandlerBranding",
     "fml.MixinFMLModContainerStartupProfiler",
     "fml.MixinGameDataStartupProfiler",
+    "fml.MixinGameRegistryRegistryParallel",
     "fml.MixinForgeModContainerConstructionProfiler",
     "fml.MixinLoadControllerStartupProfiler"
   ],

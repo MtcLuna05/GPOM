@@ -6,6 +6,7 @@ import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.ProgressManager;
 import net.minecraftforge.fml.common.event.FMLEvent;
 
+import java.lang.reflect.Field;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,6 +35,8 @@ public final class StartupProfiler {
     private static final boolean WALL_DIAGNOSTICS_LOGS_ENABLED = GpomEarlyConfig.startupProfilerWallDiagnosticsLogsEnabled();
     private static final boolean STACK_SAMPLE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerStackSampleLogsEnabled();
     private static final boolean RESOURCE_LOAD_ORDER_LOGS_ENABLED = GpomEarlyConfig.startupProfilerResourceLoadOrderLogsEnabled();
+    private static final boolean POST_PREINIT_PROBE_SUMMARY_LOGS_ENABLED = GpomEarlyConfig.startupProfilerPostPreInitProbeSummaryLogsEnabled();
+    private static final boolean POST_PREINIT_PROGRESS_BARS_ENABLED = GpomEarlyConfig.startupProfilerPostPreInitProgressBarsEnabled();
     private static final long DETAIL_THRESHOLD_NANOS = millisProperty("gpom.startupProfiler.detailThresholdMs", 100L) * 1_000_000L;
     private static final long PROBE_THRESHOLD_NANOS = millisProperty("gpom.startupProfiler.probeThresholdMs", 25L) * 1_000_000L;
     private static final boolean STACK_SAMPLER_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.stackSampler", "true"));
@@ -42,15 +45,18 @@ public final class StartupProfiler {
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("gpom.startupProfiler.stackSamplerFrames", 32);
     private static final Set<String> STACK_SAMPLER_MODS = setProperty("gpom.startupProfiler.stackSamplerMods", "aoa3,abyssalcraft,agricraft,appliedenergistics2,astralsorcery,botania,brandonscore,citnbt,codechickenlib,concheckrmd,contenttweaker,crafttweaker,cyclicmagic,draconicevolution,ebwizardry,enderio,extrautils2,forestry,forgelin,ftbutilities,hammercore,integrateddynamics,itemblacklist,opencomputers,railcraft,redcore,smoothfont,techreborn,tconstruct,thaumadditions,thaumcraft,thaumicaugmentation,thaumictinkerer,thaumicwonders,thebetweenlands,thermalexpansion,thermalfoundation,xreliquary");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.progressBars", "false"));
-    private static final boolean PROBE_RECORDING_ENABLED = PROBE_LOGS_ENABLED
+    private static final boolean GENERAL_PROBE_RECORDING_ENABLED = PROBE_LOGS_ENABLED
             || PROBE_SUMMARY_LOGS_ENABLED
             || WALL_DIAGNOSTICS_LOGS_ENABLED
             || PROGRESS_BARS_ENABLED;
+    private static final boolean PROBE_RECORDING_ENABLED = GENERAL_PROBE_RECORDING_ENABLED
+            || POST_PREINIT_PROBE_SUMMARY_LOGS_ENABLED;
     private static final boolean RESOURCE_LOAD_ORDER_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.resourceLoadOrder", "true"));
     private static final int TOP_COUNT = intProperty("gpom.startupProfiler.topCount", 40);
     private static final int PHASE_DIGEST_COUNT = intProperty("gpom.startupProfiler.phaseDigestCount", 3);
     private static final int WALL_DIGEST_COUNT = intProperty("gpom.startupProfiler.wallDigestCount", 8);
     private static final int RESOURCE_LOAD_ORDER_TOP_COUNT = intProperty("gpom.resourceLoadOrder.topCount", 12);
+    private static final int POST_PREINIT_PROGRESS_STEPS = GpomEarlyConfig.startupProfilerPostPreInitProgressSteps();
     private static final long BOOT_STARTED_AT = longProperty("gpom.bootStartNanos", System.nanoTime());
 
     private static final Object LOCK = new Object();
@@ -60,6 +66,10 @@ public final class StartupProfiler {
     private static final ThreadLocal<ResourceReloadData> ACTIVE_RESOURCE_RELOAD = new ThreadLocal<>();
     private static final ThreadLocal<Deque<Long>> MOD_HEAP_STARTS = ThreadLocal.withInitial(ArrayDeque::new);
     private static final ThreadLocal<Integer> ACTIVE_PROGRESS_DEPTH = ThreadLocal.withInitial(() -> 0);
+    private static ProgressManager.ProgressBar postPreInitProgress;
+    private static String postPreInitProgressStage;
+    private static int postPreInitProgressStep;
+    private static volatile Field progressBarMessageField;
     private static String activePhase;
     private static long activePhaseStartedAt;
     private static volatile long mainMenuReachedAt;
@@ -105,6 +115,7 @@ public final class StartupProfiler {
 
     public static void beginPostPreInitTransition() {
         beginPhase(POST_PREINIT_TRANSITION_PHASE);
+        openPostPreInitProgress();
     }
 
     public static boolean isPostPreInitTransitionActive() {
@@ -113,6 +124,18 @@ public final class StartupProfiler {
         }
         synchronized (LOCK) {
             return POST_PREINIT_TRANSITION_PHASE.equals(activePhase);
+        }
+    }
+
+    public static void postPreInitProgressStage(String stageName) {
+        if (!ENABLED || !POST_PREINIT_PROGRESS_BARS_ENABLED || stageName == null || stageName.trim().isEmpty()) {
+            return;
+        }
+        synchronized (LOCK) {
+            if (!POST_PREINIT_TRANSITION_PHASE.equals(activePhase)) {
+                return;
+            }
+            stepPostPreInitProgressLocked(stageName.trim());
         }
     }
 
@@ -189,7 +212,7 @@ public final class StartupProfiler {
 
 
     public static void beginNamedProbe(String probeName) {
-        if (!ENABLED || !PROBE_RECORDING_ENABLED || probeName == null) {
+        if (!ENABLED || !probeRecordingActiveForCurrentPhase() || probeName == null) {
             return;
         }
 
@@ -219,7 +242,7 @@ public final class StartupProfiler {
     }
 
     public static long beginProbe() {
-        if (!ENABLED || !PROBE_RECORDING_ENABLED) {
+        if (!ENABLED || !probeRecordingActiveForCurrentPhase()) {
             return 0L;
         }
         return System.nanoTime();
@@ -348,6 +371,12 @@ public final class StartupProfiler {
         synchronized (LOCK) {
             String phaseName = activePhase != null ? activePhase : "<async>";
             PHASES.computeIfAbsent(phaseName, PhaseData::new).addProbe(probeName, elapsed);
+            if (POST_PREINIT_TRANSITION_PHASE.equals(phaseName)) {
+                String progressStage = postPreInitProgressStageForProbe(probeName);
+                if (progressStage != null) {
+                    stepPostPreInitProgressLocked(progressStage);
+                }
+            }
         }
         if (PROBE_LOGS_ENABLED && elapsed >= thresholdNanos) {
             AsyncProbeLogger.info(
@@ -429,6 +458,121 @@ public final class StartupProfiler {
         } catch (Throwable ignored) {
             // Keep instrumentation best-effort.
         }
+    }
+
+    private static void openPostPreInitProgress() {
+        if (!POST_PREINIT_PROGRESS_BARS_ENABLED) {
+            return;
+        }
+        synchronized (LOCK) {
+            closePostPreInitProgressLocked();
+            try {
+                postPreInitProgress = ProgressManager.push("GPOM Post-PreInit", POST_PREINIT_PROGRESS_STEPS, true);
+                postPreInitProgressStage = null;
+                postPreInitProgressStep = 0;
+                stepPostPreInitProgressLocked("Starting registry transition");
+            } catch (Throwable ignored) {
+                postPreInitProgress = null;
+                postPreInitProgressStage = null;
+                postPreInitProgressStep = 0;
+            }
+        }
+    }
+
+    private static void closePostPreInitProgressLocked() {
+        ProgressManager.ProgressBar progress = postPreInitProgress;
+        postPreInitProgress = null;
+        postPreInitProgressStage = null;
+        postPreInitProgressStep = 0;
+        if (progress == null) {
+            return;
+        }
+        try {
+            while (progress.getStep() < progress.getSteps()) {
+                progress.step("Starting Initialization");
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            ProgressManager.pop(progress);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void stepPostPreInitProgressLocked(String stageName) {
+        ProgressManager.ProgressBar progress = postPreInitProgress;
+        if (progress == null || stageName == null || stageName.isEmpty() || stageName.equals(postPreInitProgressStage)) {
+            return;
+        }
+        postPreInitProgressStage = stageName;
+        try {
+            if (postPreInitProgressStep < POST_PREINIT_PROGRESS_STEPS && progress.getStep() < progress.getSteps()) {
+                postPreInitProgressStep++;
+                progress.step(stageName);
+            } else {
+                setProgressMessage(progress, stageName);
+            }
+        } catch (Throwable ignored) {
+            // Loading UI is best-effort only.
+        }
+    }
+
+    private static void setProgressMessage(ProgressManager.ProgressBar progress, String message) {
+        if (progress == null || message == null || message.isEmpty()) {
+            return;
+        }
+        try {
+            Field field = progressBarMessageField;
+            if (field == null) {
+                field = ProgressManager.ProgressBar.class.getDeclaredField("message");
+                field.setAccessible(true);
+                progressBarMessageField = field;
+            }
+            field.set(progress, message);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String postPreInitProgressStageForProbe(String probeName) {
+        if (probeName == null) {
+            return null;
+        }
+        if (probeName.startsWith("GameData.fireRegistryEvents ObjectHolderRegistry.applyObjectHolders")) {
+            return "Applying object holders";
+        }
+        if (probeName.startsWith("GameData.freezeData")) {
+            return "Freezing registries";
+        }
+        if (probeName.startsWith("GameData.vanillaSnapshot")) {
+            return "Capturing vanilla snapshot";
+        }
+        if (probeName.startsWith("POSTPRE CT script")
+                || probeName.startsWith("CT crafttweaker.runtime.")
+                || probeName.startsWith("CT crafttweaker.mc1120.events.CommonEventHandler.registerRecipes")) {
+            return "CraftTweaker scripts";
+        }
+        if (probeName.startsWith("POSTPRE CT zenscript")
+                || probeName.startsWith("CT stanhebben.zenscript.")) {
+            return "CraftTweaker ZenScript";
+        }
+        if (probeName.startsWith("POSTPRE CT action")) {
+            return "CraftTweaker actions";
+        }
+        if (probeName.startsWith("POSTPRE NC")
+                || probeName.startsWith("NC nc.recipe.")
+                || probeName.contains("nuclearcraft ASM:")) {
+            return "NuclearCraft recipes";
+        }
+        if (probeName.contains("TextureStitchEvent$Pre")) {
+            return "Texture stitching";
+        }
+        if (probeName.contains("ModelRegistryEvent")) {
+            return "Model registration";
+        }
+        if (probeName.contains("ModelBakeEvent")) {
+            return "Model baking";
+        }
+        return null;
     }
 
     private static boolean shouldShowProgress(String probeName) {
@@ -594,6 +738,9 @@ public final class StartupProfiler {
             phase.wallTimeNanos += now - activePhaseStartedAt;
             activePhaseStartedAt = now;
         }
+        if (POST_PREINIT_TRANSITION_PHASE.equals(phaseName)) {
+            closePostPreInitProgressLocked();
+        }
         logPhaseSummary(phase);
     }
 
@@ -657,14 +804,17 @@ public final class StartupProfiler {
             }
         }
 
-        if (PROBE_SUMMARY_LOGS_ENABLED) {
+        boolean postPreInitProbeSummary = POST_PREINIT_PROBE_SUMMARY_LOGS_ENABLED
+                && POST_PREINIT_TRANSITION_PHASE.equals(phase.name);
+        if (PROBE_SUMMARY_LOGS_ENABLED || postPreInitProbeSummary) {
             List<ProbeTiming> probes = new ArrayList<>(phase.probes.values());
             probes.sort(Comparator.comparingLong((ProbeTiming probe) -> probe.totalNanos).reversed());
             int probeLimit = Math.min(TOP_COUNT, probes.size());
             for (int i = 0; i < probeLimit; i++) {
                 ProbeTiming probe = probes.get(i);
                 AsyncProbeLogger.info(
-                        "[StartupProfiler]   probe #{} {} ms total, {} ms max, count={} - {}",
+                        "{}   probe #{} {} ms total, {} ms max, count={} - {}",
+                        postPreInitProbeSummary ? "[PostPreInitDiagnostics]" : "[StartupProfiler]",
                         i + 1,
                         formatMillis(probe.totalNanos),
                         formatMillis(probe.maxNanos),
@@ -731,6 +881,18 @@ public final class StartupProfiler {
                         probe.name
                 );
             }
+        }
+    }
+
+    private static boolean probeRecordingActiveForCurrentPhase() {
+        if (GENERAL_PROBE_RECORDING_ENABLED) {
+            return true;
+        }
+        if (!POST_PREINIT_PROBE_SUMMARY_LOGS_ENABLED) {
+            return false;
+        }
+        synchronized (LOCK) {
+            return POST_PREINIT_TRANSITION_PHASE.equals(activePhase);
         }
     }
 

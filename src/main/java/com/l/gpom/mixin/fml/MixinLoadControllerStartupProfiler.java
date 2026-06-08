@@ -5,7 +5,9 @@ import com.google.common.collect.ImmutableBiMap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import com.google.common.eventbus.EventBus;
+import com.l.gpom.GPOM;
 import com.l.gpom.client.EarlySplashWindow;
+import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.FmlParallelLoadingContext;
 import com.l.gpom.optimization.FmlParallelLoadingScheduler;
 import com.l.gpom.optimization.AoAConstructionOptimizations;
@@ -33,6 +35,12 @@ public abstract class MixinLoadControllerStartupProfiler {
     private static final int gpom$phaseTransitionSteps = 24;
     @Unique
     private static final long gpom$phaseTransitionHeartbeatMillis = 250L;
+    @Unique
+    private static final long gpom$gapDiagnosticThresholdNanos = 250_000_000L;
+    @Unique
+    private static long gpom$lastFmlEventEndNanos;
+    @Unique
+    private static String gpom$lastFmlEventName;
 
     @Shadow
     private List<ModContainer> activeModList;
@@ -52,6 +60,10 @@ public abstract class MixinLoadControllerStartupProfiler {
     private long gpom$stateDispatchStartedAt;
     private String gpom$stateDispatchName;
     @Unique
+    private long gpom$stateDispatchGapStartedAt;
+    @Unique
+    private String gpom$stateDispatchGapName;
+    @Unique
     private ProgressManager.ProgressBar gpom$phaseTransitionProgress;
     @Unique
     private int gpom$phaseTransitionStep;
@@ -59,8 +71,11 @@ public abstract class MixinLoadControllerStartupProfiler {
     @Inject(method = "distributeStateMessage(Lnet/minecraftforge/fml/common/LoaderState;[Ljava/lang/Object;)V", at = @At("HEAD"))
     private void gpom$beginStatePhase(LoaderState state, Object[] eventData, CallbackInfo ci) {
         if (state != null && state.hasEvent()) {
+            long now = System.nanoTime();
             gpom$stateDispatchStartedAt = StartupProfiler.beginProbe();
             gpom$stateDispatchName = state.name();
+            gpom$stateDispatchGapStartedAt = now;
+            gpom$stateDispatchGapName = state.name();
             EarlySplashWindow.setStatus("Forge " + state.name());
             EarlySplashWindow.setPhaseProgress("Forge " + state.name() + " preparing", 0, activeModList == null ? 0 : activeModList.size());
             gpom$openPhaseTransitionProgress(state);
@@ -75,12 +90,29 @@ public abstract class MixinLoadControllerStartupProfiler {
             gpom$closePhaseTransitionProgress();
             gpom$stateDispatchStartedAt = 0L;
             gpom$stateDispatchName = null;
+            gpom$stateDispatchGapStartedAt = 0L;
+            gpom$stateDispatchGapName = null;
         }
     }
 
     @Inject(method = "propogateStateMessage", at = @At("HEAD"), cancellable = true)
     private void gpom$beginPropagatedPhase(FMLEvent event, CallbackInfo ci) {
         if (event != null) {
+            long now = System.nanoTime();
+            gpom$logStartupGap(
+                    "between-events",
+                    gpom$lastFmlEventEndNanos,
+                    now,
+                    (gpom$lastFmlEventName == null ? "startup" : gpom$lastFmlEventName)
+                            + " -> " + event.getEventType()
+            );
+            gpom$logStartupGap(
+                    "state-prepare",
+                    gpom$stateDispatchGapStartedAt,
+                    now,
+                    (gpom$stateDispatchGapName == null ? "unknown-state" : gpom$stateDispatchGapName)
+                            + " -> " + event.getEventType()
+            );
             if (gpom$stateDispatchStartedAt != 0L) {
                 StartupProfiler.endProbeAlways(
                         "FML " + event.getEventType() + " before propogateStateMessage"
@@ -106,6 +138,7 @@ public abstract class MixinLoadControllerStartupProfiler {
                     }
                 } finally {
                     StartupProfiler.endPhase(event.getEventType());
+                    gpom$markFmlEventEnd(event);
                     if (event instanceof FMLPreInitializationEvent) {
                         StartupProfiler.beginPostPreInitTransition();
                     }
@@ -123,10 +156,39 @@ public abstract class MixinLoadControllerStartupProfiler {
                 EarlySplashWindow.close("Forge LoadComplete finished");
             }
             StartupProfiler.endPhase(event.getEventType());
+            gpom$markFmlEventEnd(event);
             if (event instanceof FMLPreInitializationEvent) {
                 StartupProfiler.beginPostPreInitTransition();
             }
         }
+    }
+
+    @Unique
+    private static void gpom$markFmlEventEnd(FMLEvent event) {
+        if (event == null) {
+            return;
+        }
+        gpom$lastFmlEventEndNanos = System.nanoTime();
+        gpom$lastFmlEventName = event.getEventType();
+    }
+
+    @Unique
+    private static void gpom$logStartupGap(String label, long startedAt, long endedAt, String detail) {
+        if (!GpomEarlyConfig.startupProfilerNonFmlGapLogsEnabled()
+                || startedAt == 0L
+                || endedAt <= startedAt) {
+            return;
+        }
+        long elapsedNanos = endedAt - startedAt;
+        if (elapsedNanos < gpom$gapDiagnosticThresholdNanos) {
+            return;
+        }
+        GPOM.LOGGER.info(
+                "[StartupGap] {} took {} ms - {}",
+                label,
+                elapsedNanos / 1_000_000L,
+                detail == null ? "unknown" : detail
+        );
     }
 
     @Unique

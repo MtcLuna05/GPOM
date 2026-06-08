@@ -21,8 +21,11 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -34,6 +37,7 @@ public final class NuclearCraftRecipeOptimizations {
     private static final Method RECIPE_RESULT = findMethod(IRecipe.class, "getCraftingResult", "func_77572_b", InventoryCrafting.class);
     private static final Method RECIPE_INGREDIENTS = findMethod(IRecipe.class, "getIngredients", "func_192400_c");
     private static final Method INGREDIENT_APPLY = findMethod(Ingredient.class, "apply", "apply", ItemStack.class);
+    private static final Method INGREDIENT_MATCHING_STACKS = findMethod(Ingredient.class, "getMatchingStacks", "func_193365_a");
     private static final Method INVENTORY_GET_STACK = findMethod(InventoryCrafting.class, "getStackInSlot", "func_70301_a", int.class);
     private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, "isEmpty", "func_190926_b");
     private static final Method STACK_COPY = findMethod(ItemStack.class, "copy", "func_77946_l");
@@ -47,8 +51,9 @@ public final class NuclearCraftRecipeOptimizations {
     private static volatile Constructor<?> oreIngredientConstructor;
     private static volatile Method addRecipeMethod;
     private static volatile Field oreProcessingField;
-    private static volatile List<SingleInputRecipe> singleInputRecipes;
+    private static volatile SingleInputRecipeIndex singleInputRecipeIndex;
     private static volatile boolean fallbackLogged;
+    private static volatile boolean indexLogged;
 
     private NuclearCraftRecipeOptimizations() {
     }
@@ -126,15 +131,31 @@ public final class NuclearCraftRecipeOptimizations {
 
         long startedAt = StartupProfiler.beginProbe();
         try {
-            String key = key(inventoryStack(inventory, 0));
+            ItemStack stack = inventoryStack(inventory, 0);
+            String key = key(stack);
             ItemStack cached = MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.get(key);
             if (cached != null) {
                 return isEmpty(cached) ? emptyStack() : copy(cached);
             }
 
-            ItemStack result = findMatchingSingleSlotResult(inventory);
+            SingleInputRecipeIndex index = singleInputRecipeIndex();
+            ItemStack result = findMatchingSingleSlotResult(index, stack, inventory);
             if (isEmpty(result)) {
-                result = findMatchingResult(inventory, world);
+                if (canSkipEmptyManufactoryLogFallback(index, inventory)) {
+                    long skipStartedAt = StartupProfiler.beginProbe();
+                    StartupProfiler.endProbeAlways("POSTPRE NC Manufactory.addLogRecipes skipped empty stock fallback", skipStartedAt);
+                    MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, emptyStack());
+                    return emptyStack();
+                } else {
+                    long fallbackStartedAt = StartupProfiler.beginProbe();
+                    result = findMatchingResult(inventory, world);
+                    StartupProfiler.endProbe(
+                            isEmpty(result)
+                                    ? "POSTPRE NC Manufactory.addLogRecipes empty stock fallback CraftingManager lookup"
+                                    : "POSTPRE NC Manufactory.addLogRecipes non-empty stock fallback CraftingManager lookup",
+                            fallbackStartedAt
+                    );
+                }
             }
             MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, isEmpty(result) ? emptyStack() : copy(result));
             return isEmpty(result) ? emptyStack() : copy(result);
@@ -146,12 +167,67 @@ public final class NuclearCraftRecipeOptimizations {
         }
     }
 
-    private static ItemStack findMatchingSingleSlotResult(InventoryCrafting inventory) {
+    private static ItemStack findMatchingSingleSlotResult(SingleInputRecipeIndex index, ItemStack stack, InventoryCrafting inventory) {
         if (RECIPE_MATCHES == null || RECIPE_RESULT == null) {
             return findMatchingResult(inventory, null);
         }
-        ItemStack stack = inventoryStack(inventory, 0);
-        for (SingleInputRecipe candidate : singleInputRecipes()) {
+        if (isEmpty(stack)) {
+            return emptyStack();
+        }
+
+        long startedAt = StartupProfiler.beginProbe();
+        try {
+            return findMatchingIndexedSingleSlotResult(index, stack, inventory);
+        } finally {
+            StartupProfiler.endProbe("POSTPRE NC Manufactory.addLogRecipes indexed single-input lookup", startedAt);
+        }
+    }
+
+    private static boolean canSkipEmptyManufactoryLogFallback(SingleInputRecipeIndex index, InventoryCrafting inventory) {
+        return GpomEarlyConfig.nuclearCraftSkipEmptyManufactoryLogCraftingFallbackEnabled()
+                && index != null
+                && RECIPE_MATCHES != null
+                && RECIPE_RESULT != null
+                && onlyFirstSlotUsed(inventory);
+    }
+
+    private static boolean onlyFirstSlotUsed(InventoryCrafting inventory) {
+        if (inventory == null) {
+            return false;
+        }
+        for (int slot = 1; slot < 9; slot++) {
+            if (!isEmpty(inventoryStack(inventory, slot))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ItemStack findMatchingIndexedSingleSlotResult(SingleInputRecipeIndex index, ItemStack stack, InventoryCrafting inventory) {
+        if (index == null) {
+            return emptyStack();
+        }
+
+        Set<SingleInputRecipe> seen = Collections.newSetFromMap(new IdentityHashMap<SingleInputRecipe, Boolean>());
+        ItemStack result = matchCandidates(index.exactCandidates.get(stackKey(stack)), stack, inventory, seen);
+        if (!isEmpty(result)) {
+            return result;
+        }
+        result = matchCandidates(index.wildcardCandidates.get(Integer.valueOf(itemId(stack))), stack, inventory, seen);
+        if (!isEmpty(result)) {
+            return result;
+        }
+        return matchCandidates(index.fallbackCandidates, stack, inventory, seen);
+    }
+
+    private static ItemStack matchCandidates(List<SingleInputRecipe> candidates, ItemStack stack, InventoryCrafting inventory, Set<SingleInputRecipe> seen) {
+        if (candidates == null || candidates.isEmpty()) {
+            return emptyStack();
+        }
+        for (SingleInputRecipe candidate : candidates) {
+            if (!seen.add(candidate)) {
+                continue;
+            }
             if (ingredientApplies(candidate.ingredient, stack) && recipeMatches(candidate.recipe, inventory)) {
                 return recipeCraftingResult(candidate.recipe, inventory);
             }
@@ -159,28 +235,116 @@ public final class NuclearCraftRecipeOptimizations {
         return emptyStack();
     }
 
-    private static List<SingleInputRecipe> singleInputRecipes() {
-        List<SingleInputRecipe> recipes = singleInputRecipes;
-        if (recipes != null) {
-            return recipes;
+    private static SingleInputRecipeIndex singleInputRecipeIndex() {
+        SingleInputRecipeIndex index = singleInputRecipeIndex;
+        if (index != null) {
+            return index;
         }
+
         synchronized (NuclearCraftRecipeOptimizations.class) {
-            recipes = singleInputRecipes;
-            if (recipes != null) {
-                return recipes;
+            index = singleInputRecipeIndex;
+            if (index != null) {
+                return index;
             }
             long startedAt = StartupProfiler.beginProbe();
-            List<SingleInputRecipe> filtered = new ArrayList<>();
+            Map<Long, List<SingleInputRecipe>> exactCandidates = new HashMap<>();
+            Map<Integer, List<SingleInputRecipe>> wildcardCandidates = new HashMap<>();
+            List<SingleInputRecipe> fallbackCandidates = new ArrayList<>();
+            int recipeCount = 0;
             for (IRecipe recipe : ForgeRegistries.RECIPES.getValuesCollection()) {
                 Ingredient ingredient = singleNonEmptyIngredient(recipe);
-                if (ingredient != null && recipeCanFit(recipe, 1, 1)) {
-                    filtered.add(new SingleInputRecipe(recipe, ingredient));
+                if (ingredient != null && recipeCanFit(recipe, 3, 3)) {
+                    recipeCount++;
+                    SingleInputRecipe candidate = new SingleInputRecipe(recipe, ingredient);
+                    if (!indexCandidate(candidate, exactCandidates, wildcardCandidates)) {
+                        fallbackCandidates.add(candidate);
+                    }
                 }
             }
-            recipes = Collections.unmodifiableList(filtered);
-            singleInputRecipes = recipes;
-            StartupProfiler.endProbeAlways("POSTPRE NC Manufactory.addLogRecipes single-input recipe list", startedAt);
-            return recipes;
+            index = new SingleInputRecipeIndex(
+                    immutableCopy(exactCandidates),
+                    immutableCopy(wildcardCandidates),
+                    Collections.unmodifiableList(fallbackCandidates)
+            );
+            singleInputRecipeIndex = index;
+            if (!indexLogged && GpomEarlyConfig.cacheInfoLogsEnabled()) {
+                indexLogged = true;
+                GPOM.LOGGER.info(
+                        "[NC Optimizations] Indexed {} one-slot recipe candidate(s): exactKeys={}, wildcardItems={}, fallbackCandidates={}",
+                        recipeCount,
+                        index.exactCandidates.size(),
+                        index.wildcardCandidates.size(),
+                        index.fallbackCandidates.size()
+                );
+            }
+            StartupProfiler.endProbeAlways("POSTPRE NC Manufactory.addLogRecipes single-input recipe index", startedAt);
+            return index;
+        }
+    }
+
+    private static boolean indexCandidate(
+            SingleInputRecipe candidate,
+            Map<Long, List<SingleInputRecipe>> exactCandidates,
+            Map<Integer, List<SingleInputRecipe>> wildcardCandidates
+    ) {
+        ItemStack[] stacks = matchingStacks(candidate.ingredient);
+        if (stacks == null || stacks.length == 0) {
+            return false;
+        }
+
+        boolean indexed = false;
+        Set<Long> seenExactKeys = new HashSet<>();
+        Set<Integer> seenWildcardItems = new HashSet<>();
+        for (ItemStack stack : stacks) {
+            if (isEmpty(stack)) {
+                continue;
+            }
+            int itemId = itemId(stack);
+            int meta = meta(stack);
+            if (meta == OreDictionary.WILDCARD_VALUE) {
+                Integer key = Integer.valueOf(itemId);
+                if (seenWildcardItems.add(key)) {
+                    addCandidate(wildcardCandidates, key, candidate);
+                    indexed = true;
+                }
+            } else {
+                Long key = Long.valueOf(stackKey(itemId, meta));
+                if (seenExactKeys.add(key)) {
+                    addCandidate(exactCandidates, key, candidate);
+                    indexed = true;
+                }
+            }
+        }
+        return indexed;
+    }
+
+    private static <K> void addCandidate(Map<K, List<SingleInputRecipe>> candidates, K key, SingleInputRecipe candidate) {
+        List<SingleInputRecipe> list = candidates.get(key);
+        if (list == null) {
+            list = new ArrayList<>();
+            candidates.put(key, list);
+        }
+        list.add(candidate);
+    }
+
+    private static <K> Map<K, List<SingleInputRecipe>> immutableCopy(Map<K, List<SingleInputRecipe>> input) {
+        Map<K, List<SingleInputRecipe>> copy = new HashMap<>();
+        for (Map.Entry<K, List<SingleInputRecipe>> entry : input.entrySet()) {
+            copy.put(entry.getKey(), Collections.unmodifiableList(new ArrayList<>(entry.getValue())));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
+    private static ItemStack[] matchingStacks(Ingredient ingredient) {
+        if (ingredient == null || INGREDIENT_MATCHING_STACKS == null) {
+            return null;
+        }
+        try {
+            Object value = INGREDIENT_MATCHING_STACKS.invoke(ingredient);
+            return value instanceof ItemStack[] ? (ItemStack[]) value : null;
+        } catch (Throwable throwable) {
+            logFallback("Ingredient.getMatchingStacks bridge failed", throwable);
+            return null;
         }
     }
 
@@ -318,6 +482,14 @@ public final class NuclearCraftRecipeOptimizations {
             builder.append(':').append(tag(stack));
         }
         return builder.toString();
+    }
+
+    private static long stackKey(ItemStack stack) {
+        return stackKey(itemId(stack), meta(stack));
+    }
+
+    private static long stackKey(int itemId, int meta) {
+        return ((long) itemId << 32) ^ (meta & 0xFFFFFFFFL);
     }
 
     private static int itemId(ItemStack stack) {
@@ -477,6 +649,22 @@ public final class NuclearCraftRecipeOptimizations {
         private SingleInputRecipe(IRecipe recipe, Ingredient ingredient) {
             this.recipe = recipe;
             this.ingredient = ingredient;
+        }
+    }
+
+    private static final class SingleInputRecipeIndex {
+        private final Map<Long, List<SingleInputRecipe>> exactCandidates;
+        private final Map<Integer, List<SingleInputRecipe>> wildcardCandidates;
+        private final List<SingleInputRecipe> fallbackCandidates;
+
+        private SingleInputRecipeIndex(
+                Map<Long, List<SingleInputRecipe>> exactCandidates,
+                Map<Integer, List<SingleInputRecipe>> wildcardCandidates,
+                List<SingleInputRecipe> fallbackCandidates
+        ) {
+            this.exactCandidates = exactCandidates;
+            this.wildcardCandidates = wildcardCandidates;
+            this.fallbackCandidates = fallbackCandidates;
         }
     }
 
