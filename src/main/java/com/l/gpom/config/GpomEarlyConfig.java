@@ -102,6 +102,14 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", "8");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
         DEFAULTS.setProperty("gpom.loliasm.threadSafeStatefulRegistry", "true");
+        DEFAULTS.setProperty("gpom.multipartCompat.enabled", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.enabled", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.registerPart", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.placementConverter.enabled", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.sidePartPlacement.enabled", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.blockConverter.enabled", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.debugLogs", "false");
+        DEFAULTS.setProperty("gpom.multipartCompat.ae2.disabledWarning.enabled", "true");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleIC2Containers", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleContainers", "false");
@@ -150,10 +158,10 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:entities,ebwizardry:spells");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.workers", "0");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.queuedCommit", "true");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "minecraft:entities");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,natura@minecraft:blocks,natura@minecraft:items,tconstruct@minecraft:items");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,natura@minecraft:blocks,natura@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:recipes");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "true");
         DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "true");
@@ -454,6 +462,16 @@ public final class GpomEarlyConfig {
         writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
                 "gpom.loliasm.threadSafeStatefulRegistry"
         );
+        writeSection(writer, "Multipart Compatibility", "Experimental bridges that make selected full-block cable systems host their state inside ForgeMultipart parts. Keep disabled unless actively testing a bridge.",
+                "gpom.multipartCompat.enabled",
+                "gpom.multipartCompat.ae2.enabled",
+                "gpom.multipartCompat.ae2.registerPart",
+                "gpom.multipartCompat.ae2.placementConverter.enabled",
+                "gpom.multipartCompat.ae2.sidePartPlacement.enabled",
+                "gpom.multipartCompat.ae2.blockConverter.enabled",
+                "gpom.multipartCompat.ae2.debugLogs",
+                "gpom.multipartCompat.ae2.disabledWarning.enabled"
+        );
         writeSection(writer, "Railcraft Deferrals", "Exact-version startup deferrals for Railcraft 12.1.0-beta-8 module/container initialization.",
                 "gpom.railcraftLazyItemConditions",
                 "gpom.railcraft.deferModuleIC2Containers",
@@ -701,6 +719,22 @@ public final class GpomEarlyConfig {
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
             case "gpom.loliasm.threadSafeStatefulRegistry":
                 return "Replaces LoliASM's crash-state registry with a concurrent set and prunes cleared weak references from BufferBuilder churn.";
+            case "gpom.multipartCompat.enabled":
+                return "Master switch for all GPOM ForgeMultipart compatibility bridges. When false, no multipart bridge classes are loaded.";
+            case "gpom.multipartCompat.ae2.enabled":
+                return "Enables the Applied Energistics 2 cable-bus bridge package after ForgeMultipart and AE2 are confirmed loaded.";
+            case "gpom.multipartCompat.ae2.registerPart":
+                return "Registers GPOM's AE2 cable-bus multipart type with ForgeMultipart. Required before placement or block conversion can do anything.";
+            case "gpom.multipartCompat.ae2.placementConverter.enabled":
+                return "Allows placing AE2 cable items as GPOM-hosted ForgeMultipart parts instead of AE2 full blocks.";
+            case "gpom.multipartCompat.ae2.sidePartPlacement.enabled":
+                return "Reserved switch for AE2 bus/terminal/anchor placement into an existing GPOM-hosted cable-bus multipart. Disabled until the mutating placement path is implemented.";
+            case "gpom.multipartCompat.ae2.blockConverter.enabled":
+                return "Allows ForgeMultipart to convert existing AE2 cable-bus blocks into GPOM-hosted multipart parts when another multipart is placed in the same block space.";
+            case "gpom.multipartCompat.ae2.debugLogs":
+                return "Logs AE2 multipart bridge registration, conversion, and fallback decisions.";
+            case "gpom.multipartCompat.ae2.disabledWarning.enabled":
+                return "Warns players on login when AE2 and ForgeMultipart are loaded but GPOM's AE2 multipart part registration is disabled. Existing GPOM-hosted AE2 cables need that registration to load safely.";
             case "gpom.railcraftLazyItemConditions":
                 return "Defers Railcraft item condition initialization until first use instead of during module setup.";
             case "gpom.railcraft.deferModuleIC2Containers":
@@ -915,6 +949,14 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.maxEntries");
         copySystemPropertyIfAbsent("gpom.loliasm.threadSafeStatefulRegistry");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.enabled");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.enabled");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.registerPart");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.placementConverter.enabled");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.sidePartPlacement.enabled");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.blockConverter.enabled");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.debugLogs");
+        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.disabledWarning.enabled");
     }
 
     private static void copySystemPropertyIfAbsent(String key) {
@@ -1085,6 +1127,38 @@ public final class GpomEarlyConfig {
 
     public static boolean loliAsmThreadSafeStatefulRegistryEnabled() {
         return booleanValue("gpom.loliasm.threadSafeStatefulRegistry");
+    }
+
+    public static boolean multipartCompatEnabled() {
+        return booleanValue("gpom.multipartCompat.enabled");
+    }
+
+    public static boolean multipartCompatAe2Enabled() {
+        return multipartCompatEnabled() && booleanValue("gpom.multipartCompat.ae2.enabled");
+    }
+
+    public static boolean multipartCompatAe2RegisterPartEnabled() {
+        return multipartCompatAe2Enabled() && booleanValue("gpom.multipartCompat.ae2.registerPart");
+    }
+
+    public static boolean multipartCompatAe2PlacementConverterEnabled() {
+        return multipartCompatAe2RegisterPartEnabled() && booleanValue("gpom.multipartCompat.ae2.placementConverter.enabled");
+    }
+
+    public static boolean multipartCompatAe2SidePartPlacementEnabled() {
+        return multipartCompatAe2PlacementConverterEnabled() && booleanValue("gpom.multipartCompat.ae2.sidePartPlacement.enabled");
+    }
+
+    public static boolean multipartCompatAe2BlockConverterEnabled() {
+        return multipartCompatAe2RegisterPartEnabled() && booleanValue("gpom.multipartCompat.ae2.blockConverter.enabled");
+    }
+
+    public static boolean multipartCompatAe2DebugLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.multipartCompat.ae2.debugLogs");
+    }
+
+    public static boolean multipartCompatAe2DisabledWarningEnabled() {
+        return booleanValue("gpom.multipartCompat.ae2.disabledWarning.enabled");
     }
 
     public static boolean preInitClassPrewarmEnabled() {

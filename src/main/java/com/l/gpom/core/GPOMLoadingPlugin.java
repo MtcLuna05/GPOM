@@ -22,12 +22,14 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         EarlySplashWindow.setBootProgress("Mixin bootstrap", 2, 4);
         Mixins.addConfiguration("gpom.mod.mixin.json");
         EarlySplashWindow.setBootProgress("GPOM mixins registered", 3, 4);
+        preloadRuntimeHelpers();
     }
 
     @Override
     public @Nullable String[] getASMTransformerClass() {
         return new String[] {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
+                "com.l.gpom.core.Ae2MultipartGridHostTransformer",
                 "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
                 "com.l.gpom.core.ForestryRecipeManagerSerializationTransformer",
@@ -67,5 +69,16 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
     @Override
     public @Nullable String getAccessTransformerClass() {
         return null;
+    }
+
+    private static void preloadRuntimeHelpers() {
+        preload("com.l.gpom.optimization.ForestryRecipeManagerOptimizations");
+    }
+
+    private static void preload(String className) {
+        try {
+            Class.forName(className, true, GPOMLoadingPlugin.class.getClassLoader());
+        } catch (Throwable ignored) {
+        }
     }
 }

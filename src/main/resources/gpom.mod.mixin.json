@@ -14,7 +14,8 @@
     "fml.MixinGameDataStartupProfiler",
     "fml.MixinGameRegistryRegistryParallel",
     "fml.MixinForgeModContainerConstructionProfiler",
-    "fml.MixinLoadControllerStartupProfiler"
+    "fml.MixinLoadControllerStartupProfiler",
+    "ae2.MixinItemPartMultipartPlacement"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
