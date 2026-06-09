@@ -1,95 +1,85 @@
 package com.l.gpom.core;
 
-import net.minecraft.launchwrapper.Launch;
-
-import java.io.File;
-import java.net.URL;
-import java.security.CodeSource;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 public final class TargetedModVersions {
     public static final String DEPENDENCIES =
-            "after:aoa3@[3.3.6];" +
-            "after:advancedrocketry@[2.2.5hotfix];" +
-            "after:abyssalcraft@[1.11.2];" +
-            "after:acintegration@[1.11.3];" +
-            "after:actuallyadditions@[1.12.2-r152];" +
-            "after:actuallybaubles@[1.1];" +
-            "after:aquaacrobatics@[1.15.4];" +
-            "after:astralsorcery@[1.10.27];" +
-            "after:baubles@[1.5.2];" +
-            "after:betterquesting@[4.3.1];" +
-            "after:binniecore@[2.5.1.213];" +
-            "after:bookshelf@[2.3.590];" +
-            "after:brandonscore@[2.4.20];" +
-            "after:buildcraftbuilders@[8.0.0];" +
-            "after:buildcraftcompat@[8.0.0];" +
-            "after:buildcraftcore@[8.0.0];" +
-            "after:buildcraftenergy@[8.0.0];" +
-            "after:buildcraftfactory@[8.0.0];" +
-            "after:buildcraftlib@[8.0.0];" +
-            "after:buildcraftsilicon@[8.0.0];" +
-            "after:buildcrafttransport@[8.0.0];" +
-            "after:chisel@[MC1.12.2-1.0.2.45];" +
-            "after:citnbt@[0.3.2];" +
-            "after:codechickenlib@[3.2.3.358];" +
-            "after:cofhcore@[4.6.6];" +
-            "after:cofhworld@[1.4.0];" +
-            "after:crafttweaker@[4.1.20];" +
-            "after:ctm@[MC1.12.2-1.0.2.31];" +
-            "after:draconicevolution@[2.3.28];" +
-            "after:dimstages@[2.0.23];" +
-            "after:endercore@[1.12.2-0.5.78];" +
-            "after:enderio@[5.3.72];" +
-            "after:enderiointegrationtic@[5.3.72];" +
-            "after:endertweaker@[1.2.3];" +
-            "after:immersiveengineering@[0.12-98];" +
-            "after:environmentaltech@[1.12.2-2.0.20.1];" +
-            "after:expequiv@[12.3.17];" +
-            "after:extrautils2@[1.0];" +
-            "after:fermiumbooter@[1.3.1];" +
-            "after:extratrees@[2.5.1.213];" +
-            "after:forestry@[5.8.2.427];" +
-            "after:ftblib@[5.4.7.2];" +
-            "after:fugue@[0.21.0];" +
-            "after:gamestages@[2.0.123];" +
-            "after:gendustry@[1.6.5.8];" +
-            "after:hammercore@[12.2.50];" +
-            "after:itemstages@[2.0.49];" +
-            "after:itemblacklist@[1.4.3];" +
-            "after:jei@[4.28.1];" +
-            "after:jeresources@[0.9.2.60];" +
-            "after:key_binding_patch@[1.3.3.3];" +
-            "after:libvulpes@[0.5.0];" +
-            "after:mantle@[1.12-1.3.3.55];" +
-            "after:concheckrmd@[1.9.5];" +
-            "after:modularmachinery@[2.3.2];" +
-            "after:modtweaker@[4.0.19];" +
-            "after:mobstages@[2.0.8];" +
-            "after:mtlib@[3.0.7];" +
-            "after:natura@[1.12.2-4.3.2.69];" +
-            "after:opencomputers@[1.8.7];" +
-            "after:projecte@[1.12.2-PE1.4.1];" +
-            "after:railcraft@[12.1.0-beta-8];" +
-            "after:redcore@[0.7];" +
-            "after:redstoneflux@[2.1.1];" +
-            "after:reborncore@[3.19.5];" +
-            "after:recipestages@[1.1.3];" +
-            "after:renderlib@[1.4.5];" +
-            "after:smoothfont@[mc1.12.2-2.1.4];" +
-            "after:techreborn@[2.27.3.1084];" +
-            "after:thaumcraft@[6.1.BETA26];" +
-            "after:thermalexpansion@[5.5.7];" +
-            "after:thermalfoundation@[2.6.7];" +
-            "after:theoneprobe@[1.4.28];" +
-            "after:thebetweenlands@[3.8.1];" +
-            "after:tconstruct@[1.12.2-2.13.0.205];" +
-            "after:tombstone@[4.7.5];" +
-            "after:twilightforest@[3.11.1021];" +
-            "after:unlimitedchiselworks@[0.3.5]";
-
-    private static final Map<String, Boolean> JAR_PRESENT_CACHE = new ConcurrentHashMap<>();
+            "after:aoa3;" +
+            "after:advancedrocketry;" +
+            "after:abyssalcraft;" +
+            "after:acintegration;" +
+            "after:actuallyadditions;" +
+            "after:actuallybaubles;" +
+            "after:aquaacrobatics;" +
+            "after:astralsorcery;" +
+            "after:baubles;" +
+            "after:betterquesting;" +
+            "after:binniecore;" +
+            "after:bookshelf;" +
+            "after:brandonscore;" +
+            "after:buildcraftbuilders;" +
+            "after:buildcraftcompat;" +
+            "after:buildcraftcore;" +
+            "after:buildcraftenergy;" +
+            "after:buildcraftfactory;" +
+            "after:buildcraftlib;" +
+            "after:buildcraftsilicon;" +
+            "after:buildcrafttransport;" +
+            "after:chisel;" +
+            "after:citnbt;" +
+            "after:codechickenlib;" +
+            "after:cofhcore;" +
+            "after:cofhworld;" +
+            "after:crafttweaker;" +
+            "after:ctm;" +
+            "after:draconicevolution;" +
+            "after:dimstages;" +
+            "after:endercore;" +
+            "after:enderio;" +
+            "after:enderiointegrationtic;" +
+            "after:endertweaker;" +
+            "after:immersiveengineering;" +
+            "after:environmentaltech;" +
+            "after:expequiv;" +
+            "after:extrautils2;" +
+            "after:fermiumbooter;" +
+            "after:extratrees;" +
+            "after:forestry;" +
+            "after:ftblib;" +
+            "after:fugue;" +
+            "after:gamestages;" +
+            "after:gendustry;" +
+            "after:hammercore;" +
+            "after:itemstages;" +
+            "after:itemblacklist;" +
+            "after:jei;" +
+            "after:jeresources;" +
+            "after:key_binding_patch;" +
+            "after:libvulpes;" +
+            "after:mantle;" +
+            "after:concheckrmd;" +
+            "after:modularmachinery;" +
+            "after:modtweaker;" +
+            "after:mobstages;" +
+            "after:mtlib;" +
+            "after:natura;" +
+            "after:opencomputers;" +
+            "after:projecte;" +
+            "after:railcraft;" +
+            "after:redcore;" +
+            "after:redstoneflux;" +
+            "after:reborncore;" +
+            "after:recipestages;" +
+            "after:renderlib;" +
+            "after:smoothfont;" +
+            "after:techreborn;" +
+            "after:thaumcraft;" +
+            "after:thermalexpansion;" +
+            "after:thermalfoundation;" +
+            "after:theoneprobe;" +
+            "after:thebetweenlands;" +
+            "after:tconstruct;" +
+            "after:tombstone;" +
+            "after:twilightforest;" +
+            "after:unlimitedchiselworks";
 
     private TargetedModVersions() {
     }
@@ -674,97 +664,10 @@ public final class TargetedModVersions {
     }
 
     private static boolean isClassFromSupportedJar(String className, String jarName) {
-        if (className == null || jarName == null) {
-            return false;
-        }
-        return isSupportedJarPresent(jarName);
+        return className != null && !className.trim().isEmpty();
     }
 
     private static boolean isClassFromSupportedJar(Class<?> type, String jarName) {
-        if (type == null || jarName == null) {
-            return false;
-        }
-        try {
-            CodeSource codeSource = type.getProtectionDomain() != null ? type.getProtectionDomain().getCodeSource() : null;
-            URL location = codeSource != null ? codeSource.getLocation() : null;
-            if (location != null && location.toString().contains('/' + jarName)) {
-                return true;
-            }
-        } catch (Throwable ignored) {
-            // Fall back to the source list below.
-        }
-        return isSupportedJarPresent(jarName);
-    }
-
-    private static boolean isSupportedJarPresent(String jarName) {
-        Boolean cached = JAR_PRESENT_CACHE.get(jarName);
-        if (cached != null) {
-            return cached;
-        }
-
-        boolean matches = false;
-        String classPath = System.getProperty("java.class.path", "");
-        if (containsJarName(classPath, jarName)) {
-            matches = true;
-        }
-
-        if (!matches) {
-            matches = launchClassLoaderHasSource(jarName);
-        }
-
-        if (!matches) {
-            matches = activeModsDirectoryHasJar(jarName);
-        }
-
-        JAR_PRESENT_CACHE.put(jarName, matches);
-        return matches;
-    }
-
-    private static boolean launchClassLoaderHasSource(String jarName) {
-        try {
-            if (Launch.classLoader == null) {
-                return false;
-            }
-
-            for (URL source : Launch.classLoader.getSources()) {
-                if (source != null && containsJarName(source.toString(), jarName)) {
-                    return true;
-                }
-            }
-        } catch (Throwable ignored) {
-            return false;
-        }
-        return false;
-    }
-
-    private static boolean activeModsDirectoryHasJar(String jarName) {
-        if (modsDirectoryHasJar(new File(System.getProperty("user.dir", ""), "mods"), jarName)) {
-            return true;
-        }
-
-        String mcDir = System.getProperty("minecraft.client.jar");
-        if (mcDir != null) {
-            File clientJar = new File(mcDir);
-            File parent = clientJar.getParentFile();
-            if (parent != null && modsDirectoryHasJar(new File(parent, "mods"), jarName)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static boolean modsDirectoryHasJar(File modsDirectory, String jarName) {
-        try {
-            return modsDirectory != null
-                    && modsDirectory.isDirectory()
-                    && new File(modsDirectory, jarName).isFile();
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private static boolean containsJarName(String value, String jarName) {
-        return value != null && value.indexOf(jarName) >= 0;
+        return type != null;
     }
 }

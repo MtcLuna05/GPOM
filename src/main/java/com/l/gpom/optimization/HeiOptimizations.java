@@ -21,6 +21,7 @@ import net.minecraftforge.fluids.capability.CapabilityFluidHandler;
 import net.minecraftforge.fluids.capability.IFluidHandlerItem;
 import net.minecraftforge.fluids.capability.IFluidTankProperties;
 import net.minecraftforge.fml.common.ProgressManager;
+import net.minecraftforge.fml.common.discovery.ASMDataTable;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import net.minecraftforge.oredict.OreDictionary;
 
@@ -54,14 +55,17 @@ import java.util.Set;
 import java.util.Locale;
 import java.util.Random;
 import java.util.WeakHashMap;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -79,6 +83,9 @@ public final class HeiOptimizations {
     private static final int THERMAL_TRANSPOSER_CONTAINER_CACHE_VERSION = 1;
     private static final int THERMAL_TRANSPOSER_CONTAINER_CACHE_MAGIC = 0x47505454;
     private static final boolean HEI_ITEM_STACK_CACHE = Boolean.parseBoolean(System.getProperty("gpom.hei.itemStackListCache", "true"));
+    private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false"));
+    private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY_DEEP_PROBES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false"));
+    private static final int FAST_PREINIT_PLUGIN_DISCOVERY_WORKERS = intProperty("gpom.hei.fastPreInitPluginDiscovery.workers", 0);
     private static final int SEARCH_WORKERS = computeSearchWorkerCount();
     private static final ThreadLocal<RecipeProgress> RECIPE_PROGRESS = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> RECIPE_REGISTRY_BULK = new ThreadLocal<>();
@@ -144,6 +151,86 @@ public final class HeiOptimizations {
     private static volatile String craftTweakerContentSignature;
 
     private HeiOptimizations() {
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List getModPluginsFast(ASMDataTable asmData) {
+        if (!FAST_PREINIT_PLUGIN_DISCOVERY || asmData == null) {
+            return null;
+        }
+
+        long startedAt = System.nanoTime();
+        long scanNanos = 0L;
+        long classLoadWallNanos = 0L;
+        long classLoadSumNanos = 0L;
+        long instantiateNanos = 0L;
+        int workers = 1;
+        int failures = 0;
+        try {
+            long scanStarted = System.nanoTime();
+            Set<ASMDataTable.ASMData> dataSet = asmData.getAll("mezz.jei.api.JEIPlugin");
+            List<ASMDataTable.ASMData> pluginData = new ArrayList<>();
+            if (dataSet != null) {
+                for (ASMDataTable.ASMData data : dataSet) {
+                    if (data != null && data.getClassName() != null) {
+                        pluginData.add(data);
+                    }
+                }
+            }
+            scanNanos = System.nanoTime() - scanStarted;
+            if (pluginData.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            ClassLoader loader = Thread.currentThread().getContextClassLoader();
+            if (loader == null) {
+                loader = HeiOptimizations.class.getClassLoader();
+            }
+            Class pluginInterface = Class.forName("mezz.jei.api.IModPlugin", false, loader);
+            workers = fastPreInitPluginDiscoveryWorkers(pluginData.size());
+            long loadStarted = System.nanoTime();
+            List<JeiPluginClassLoadResult> classResults = loadJeiPluginClasses(pluginData, loader, workers);
+            classLoadWallNanos = System.nanoTime() - loadStarted;
+
+            List plugins = new ArrayList(classResults.size());
+            for (JeiPluginClassLoadResult result : classResults) {
+                classLoadSumNanos += result.elapsedNanos;
+                if (result.failure != null) {
+                    failures++;
+                    GPOM.LOGGER.warn("[HEI Optimizations] Failed to load JEI plugin class {}", result.className, result.failure);
+                    continue;
+                }
+                long instantiateStarted = System.nanoTime();
+                try {
+                    Class pluginClass = result.type.asSubclass(pluginInterface);
+                    plugins.add(pluginClass.newInstance());
+                } catch (Throwable throwable) {
+                    failures++;
+                    GPOM.LOGGER.warn("[HEI Optimizations] Failed to instantiate JEI plugin class {}", result.className, throwable);
+                } finally {
+                    instantiateNanos += System.nanoTime() - instantiateStarted;
+                }
+            }
+
+            if (FAST_PREINIT_PLUGIN_DISCOVERY_DEEP_PROBES) {
+                GPOM.LOGGER.info(
+                        "[HEI Optimizations] Fast-loaded {} JEI plugin(s) from {} annotation(s) in {} ms (scan={} ms classLoadWall={} ms classLoadSum={} ms workers={} instantiate={} ms failures={})",
+                        plugins.size(),
+                        pluginData.size(),
+                        millis(System.nanoTime() - startedAt),
+                        millis(scanNanos),
+                        millis(classLoadWallNanos),
+                        millis(classLoadSumNanos),
+                        workers,
+                        millis(instantiateNanos),
+                        failures
+                );
+            }
+            return plugins;
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[HEI Optimizations] Fast JEI preInit plugin discovery failed; falling back to stock discovery", throwable);
+            return null;
+        }
     }
 
     public static int searchWorkerCount() {
@@ -1858,30 +1945,37 @@ public final class HeiOptimizations {
                 }
                 threadedPlugins.add(plugin);
             }
+            boolean overlapSerial = GpomEarlyConfig.heiParallelPluginRegistrationOverlapSerialEnabled();
             GPOM.LOGGER.info(
-                    "[HEI Optimizations] HEI plugin registration split: threaded={}, serial={}, threadedPlugins={}",
+                    "[HEI Optimizations] HEI plugin registration split: threaded={}, serial={}, overlapSerial={}, threadedPlugins={}",
                     threadedPlugins.size(),
                     serialPlugins.size(),
+                    overlapSerial,
                     pluginNames(threadedPlugins)
             );
 
-            for (Object plugin : serialPlugins) {
-                if (!registerPluginSerial(plugin, modRegistry)) {
-                    failedPlugins.add(plugin);
+            if (overlapSerial) {
+                for (Object plugin : threadedPlugins) {
+                    completion.submit(() -> registerPluginWorker(plugin, modRegistry, true));
                 }
-                bar.step(pluginName(plugin));
-            }
-
-            for (Object plugin : threadedPlugins) {
-                completion.submit(() -> registerPluginWorker(plugin, modRegistry, true));
-            }
-
-            for (int i = 0; i < threadedPlugins.size(); i++) {
-                PluginResult result = completion.take().get();
-                if (!result.success) {
-                    failedPlugins.add(result.plugin);
+                for (Object plugin : serialPlugins) {
+                    if (!registerPluginSerial(plugin, modRegistry)) {
+                        failedPlugins.add(plugin);
+                    }
+                    bar.step(pluginName(plugin));
                 }
-                bar.step(pluginName(result.plugin));
+                drainThreadedPluginResults(completion, threadedPlugins.size(), failedPlugins, bar);
+            } else {
+                for (Object plugin : serialPlugins) {
+                    if (!registerPluginSerial(plugin, modRegistry)) {
+                        failedPlugins.add(plugin);
+                    }
+                    bar.step(pluginName(plugin));
+                }
+                for (Object plugin : threadedPlugins) {
+                    completion.submit(() -> registerPluginWorker(plugin, modRegistry, true));
+                }
+                drainThreadedPluginResults(completion, threadedPlugins.size(), failedPlugins, bar);
             }
 
             plugins.removeAll(failedPlugins);
@@ -1977,6 +2071,21 @@ public final class HeiOptimizations {
     private static boolean registerPluginSerial(Object plugin, Object modRegistry) {
         PluginResult result = registerPluginWorker(plugin, modRegistry, false);
         return result.success;
+    }
+
+    private static void drainThreadedPluginResults(
+            CompletionService<PluginResult> completion,
+            int count,
+            List<Object> failedPlugins,
+            ProgressManager.ProgressBar bar
+    ) throws Exception {
+        for (int i = 0; i < count; i++) {
+            PluginResult result = completion.take().get();
+            if (!result.success) {
+                failedPlugins.add(result.plugin);
+            }
+            bar.step(pluginName(result.plugin));
+        }
     }
 
     private static PluginResult registerPluginWorker(Object plugin, Object modRegistry, boolean threaded) {
@@ -3625,11 +3734,108 @@ public final class HeiOptimizations {
         return workers;
     }
 
+    private static List<JeiPluginClassLoadResult> loadJeiPluginClasses(List<ASMDataTable.ASMData> pluginData,
+                                                                       ClassLoader loader,
+                                                                       int workers) throws Exception {
+        if (workers <= 1 || pluginData.size() <= 1) {
+            List<JeiPluginClassLoadResult> results = new ArrayList<>(pluginData.size());
+            for (ASMDataTable.ASMData data : pluginData) {
+                results.add(loadJeiPluginClass(data, loader));
+            }
+            return results;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(workers, new JeiPluginClassLoadThreadFactory());
+        try {
+            List<Future<JeiPluginClassLoadResult>> futures = new ArrayList<>(pluginData.size());
+            for (ASMDataTable.ASMData data : pluginData) {
+                futures.add(executor.submit(new JeiPluginClassLoadTask(data, loader)));
+            }
+            List<JeiPluginClassLoadResult> results = new ArrayList<>(futures.size());
+            for (Future<JeiPluginClassLoadResult> future : futures) {
+                results.add(future.get());
+            }
+            return results;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private static JeiPluginClassLoadResult loadJeiPluginClass(ASMDataTable.ASMData data, ClassLoader loader) {
+        String className = data == null ? null : data.getClassName();
+        long startedAt = System.nanoTime();
+        try {
+            if (className == null) {
+                throw new ClassNotFoundException("<missing JEI plugin class name>");
+            }
+            Class<?> type = Class.forName(className, false, loader);
+            return new JeiPluginClassLoadResult(className, type, null, System.nanoTime() - startedAt);
+        } catch (Throwable throwable) {
+            return new JeiPluginClassLoadResult(className, null, throwable, System.nanoTime() - startedAt);
+        }
+    }
+
+    private static int fastPreInitPluginDiscoveryWorkers(int tasks) {
+        if (tasks <= 1) {
+            return 1;
+        }
+        int configured = FAST_PREINIT_PLUGIN_DISCOVERY_WORKERS;
+        if (configured <= 0) {
+            int processors = Runtime.getRuntime().availableProcessors();
+            configured = Math.max(2, Math.min(4, processors / 2));
+        }
+        return Math.max(1, Math.min(tasks, configured));
+    }
+
+    private static String millis(long nanos) {
+        return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0D);
+    }
+
     private static int intProperty(String key, int fallback) {
         try {
             return Integer.parseInt(System.getProperty(key, Integer.toString(fallback)));
         } catch (NumberFormatException ignored) {
             return fallback;
+        }
+    }
+
+    private static final class JeiPluginClassLoadTask implements Callable<JeiPluginClassLoadResult> {
+        private final ASMDataTable.ASMData data;
+        private final ClassLoader loader;
+
+        private JeiPluginClassLoadTask(ASMDataTable.ASMData data, ClassLoader loader) {
+            this.data = data;
+            this.loader = loader;
+        }
+
+        @Override
+        public JeiPluginClassLoadResult call() {
+            return loadJeiPluginClass(data, loader);
+        }
+    }
+
+    private static final class JeiPluginClassLoadThreadFactory implements ThreadFactory {
+        private final AtomicInteger sequence = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "GPOM HEI plugin class load " + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+
+    private static final class JeiPluginClassLoadResult {
+        private final String className;
+        private final Class<?> type;
+        private final Throwable failure;
+        private final long elapsedNanos;
+
+        private JeiPluginClassLoadResult(String className, Class<?> type, Throwable failure, long elapsedNanos) {
+            this.className = className;
+            this.type = type;
+            this.failure = failure;
+            this.elapsedNanos = elapsedNanos;
         }
     }
 
@@ -3766,7 +3972,13 @@ public final class HeiOptimizations {
         if (!root.exists()) {
             return;
         }
+        if (GpomCaches.cacheInvalidationDenied(relativeRoot)) {
+            return;
+        }
         if (!root.isDirectory()) {
+            if (GpomCaches.cacheInvalidationDenied(relativeRoot)) {
+                return;
+            }
             entries.add(relativeRoot + ':' + root.length() + ':' + Long.toHexString(fileCrc32(root)));
             return;
         }
@@ -3793,7 +4005,11 @@ public final class HeiOptimizations {
                 continue;
             }
             String relativePath = root.toURI().relativize(child.toURI()).getPath();
-            entries.add(relativeRoot + '/' + relativePath + ':' + child.length() + ':' + Long.toHexString(fileCrc32(child)));
+            String signatureName = relativeRoot + '/' + relativePath;
+            if (GpomCaches.cacheInvalidationDenied(signatureName)) {
+                continue;
+            }
+            entries.add(signatureName + ':' + child.length() + ':' + Long.toHexString(fileCrc32(child)));
         }
     }
 

@@ -45,7 +45,12 @@ public final class RegistryEventParallelDispatcher {
     private static final boolean QUEUED_COMMIT = GpomEarlyConfig.registryParallelRegisterEventsQueuedCommitEnabled();
     private static final Set<String> REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsRegistries();
     private static final Set<String> IMMEDIATE_COMMIT_REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsImmediateCommitRegistries();
+    private static final boolean PROXY_EVENT_REGISTRY = GpomEarlyConfig.registryParallelRegisterEventsProxyEventRegistryEnabled();
+    private static final Set<String> PROXY_EVENT_REGISTRY_DENYLIST = GpomEarlyConfig.registryParallelRegisterEventsProxyEventRegistryDenylist();
     private static final boolean DEPENDENCY_GATING = GpomEarlyConfig.registryParallelRegisterEventsDependencyGatingEnabled();
+    private static final boolean PROXY_IMMEDIATE_REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsProxyImmediateRegistriesEnabled();
+    private static final Set<String> ORDERED_WAVE_REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsOrderedWaveRegistries();
+    private static final int IMMEDIATE_COMMIT_WAIT_DIAGNOSTICS_MILLIS = GpomEarlyConfig.registryParallelRegisterEventsImmediateCommitWaitDiagnosticsMillis();
     private static final Set<String> ALLOWLIST = GpomEarlyConfig.registryParallelRegisterEventsAllowlist();
     private static final Set<String> DENYLIST = GpomEarlyConfig.registryParallelRegisterEventsDenylist();
     private static final int CONFIGURED_WORKERS = GpomEarlyConfig.registryParallelRegisterEventsWorkers();
@@ -172,13 +177,18 @@ public final class RegistryEventParallelDispatcher {
             return;
         }
 
-        List<List<ListenerPlan>> waves = dependencyWaves(batch);
+        String registryName = registryName(event);
+        List<List<ExecutionUnit>> waves = dependencyWaves(registryName, batch);
+        boolean commitAfterEachWave = usesImmediateCommit(registryName);
         long startedAt = StartupProfiler.beginProbe();
         List<ListenerResult> results = new ArrayList<>(batch.size());
         try {
-            for (List<ListenerPlan> wave : waves) {
+            for (List<ExecutionUnit> wave : waves) {
                 List<ListenerResult> waveResults = runQueuedWave(eventBus, event, listeners, wave);
                 results.addAll(waveResults);
+                if (commitAfterEachWave) {
+                    commitResults(eventBus, event, listeners, waveResults);
+                }
                 if (hasFailure(waveResults)) {
                     break;
                 }
@@ -196,11 +206,10 @@ public final class RegistryEventParallelDispatcher {
 
         long commitStartedAt = StartupProfiler.beginProbe();
         try {
-            for (ListenerResult result : results) {
-                if (result.failure != null) {
-                    handleListenerFailure(eventBus, event, listeners, result.index, result.failure);
-                }
-                result.registry.commitToBacking();
+            if (commitAfterEachWave) {
+                handleFailures(eventBus, event, listeners, results);
+            } else {
+                commitResults(eventBus, event, listeners, results);
             }
         } finally {
             if (commitStartedAt != 0L) {
@@ -214,25 +223,48 @@ public final class RegistryEventParallelDispatcher {
         }
     }
 
+    private static void commitResults(EventBus eventBus,
+                                      RegistryEvent.Register event,
+                                      IEventListener[] listeners,
+                                      List<ListenerResult> results) throws Exception {
+        for (ListenerResult result : results) {
+            if (result.failure != null) {
+                handleListenerFailure(eventBus, event, listeners, result.index, result.failure);
+            }
+            result.registry.commitToBacking();
+        }
+    }
+
+    private static void handleFailures(EventBus eventBus,
+                                       RegistryEvent.Register event,
+                                       IEventListener[] listeners,
+                                       List<ListenerResult> results) throws Exception {
+        for (ListenerResult result : results) {
+            if (result.failure != null) {
+                handleListenerFailure(eventBus, event, listeners, result.index, result.failure);
+            }
+        }
+    }
+
     private static List<ListenerResult> runQueuedWave(EventBus eventBus,
                                                       RegistryEvent.Register event,
                                                       IEventListener[] listeners,
-                                                      List<ListenerPlan> wave) throws Exception {
-        List<ListenerResult> results = new ArrayList<>(wave.size());
+                                                      List<ExecutionUnit> wave) throws Exception {
+        List<ListenerResult> results = new ArrayList<>(listenerCount(wave));
         ImmediateCommitCoordinator coordinator = immediateCommitCoordinator(event, wave);
         if (wave.size() == 1) {
-            results.add(runQueuedListener(event, wave.get(0), coordinator));
+            results.addAll(runQueuedUnit(event, wave.get(0), coordinator));
             return results;
         }
 
-        List<Future<ListenerResult>> futures = new ArrayList<>(wave.size());
+        List<Future<List<ListenerResult>>> futures = new ArrayList<>(wave.size());
         ExecutorService executor = executor();
-        for (ListenerPlan plan : wave) {
-            futures.add(executor.submit(new QueuedTask(event, plan, coordinator)));
+        for (ExecutionUnit unit : wave) {
+            futures.add(executor.submit(new QueuedTask(event, unit, coordinator)));
         }
-        for (Future<ListenerResult> future : futures) {
+        for (Future<List<ListenerResult>> future : futures) {
             try {
-                results.add(future.get());
+                results.addAll(future.get());
             } catch (ExecutionException exception) {
                 Throwable cause = exception.getCause() == null ? exception : exception.getCause();
                 if (cause instanceof ListenerFailure) {
@@ -240,6 +272,20 @@ public final class RegistryEventParallelDispatcher {
                     handleListenerFailure(eventBus, event, listeners, failure.index, failure.getCause());
                 }
                 throw cause instanceof Exception ? (Exception) cause : new RuntimeException(cause);
+            }
+        }
+        return results;
+    }
+
+    private static List<ListenerResult> runQueuedUnit(RegistryEvent.Register event,
+                                                      ExecutionUnit unit,
+                                                      ImmediateCommitCoordinator coordinator) {
+        List<ListenerResult> results = new ArrayList<>(unit.plans.size());
+        for (ListenerPlan plan : unit.plans) {
+            ListenerResult result = runQueuedListener(event, plan, coordinator);
+            results.add(result);
+            if (result.failure != null) {
+                break;
             }
         }
         return results;
@@ -258,10 +304,7 @@ public final class RegistryEventParallelDispatcher {
                                                     ListenerPlan plan,
                                                     ImmediateCommitCoordinator coordinator) {
         QueuingRegistry registry = new QueuingRegistry(originalEvent.getRegistry(), registryName(originalEvent), plan.index, coordinator);
-        // Preserve Forge registry identity for listeners that compare against ForgeRegistries.*.
-        // Mutations still queue because ForgeRegistry.register and GameData.register_impl are
-        // coremod-patched to call queueWorkerRegistration while this ThreadLocal is active.
-        RegistryEvent.Register event = new RegistryEvent.Register<>(originalEvent.getName(), originalEvent.getRegistry());
+        RegistryEvent.Register event = workerEvent(originalEvent, registry, plan);
         long listenerStartedAt = beginDeepDiagnosticsProbe();
         Throwable failure = null;
         try {
@@ -312,6 +355,20 @@ public final class RegistryEventParallelDispatcher {
         return true;
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static RegistryEvent.Register workerEvent(RegistryEvent.Register originalEvent, QueuingRegistry registry, ListenerPlan plan) {
+        IForgeRegistry eventRegistry = useEventRegistryProxy(originalEvent, plan) ? registry : originalEvent.getRegistry();
+        return new RegistryEvent.Register(originalEvent.getName(), eventRegistry);
+    }
+
+    private static boolean useEventRegistryProxy(RegistryEvent.Register event, ListenerPlan plan) {
+        // Immediate registries need writes to be visible before the listener returns. When enabled,
+        // GPOM's proxy commits those writes immediately in original listener order.
+        return PROXY_EVENT_REGISTRY
+                && (!usesImmediateCommit(registryName(event)) || PROXY_IMMEDIATE_REGISTRIES)
+                && !isDenied(PROXY_EVENT_REGISTRY_DENYLIST, plan.modId, registryName(event));
+    }
+
     private static void postDirect(EventBus eventBus,
                                    RegistryEvent.Register event,
                                    IEventListener[] listeners,
@@ -337,8 +394,8 @@ public final class RegistryEventParallelDispatcher {
             return;
         }
 
-        List<List<ListenerPlan>> waves = dependencyWaves(batch);
-        for (List<ListenerPlan> wave : waves) {
+        List<List<ExecutionUnit>> waves = dependencyWaves(registryName(event), batch);
+        for (List<ExecutionUnit> wave : waves) {
             runDirectWave(eventBus, event, listeners, wave);
         }
     }
@@ -346,16 +403,19 @@ public final class RegistryEventParallelDispatcher {
     private static void runDirectWave(EventBus eventBus,
                                       RegistryEvent.Register event,
                                       IEventListener[] listeners,
-                                      List<ListenerPlan> wave) throws Exception {
+                                      List<ExecutionUnit> wave) throws Exception {
         if (wave.size() == 1) {
-            invokeWithFailureHandling(eventBus, event, listeners, wave.get(0), event, true);
+            ListenerFailure failure = invokeDirectUnit(event, wave.get(0));
+            if (failure != null) {
+                handleListenerFailure(eventBus, event, listeners, failure.index, failure.getCause());
+            }
             return;
         }
 
         List<Future<ListenerFailure>> futures = new ArrayList<>(wave.size());
         ExecutorService executor = executor();
-        for (ListenerPlan plan : wave) {
-            futures.add(executor.submit(new DirectTask(event, plan)));
+        for (ExecutionUnit unit : wave) {
+            futures.add(executor.submit(new DirectTask(event, unit)));
         }
         for (Future<ListenerFailure> future : futures) {
             ListenerFailure failure = future.get();
@@ -363,6 +423,20 @@ public final class RegistryEventParallelDispatcher {
                 handleListenerFailure(eventBus, event, listeners, failure.index, failure.getCause());
             }
         }
+    }
+
+    private static ListenerFailure invokeDirectUnit(RegistryEvent.Register event, ExecutionUnit unit) {
+        for (ListenerPlan plan : unit.plans) {
+            long startedAt = beginDeepDiagnosticsProbe();
+            try {
+                invokeWithOwner(event, plan.invokeTarget, plan.owner, true);
+            } catch (Throwable throwable) {
+                return new ListenerFailure(plan.index, throwable);
+            } finally {
+                endListenerDeepDiagnosticsProbe(event, plan, "worker direct", startedAt);
+            }
+        }
+        return null;
     }
 
     private static void invokeSerial(RegistryEvent.Register event, ListenerPlan plan) throws Exception {
@@ -439,8 +513,9 @@ public final class RegistryEventParallelDispatcher {
     private static ListenerPlan planFor(IEventListener listener, int index, String registryName) {
         ListenerTarget target = unwrap(listener);
         String modId = safeModId(target.owner);
+        boolean ownerKnown = !normalize(modId).isEmpty();
         boolean targetAvailable = target.parallelTarget != null;
-        boolean allowed = isAllowed(modId, registryName);
+        boolean allowed = ownerKnown && isAllowed(modId, registryName);
         boolean parallel = allowed && targetAvailable;
         return new ListenerPlan(
                 index,
@@ -455,19 +530,49 @@ public final class RegistryEventParallelDispatcher {
         );
     }
 
-    private static List<List<ListenerPlan>> dependencyWaves(List<ListenerPlan> batch) {
-        if (!DEPENDENCY_GATING || batch.size() <= 1) {
-            return Collections.singletonList(batch);
+    private static List<List<ExecutionUnit>> dependencyWaves(String registryName, List<ListenerPlan> batch) {
+        List<ExecutionUnit> units = compactExecutionUnits(batch);
+        if (!DEPENDENCY_GATING || units.size() <= 1) {
+            return Collections.singletonList(units);
         }
 
-        List<List<ListenerPlan>> waves = new ArrayList<>();
-        List<ListenerPlan> wave = new ArrayList<>();
+        if (usesOrderedWaves(registryName)) {
+            return orderedDependencyWaves(units);
+        }
+
+        return topologicalDependencyWaves(units);
+    }
+
+    private static List<ExecutionUnit> compactExecutionUnits(List<ListenerPlan> batch) {
+        if (batch.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ExecutionUnit> units = new ArrayList<>();
+        List<ListenerPlan> current = new ArrayList<>();
+        String currentModId = null;
         for (ListenerPlan plan : batch) {
-            if (!wave.isEmpty() && waitsForWave(plan, wave)) {
+            if (!current.isEmpty() && !plan.modId.equals(currentModId)) {
+                units.add(new ExecutionUnit(current));
+                current = new ArrayList<>();
+            }
+            current.add(plan);
+            currentModId = plan.modId;
+        }
+        if (!current.isEmpty()) {
+            units.add(new ExecutionUnit(current));
+        }
+        return units;
+    }
+
+    private static List<List<ExecutionUnit>> orderedDependencyWaves(List<ExecutionUnit> units) {
+        List<List<ExecutionUnit>> waves = new ArrayList<>();
+        List<ExecutionUnit> wave = new ArrayList<>();
+        for (ExecutionUnit unit : units) {
+            if (!wave.isEmpty() && waitsForWave(unit, wave)) {
                 waves.add(wave);
                 wave = new ArrayList<>();
             }
-            wave.add(plan);
+            wave.add(unit);
         }
         if (!wave.isEmpty()) {
             waves.add(wave);
@@ -475,14 +580,96 @@ public final class RegistryEventParallelDispatcher {
         return waves;
     }
 
-    private static boolean waitsForWave(ListenerPlan plan, List<ListenerPlan> wave) {
+    private static List<List<ExecutionUnit>> topologicalDependencyWaves(List<ExecutionUnit> units) {
+        int size = units.size();
+        List<List<Integer>> dependants = new ArrayList<>(size);
+        List<Set<Integer>> dependencies = new ArrayList<>(size);
+        int[] remainingDependencies = new int[size];
+        boolean[] scheduled = new boolean[size];
+
+        for (int i = 0; i < size; i++) {
+            dependants.add(new ArrayList<>());
+            dependencies.add(new LinkedHashSet<>());
+        }
+
+        for (int i = 0; i < size; i++) {
+            ExecutionUnit unit = units.get(i);
+            for (int j = 0; j < i; j++) {
+                ExecutionUnit earlier = units.get(j);
+                if (dependsOnEarlier(unit, earlier)) {
+                    dependencies.get(i).add(j);
+                }
+            }
+        }
+
+        for (int i = 0; i < size; i++) {
+            Set<Integer> planDependencies = dependencies.get(i);
+            remainingDependencies[i] = planDependencies.size();
+            for (Integer dependency : planDependencies) {
+                dependants.get(dependency).add(i);
+            }
+        }
+
+        List<List<ExecutionUnit>> waves = new ArrayList<>();
+        int scheduledCount = 0;
+        while (scheduledCount < size) {
+            List<Integer> wavePositions = new ArrayList<>();
+            for (int i = 0; i < size; i++) {
+                if (!scheduled[i] && remainingDependencies[i] == 0) {
+                    wavePositions.add(i);
+                }
+            }
+
+            if (wavePositions.isEmpty()) {
+                // Edges are only created from earlier listeners to later listeners, so a cycle should be
+                // impossible. Keep a safe fallback rather than aborting startup if a future dependency
+                // source behaves unexpectedly.
+                for (int i = 0; i < size; i++) {
+                    if (!scheduled[i]) {
+                        wavePositions.add(i);
+                        break;
+                    }
+                }
+            }
+
+            List<ExecutionUnit> wave = new ArrayList<>(wavePositions.size());
+            for (Integer position : wavePositions) {
+                scheduled[position] = true;
+                scheduledCount++;
+                wave.add(units.get(position));
+            }
+            waves.add(wave);
+
+            for (Integer position : wavePositions) {
+                for (Integer dependant : dependants.get(position)) {
+                    remainingDependencies[dependant]--;
+                }
+            }
+        }
+        return waves;
+    }
+
+    private static boolean dependsOnEarlier(ExecutionUnit unit, ExecutionUnit earlier) {
+        if (unit.modId.isEmpty()) {
+            return false;
+        }
+        return unit.modId.equals(earlier.modId)
+                || matchesDependency(unit.dependenciesBefore, earlier.modId)
+                || matchesDependency(earlier.dependantsAfter, unit.modId);
+    }
+
+    private static boolean dependsOnEarlier(ListenerPlan plan, ListenerPlan earlier) {
         if (plan.modId.isEmpty()) {
             return false;
         }
-        for (ListenerPlan earlier : wave) {
-            if (plan.modId.equals(earlier.modId)
-                    || matchesDependency(plan.dependenciesBefore, earlier.modId)
-                    || matchesDependency(earlier.dependantsAfter, plan.modId)) {
+        return plan.modId.equals(earlier.modId)
+                || matchesDependency(plan.dependenciesBefore, earlier.modId)
+                || matchesDependency(earlier.dependantsAfter, plan.modId);
+    }
+
+    private static boolean waitsForWave(ExecutionUnit unit, List<ExecutionUnit> wave) {
+        for (ExecutionUnit earlier : wave) {
+            if (dependsOnEarlier(unit, earlier)) {
                 return true;
             }
         }
@@ -493,11 +680,19 @@ public final class RegistryEventParallelDispatcher {
         return !labels.isEmpty() && (labels.contains("*") || labels.contains(modId));
     }
 
-    private static ImmediateCommitCoordinator immediateCommitCoordinator(RegistryEvent.Register event, List<ListenerPlan> wave) {
+    private static ImmediateCommitCoordinator immediateCommitCoordinator(RegistryEvent.Register event, List<ExecutionUnit> wave) {
         if (!usesImmediateCommit(registryName(event)) || wave.size() <= 1) {
             return null;
         }
-        return new ImmediateCommitCoordinator(wave);
+        return new ImmediateCommitCoordinator(registryName(event), wave);
+    }
+
+    private static int listenerCount(List<ExecutionUnit> units) {
+        int count = 0;
+        for (ExecutionUnit unit : units) {
+            count += unit.plans.size();
+        }
+        return count;
     }
 
     private static Set<String> dependencyLabels(ModContainer owner, boolean beforeCurrent) {
@@ -538,11 +733,15 @@ public final class RegistryEventParallelDispatcher {
     }
 
     private static boolean isDenied(String normalizedModId, String registryName) {
-        if (DENYLIST.contains(normalizedModId)) {
+        return isDenied(DENYLIST, normalizedModId, registryName);
+    }
+
+    private static boolean isDenied(Set<String> denylist, String normalizedModId, String registryName) {
+        if (denylist.contains(normalizedModId)) {
             return true;
         }
         String normalizedRegistry = normalize(registryName);
-        return !normalizedRegistry.isEmpty() && DENYLIST.contains(normalizedModId + "@" + normalizedRegistry);
+        return !normalizedRegistry.isEmpty() && denylist.contains(normalizedModId + "@" + normalizedRegistry);
     }
 
     private static long beginDeepDiagnosticsProbe() {
@@ -824,15 +1023,27 @@ public final class RegistryEventParallelDispatcher {
             }
         }
         GPOM.LOGGER.info(
-                "[RegistryParallel] enabled queuedCommit={} immediateCommit={} dependencyGating={} workers={} registry={} parallelListeners={} serialListeners={}",
+                "[RegistryParallel] enabled queuedCommit={} immediateCommit={} proxyEventRegistry={} dependencyGating={} workers={} registry={} parallelListeners={} executionUnits={} serialListeners={}",
                 QUEUED_COMMIT,
                 usesImmediateCommit(registry),
+                PROXY_EVENT_REGISTRY && (!usesImmediateCommit(registry) || PROXY_IMMEDIATE_REGISTRIES),
                 DEPENDENCY_GATING,
                 workerCount(),
                 registry,
                 parallel,
+                compactExecutionUnits(parallelPlans(plans)).size(),
                 serial
         );
+    }
+
+    private static List<ListenerPlan> parallelPlans(List<ListenerPlan> plans) {
+        List<ListenerPlan> parallelPlans = new ArrayList<>();
+        for (ListenerPlan plan : plans) {
+            if (plan.parallel) {
+                parallelPlans.add(plan);
+            }
+        }
+        return parallelPlans;
     }
 
     private static void logNoParallelOnce(RegistryEvent.Register<?> event, List<ListenerPlan> plans) {
@@ -916,6 +1127,12 @@ public final class RegistryEventParallelDispatcher {
                 || (!normalized.isEmpty() && IMMEDIATE_COMMIT_REGISTRIES.contains(normalized));
     }
 
+    private static boolean usesOrderedWaves(String registryName) {
+        String normalized = normalize(registryName);
+        return ORDERED_WAVE_REGISTRIES.contains("*")
+                || (!normalized.isEmpty() && ORDERED_WAVE_REGISTRIES.contains(normalized));
+    }
+
     private static final class RegistryThreadFactory implements ThreadFactory {
         private final AtomicInteger sequence = new AtomicInteger();
 
@@ -927,43 +1144,57 @@ public final class RegistryEventParallelDispatcher {
         }
     }
 
-    private static final class QueuedTask implements Callable<ListenerResult> {
+    private static final class QueuedTask implements Callable<List<ListenerResult>> {
         private final RegistryEvent.Register event;
-        private final ListenerPlan plan;
+        private final ExecutionUnit unit;
         private final ImmediateCommitCoordinator coordinator;
 
-        private QueuedTask(RegistryEvent.Register event, ListenerPlan plan, ImmediateCommitCoordinator coordinator) {
+        private QueuedTask(RegistryEvent.Register event, ExecutionUnit unit, ImmediateCommitCoordinator coordinator) {
             this.event = event;
-            this.plan = plan;
+            this.unit = unit;
             this.coordinator = coordinator;
         }
 
         @Override
-        public ListenerResult call() {
-            return runQueuedListener(event, plan, coordinator);
+        public List<ListenerResult> call() {
+            return runQueuedUnit(event, unit, coordinator);
         }
     }
 
     private static final class DirectTask implements Callable<ListenerFailure> {
         private final RegistryEvent.Register event;
-        private final ListenerPlan plan;
+        private final ExecutionUnit unit;
 
-        private DirectTask(RegistryEvent.Register event, ListenerPlan plan) {
+        private DirectTask(RegistryEvent.Register event, ExecutionUnit unit) {
             this.event = event;
-            this.plan = plan;
+            this.unit = unit;
         }
 
         @Override
         public ListenerFailure call() {
-            long startedAt = beginDeepDiagnosticsProbe();
-            try {
-                invokeWithOwner(event, plan.invokeTarget, plan.owner, true);
-                return null;
-            } catch (Throwable throwable) {
-                return new ListenerFailure(plan.index, throwable);
-            } finally {
-                endListenerDeepDiagnosticsProbe(event, plan, "worker direct", startedAt);
+            return invokeDirectUnit(event, unit);
+        }
+    }
+
+    private static final class ExecutionUnit {
+        private final List<ListenerPlan> plans;
+        private final String modId;
+        private final Set<String> dependenciesBefore;
+        private final Set<String> dependantsAfter;
+
+        private ExecutionUnit(List<ListenerPlan> plans) {
+            this.plans = Collections.unmodifiableList(new ArrayList<>(plans));
+            this.modId = plans.isEmpty() ? "" : plans.get(0).modId;
+            this.dependenciesBefore = mergedLabels(plans, true);
+            this.dependantsAfter = mergedLabels(plans, false);
+        }
+
+        private static Set<String> mergedLabels(List<ListenerPlan> plans, boolean dependenciesBefore) {
+            LinkedHashSet<String> labels = new LinkedHashSet<>();
+            for (ListenerPlan plan : plans) {
+                labels.addAll(dependenciesBefore ? plan.dependenciesBefore : plan.dependantsAfter);
             }
+            return labels.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(labels);
         }
     }
 
@@ -1053,21 +1284,34 @@ public final class RegistryEventParallelDispatcher {
     }
 
     private static final class ImmediateCommitCoordinator {
+        private final String registryName;
         private final List<Integer> listenerOrder;
+        private final Map<Integer, String> listenerLabels;
         private final Set<Integer> completed = new LinkedHashSet<>();
         private final Map<Integer, QueuingRegistry> completedRegistries = new LinkedHashMap<>();
         private int activePosition;
         private int failedIndex = Integer.MAX_VALUE;
 
-        private ImmediateCommitCoordinator(List<ListenerPlan> plans) {
-            List<Integer> order = new ArrayList<>(plans.size());
-            for (ListenerPlan plan : plans) {
-                order.add(plan.index);
+        private ImmediateCommitCoordinator(String registryName, List<ExecutionUnit> units) {
+            this.registryName = registryName;
+            List<Integer> order = new ArrayList<>(listenerCount(units));
+            Map<Integer, String> labels = new LinkedHashMap<>();
+            for (ExecutionUnit unit : units) {
+                for (ListenerPlan plan : unit.plans) {
+                    order.add(plan.index);
+                    labels.put(plan.index, listenerLabel(plan));
+                }
             }
             this.listenerOrder = Collections.unmodifiableList(order);
+            this.listenerLabels = Collections.unmodifiableMap(labels);
         }
 
         private void awaitTurn(int listenerIndex) {
+            long startedAt = System.nanoTime();
+            long diagnosticIntervalNanos = IMMEDIATE_COMMIT_WAIT_DIAGNOSTICS_MILLIS <= 0
+                    ? 0L
+                    : IMMEDIATE_COMMIT_WAIT_DIAGNOSTICS_MILLIS * 1_000_000L;
+            long nextDiagnosticAt = diagnosticIntervalNanos <= 0L ? Long.MAX_VALUE : startedAt + diagnosticIntervalNanos;
             synchronized (this) {
                 while (true) {
                     if (failedIndex < listenerIndex) {
@@ -1077,8 +1321,24 @@ public final class RegistryEventParallelDispatcher {
                             || listenerOrder.get(activePosition) == listenerIndex) {
                         return;
                     }
+                    long waitMillis = 0L;
+                    if (diagnosticIntervalNanos > 0L) {
+                        long now = System.nanoTime();
+                        if (now >= nextDiagnosticAt) {
+                            logWaitDiagnostic(listenerIndex, (now - startedAt) / 1_000_000L);
+                            nextDiagnosticAt = now + diagnosticIntervalNanos;
+                        }
+                        waitMillis = Math.max(1L, Math.min(
+                                IMMEDIATE_COMMIT_WAIT_DIAGNOSTICS_MILLIS,
+                                Math.max(1L, (nextDiagnosticAt - now) / 1_000_000L)
+                        ));
+                    }
                     try {
-                        this.wait();
+                        if (waitMillis > 0L) {
+                            this.wait(waitMillis);
+                        } else {
+                            this.wait();
+                        }
                     } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException("Interrupted while waiting for ordered registry commit turn", exception);
@@ -1092,6 +1352,54 @@ public final class RegistryEventParallelDispatcher {
                 return activePosition < listenerOrder.size()
                         && listenerOrder.get(activePosition) == listenerIndex;
             }
+        }
+
+        private void logWaitDiagnostic(int blockedIndex, long waitedMillis) {
+            int activeIndex = activePosition < listenerOrder.size() ? listenerOrder.get(activePosition) : -1;
+            GPOM.LOGGER.warn(
+                    "[RegistryParallel] immediate commit wait registry={} blocked={} waited={}ms activePosition={}/{} active={} activeCompleted={} completed={} failed={} orderWindow={}",
+                    registryName,
+                    listenerLabel(blockedIndex),
+                    waitedMillis,
+                    activePosition,
+                    listenerOrder.size(),
+                    listenerLabel(activeIndex),
+                    completed.contains(activeIndex),
+                    completed.size(),
+                    failedIndex == Integer.MAX_VALUE ? "<none>" : listenerLabel(failedIndex),
+                    listenerWindow()
+            );
+        }
+
+        private String listenerWindow() {
+            if (listenerOrder.isEmpty()) {
+                return "[]";
+            }
+            int from = Math.max(0, activePosition - 3);
+            int to = Math.min(listenerOrder.size(), activePosition + 4);
+            StringBuilder builder = new StringBuilder("[");
+            for (int i = from; i < to; i++) {
+                if (i > from) {
+                    builder.append(", ");
+                }
+                if (i == activePosition) {
+                    builder.append('*');
+                }
+                builder.append(listenerLabel(listenerOrder.get(i)));
+            }
+            if (to < listenerOrder.size()) {
+                builder.append(", ...");
+            }
+            return builder.append(']').toString();
+        }
+
+        private String listenerLabel(int listenerIndex) {
+            String label = listenerLabels.get(listenerIndex);
+            return label == null ? "#" + listenerIndex + " <unknown>" : label;
+        }
+
+        private static String listenerLabel(ListenerPlan plan) {
+            return "#" + plan.index + " " + modLabel(plan);
         }
 
         private void listenerFinished(int listenerIndex, QueuingRegistry registry, Throwable failure) {
@@ -1178,6 +1486,14 @@ public final class RegistryEventParallelDispatcher {
 
         @Override
         public void register(IForgeRegistryEntry value) {
+            if (immediateCommit) {
+                registerImmediate(value);
+                return;
+            }
+            queueRegister(value);
+        }
+
+        private void queueRegister(IForgeRegistryEntry value) {
             if (value == null) {
                 mutations.add(registry -> registry.register(null));
                 return;
@@ -1192,27 +1508,24 @@ public final class RegistryEventParallelDispatcher {
 
         private void registerFromWorker(IForgeRegistryEntry value) {
             if (!immediateCommit) {
-                register(value);
+                queueRegister(value);
                 return;
             }
 
-            if (immediateCoordinator != null) {
-                // ForgeRegistry.registerAll is synchronized. If a listener reaches this hook through
-                // registerAll before its ordered turn, waiting here would hold Forge's registry monitor
-                // and can block the earlier listener whose turn must commit first.
-                if (Thread.holdsLock(backing) && !immediateCoordinator.isTurn(listenerIndex)) {
-                    register(value);
-                    return;
-                }
-                immediateCoordinator.awaitTurn(listenerIndex);
+            registerImmediate(value);
+        }
+
+        private void registerImmediate(IForgeRegistryEntry value) {
+            if (value == null) {
+                queueRegister(null);
+                return;
             }
-            BYPASS_WORKER_QUEUE.set(Boolean.TRUE);
-            try {
-                backing.register(value);
-            } finally {
-                BYPASS_WORKER_QUEUE.remove();
+            ResourceLocation key = value.getRegistryName();
+            if (key != null) {
+                localValues.put(key, value);
+                removedKeys.remove(key);
             }
-            immediateMutations++;
+            applyImmediateMutation(registry -> registry.register(value));
         }
 
         @Override
@@ -1332,6 +1645,13 @@ public final class RegistryEventParallelDispatcher {
             if (modifiableBacking == null) {
                 throw new UnsupportedOperationException("Backing registry is not modifiable");
             }
+            if (immediateCommit) {
+                cleared = true;
+                localValues.clear();
+                removedKeys.clear();
+                applyImmediateMutation(registry -> ((IForgeRegistryModifiable) registry).clear());
+                return;
+            }
             cleared = true;
             localValues.clear();
             removedKeys.clear();
@@ -1344,6 +1664,16 @@ public final class RegistryEventParallelDispatcher {
                 throw new UnsupportedOperationException("Backing registry is not modifiable");
             }
             IForgeRegistryEntry existing = getValue(key);
+            if (immediateCommit) {
+                if (key != null) {
+                    localValues.remove(key);
+                    if (!cleared) {
+                        removedKeys.add(key);
+                    }
+                }
+                applyImmediateMutation(registry -> ((IForgeRegistryModifiable) registry).remove(key));
+                return existing;
+            }
             if (key != null) {
                 localValues.remove(key);
                 if (!cleared) {
@@ -1378,6 +1708,20 @@ public final class RegistryEventParallelDispatcher {
             if (immediateCommit) {
                 commitToBacking();
             }
+        }
+
+        private void applyImmediateMutation(RegistryMutation mutation) {
+            if (immediateCoordinator != null && !immediateCoordinator.isTurn(listenerIndex)) {
+                mutations.add(mutation);
+                return;
+            }
+            BYPASS_WORKER_QUEUE.set(Boolean.TRUE);
+            try {
+                mutation.apply(backing);
+            } finally {
+                BYPASS_WORKER_QUEUE.remove();
+            }
+            immediateMutations++;
         }
 
         private void commitToBacking() {

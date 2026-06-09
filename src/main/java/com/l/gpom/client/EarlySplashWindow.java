@@ -19,6 +19,7 @@ import java.awt.Graphics2D;
 import java.awt.GraphicsEnvironment;
 import java.awt.RenderingHints;
 import java.awt.event.ActionListener;
+import java.awt.image.BufferedImage;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -26,6 +27,7 @@ public final class EarlySplashWindow {
     private static final Logger LOGGER = LogManager.getLogger("GPOM Early Splash");
     private static final int WIDTH = 854;
     private static final int HEIGHT = 480;
+    private static final int TIMER_REFRESH_MILLIS = 1000;
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static final AtomicBoolean UPDATE_QUEUED = new AtomicBoolean(false);
     private static final AtomicBoolean CLOSED = new AtomicBoolean(false);
@@ -72,27 +74,58 @@ public final class EarlySplashWindow {
         if (newStatus == null || newStatus.trim().isEmpty()) {
             return;
         }
-        status = newStatus.trim();
+        String trimmed = newStatus.trim();
+        if (trimmed.equals(status)) {
+            return;
+        }
+        status = trimmed;
         queueUpdate();
     }
 
     public static void setPhaseProgress(String newPhase, int done, int total) {
+        boolean changed = false;
         if (newPhase != null && !newPhase.trim().isEmpty()) {
-            status = newPhase.trim();
+            String trimmed = newPhase.trim();
+            if (!trimmed.equals(status)) {
+                status = trimmed;
+                changed = true;
+            }
         }
-        phaseDone = Math.max(0, done);
-        phaseTotal = Math.max(0, total);
-        queueUpdate();
+        int safeDone = Math.max(0, done);
+        int safeTotal = Math.max(0, total);
+        if (phaseDone != safeDone || phaseTotal != safeTotal) {
+            phaseDone = safeDone;
+            phaseTotal = safeTotal;
+            changed = true;
+        }
+        if (changed) {
+            queueUpdate();
+        }
     }
 
     public static void setBootProgress(String newStage, int done, int total) {
+        boolean changed = false;
         if (newStage != null && !newStage.trim().isEmpty()) {
-            bootStage = newStage.trim();
-            status = bootStage;
+            String trimmed = newStage.trim();
+            if (!trimmed.equals(bootStage)) {
+                bootStage = trimmed;
+                changed = true;
+            }
+            if (!trimmed.equals(status)) {
+                status = trimmed;
+                changed = true;
+            }
         }
-        bootDone = Math.max(0, done);
-        bootTotal = Math.max(0, total);
-        queueUpdate();
+        int safeDone = Math.max(0, done);
+        int safeTotal = Math.max(0, total);
+        if (bootDone != safeDone || bootTotal != safeTotal) {
+            bootDone = safeDone;
+            bootTotal = safeTotal;
+            changed = true;
+        }
+        if (changed) {
+            queueUpdate();
+        }
     }
 
     public static void close(String reason) {
@@ -133,7 +166,8 @@ public final class EarlySplashWindow {
             frame.setVisible(true);
 
             ActionListener repaint = event -> applySnapshot();
-            Timer timer = new Timer(100, repaint);
+            Timer timer = new Timer(TIMER_REFRESH_MILLIS, repaint);
+            timer.setInitialDelay(TIMER_REFRESH_MILLIS);
             timer.setCoalesce(true);
             timer.start();
 
@@ -245,6 +279,12 @@ public final class EarlySplashWindow {
         private static final Color BAR_BACKGROUND = new Color(56, 56, 56);
         private static final Color BAR_BORDER = new Color(118, 118, 118);
         private static final Color BAR_PRIMARY = new Color(184, 184, 184);
+        private static final Color FRAME_BORDER = new Color(255, 255, 255, 18);
+        private static final Font TITLE_FONT = new Font(Font.SANS_SERIF, Font.BOLD, 34);
+        private static final Font SUBTITLE_FONT = new Font(Font.SANS_SERIF, Font.PLAIN, 15);
+        private static final Font BODY_FONT = new Font(Font.SANS_SERIF, Font.PLAIN, 14);
+        private static final Font FOOTER_FONT = new Font(Font.MONOSPACED, Font.PLAIN, 12);
+        private BufferedImage background;
         private long elapsedSeconds;
         private int bootDoneSnapshot;
         private int bootTotalSnapshot;
@@ -253,6 +293,7 @@ public final class EarlySplashWindow {
             setPreferredSize(new Dimension(WIDTH, HEIGHT));
             setBackground(BACKGROUND_BOTTOM);
             setDoubleBuffered(true);
+            background = createBackground(WIDTH, HEIGHT);
         }
 
         private void update(long elapsedSeconds, int bootDoneSnapshot, int bootTotalSnapshot) {
@@ -277,27 +318,42 @@ public final class EarlySplashWindow {
         }
 
         private void paintBackground(Graphics2D g) {
+            int width = getWidth();
             int height = getHeight();
-            for (int y = 0; y < height; y++) {
-                float t = y / (float) Math.max(1, height - 1);
-                int red = (int) (BACKGROUND_TOP.getRed() * (1.0F - t) + BACKGROUND_BOTTOM.getRed() * t);
-                int green = (int) (BACKGROUND_TOP.getGreen() * (1.0F - t) + BACKGROUND_BOTTOM.getGreen() * t);
-                int blue = (int) (BACKGROUND_TOP.getBlue() * (1.0F - t) + BACKGROUND_BOTTOM.getBlue() * t);
-                g.setColor(new Color(red, green, blue));
-                g.drawLine(0, y, getWidth(), y);
+            if (background == null || background.getWidth() != width || background.getHeight() != height) {
+                background = createBackground(width, height);
             }
-            g.setColor(new Color(255, 255, 255, 18));
+            g.drawImage(background, 0, 0, null);
+            g.setColor(FRAME_BORDER);
             g.setStroke(new BasicStroke(1.0F));
-            g.drawRect(18, 18, getWidth() - 37, getHeight() - 37);
+            g.drawRect(18, 18, width - 37, height - 37);
+        }
+
+        private static BufferedImage createBackground(int width, int height) {
+            BufferedImage image = new BufferedImage(Math.max(1, width), Math.max(1, height), BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = image.createGraphics();
+            try {
+                for (int y = 0; y < height; y++) {
+                    float t = y / (float) Math.max(1, height - 1);
+                    int red = (int) (BACKGROUND_TOP.getRed() * (1.0F - t) + BACKGROUND_BOTTOM.getRed() * t);
+                    int green = (int) (BACKGROUND_TOP.getGreen() * (1.0F - t) + BACKGROUND_BOTTOM.getGreen() * t);
+                    int blue = (int) (BACKGROUND_TOP.getBlue() * (1.0F - t) + BACKGROUND_BOTTOM.getBlue() * t);
+                    g.setColor(new Color(red, green, blue));
+                    g.drawLine(0, y, width, y);
+                }
+            } finally {
+                g.dispose();
+            }
+            return image;
         }
 
         private void paintTitle(Graphics2D g) {
             g.setColor(TEXT);
-            g.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 34));
+            g.setFont(TITLE_FONT);
             drawCentered(g, "Minecraft Forge", 116);
 
             g.setColor(MUTED);
-            g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 15));
+            g.setFont(SUBTITLE_FONT);
             drawCentered(g, "General Purpose Optimization Mod", 145);
         }
 
@@ -309,14 +365,14 @@ public final class EarlySplashWindow {
 
             drawBar(g, x, y, barWidth, barHeight, progress(bootDoneSnapshot, bootTotalSnapshot), BAR_PRIMARY);
             g.setColor(TEXT);
-            g.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 14));
+            g.setFont(BODY_FONT);
             drawCentered(g, compact(bootStage, 78), y - 10);
             drawCentered(g, progressText("Bootstrap", bootDoneSnapshot, bootTotalSnapshot), y + 43);
         }
 
         private void paintFooter(Graphics2D g) {
             g.setColor(MUTED);
-            g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+            g.setFont(FOOTER_FONT);
             String footer = String.format(Locale.ROOT, "Starting %s  |  %ds elapsed", compact(packName, 48), elapsedSeconds);
             drawCentered(g, footer, getHeight() - 48);
         }

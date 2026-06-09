@@ -229,7 +229,10 @@ public final class ModularMachineryOptimizations {
         }
         for (File file : listed) {
             String name = file.getName();
-            if (file.isFile() && name.startsWith(prefix) && name.endsWith(suffix)) {
+            if (file.isFile()
+                    && name.startsWith(prefix)
+                    && name.endsWith(suffix)
+                    && !GpomCaches.cacheInvalidationDenied(file)) {
                 files.add(file);
             }
         }
@@ -241,6 +244,7 @@ public final class ModularMachineryOptimizations {
         }
         Files.walk(root.toPath())
                 .filter(Files::isRegularFile)
+                .filter(path -> !GpomCaches.cacheInvalidationDenied(path.toString()))
                 .forEach(path -> files.add(path.toFile()));
     }
 

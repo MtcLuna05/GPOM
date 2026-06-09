@@ -25,20 +25,29 @@ If neither is set, the build falls back to the common Flatpak PrismLauncher Meat
 ## Features
 
 - Threaded FML lifecycle phases: `FMLConstructionEvent`, `FMLPreInitializationEvent`, `FMLInitializationEvent`, `FMLPostInitializationEvent`, and `FMLLoadCompleteEvent` can be enabled independently.
+- Optional DAG scheduling for each FML phase, preserving declared mod ordering edges while allowing independent handlers to run concurrently.
 - Per-phase allowlists, denylists, worker counts, and diagnostic `continueOnModError` controls.
 - Construction safety fences around known Forge global-state mutations: classloader updates, network registration, proxy injection, automatic event-subscriber registration, config sync, and annotation processing.
+- Generic construction shortcuts for Forge annotation work, with per-mod fallbacks for sided proxies and automatic subscribers when a mod needs stock Forge behavior.
 - Registry serialization for threaded registry mutation paths, keeping Forge registry internals single-writer while lifecycle handlers run in parallel.
+- Experimental parallel registry-event dispatcher for selected Forge registries, with dependency gating, queued commits, proxy event registries, and per-registry/mod denylists.
 - Startup profiling for FML phases, per-mod timing, targeted probes, stack sampling, resource reloads, and high-cost HEI paths.
 - Exact-version mod optimizations for AoA3, EnderIO, Betweenlands, Railcraft/TechReborn probes, Thaumcraft, CraftTweaker, Thermal Expansion, Forestry, ExtraTrees, JER, and related startup sinks.
-- HEI startup optimizations, including item-stack cache, coarse parsed-recipe progress, synchronized exact-allowlist plugin threading, JER villager trade cache, Forestry Bottler cache, ExtraTrees Lumbermill cache, Thermal Expansion Transposer cache, and EnderIO Tank fast path.
+- CraftTweaker startup optimizations, including fast ZenRegister handling, optional parallel class loading, parallel script loading/batching, lazy item-list handling, and suppression of high-volume function-type stdout spam.
+- HEI startup optimizations, including item-stack cache, fast pre-init plugin discovery, synchronized exact-allowlist plugin threading with optional serial/threaded overlap, JER villager/loot caches, Forestry Bottler cache, ExtraTrees Lumbermill cache, Thermal Expansion Transposer cache, and EnderIO Tank fast path.
 - Optional early splash window before Minecraft creates its display.
 - Optional passive world-loading overlay for the blank/early `0%` singleplayer world-entry wait.
 - Local compressed runtime caches under the instance directory at `caches/gpom/<purpose>/`.
+- Cache invalidation denylist for jars that should not invalidate GPOM runtime caches while actively developed or non-content-bearing.
+- VintageFix/Unlimited Chisel Works/model-log spam suppression that keeps one concise GPOM line per noisy namespace instead of repeated stack traces.
+- Experimental Forge Multipart/AE2 compatibility switches. These are disabled by default because multipart world data can be destructive if a bridge is disabled after use.
 - Title-screen GPOM version display.
 
 ## Config File
 
 GPOM reads `config/gpom-early.properties` from the Minecraft instance directory. This loader runs before Forge's normal config system, so it intentionally uses a simple Java properties file.
+
+If a newer GPOM jar adds missing keys, the early config loader appends those keys with default values instead of silently using hidden defaults forever. Existing user-edited values are preserved.
 
 Basic rules:
 
@@ -59,6 +68,7 @@ fml.parallel.<phase>.workers=0
 fml.parallel.<phase>.allowlist=
 fml.parallel.<phase>.denylist=
 fml.parallel.<phase>.continueOnModError=false
+fml.parallel.<phase>.dag.enabled=false
 ```
 
 Valid phase names are:
@@ -82,6 +92,51 @@ fml.parallel.registrySerialization.enabled=true
 ```
 
 Construction is the most invasive phase because mod instances, proxies, classloader state, network holders, config classes, and automatic subscribers are created there. Broad construction threading should stay pack-profiled and denylist-driven.
+
+Construction annotation shortcuts can be disabled per mod when a mod requires stock Forge injection behavior:
+
+```properties
+gpom.construction.genericSidedProxies.denylist=thaumcraft
+gpom.construction.genericAutomaticSubscribers.denylist=thaumcraft
+```
+
+## Registry Event Parallelism
+
+The registry dispatcher is a separate experiment from lifecycle threading. It targets selected `RegistryEvent.Register` events and preserves Forge registry writes through queued or immediate commit paths.
+
+```properties
+gpom.registry.parallelRegisterEvents.enabled=false
+gpom.registry.parallelRegisterEvents.registries=minecraft:recipes,minecraft:blocks,minecraft:items,minecraft:entities,ebwizardry:spells
+gpom.registry.parallelRegisterEvents.workers=0
+gpom.registry.parallelRegisterEvents.queuedCommit=true
+gpom.registry.parallelRegisterEvents.proxyEventRegistry=true
+gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist=
+gpom.registry.parallelRegisterEvents.immediateCommitRegistries=minecraft:items,minecraft:entities
+gpom.registry.parallelRegisterEvents.proxyImmediateRegistries=false
+gpom.registry.parallelRegisterEvents.orderedWaveRegistries=minecraft:items
+gpom.registry.parallelRegisterEvents.dependencyGating=true
+gpom.registry.parallelRegisterEvents.allowlist=*
+gpom.registry.parallelRegisterEvents.denylist=
+```
+
+Registry parallelism is invasive. Use per-mod/per-registry denylist entries such as `modid@minecraft:items` for handlers that require exact vanilla ordering or mutate unguarded side state.
+
+## CraftTweaker Options
+
+```properties
+gpom.crafttweaker.fastZenRegister=false
+gpom.crafttweaker.fastZenRegister.parallelClassLoad=false
+gpom.crafttweaker.fastZenRegister.classLoadWorkers=0
+gpom.crafttweaker.parallelScriptParsing.enabled=false
+gpom.crafttweaker.parallelScriptParsing.workers=0
+gpom.crafttweaker.parallelScriptParsing.allowlist=*
+gpom.crafttweaker.parallelScriptParsing.denylist=
+gpom.crafttweaker.parallelScriptParsing.offThreadZenParse=false
+gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts=false
+gpom.crafttweaker.suppressFunctionTypeStdout=true
+```
+
+The script parser preserves CraftTweaker ordering by respecting script priority and alphabetical ordering. Keep `offThreadZenParse=false` unless a pack has been specifically validated with off-thread Zen parsing.
 
 ## Loading Screens
 
@@ -112,19 +167,23 @@ gpom.hei.recipeProgressBar.stepSize=256
 HEI plugin threading:
 
 ```properties
+gpom.hei.fastPreInitPluginDiscovery.enabled=false
+gpom.hei.fastPreInitPluginDiscovery.workers=0
 gpom.hei.parallelPluginRegistration.enabled=false
 gpom.hei.parallelPluginRegistration.workers=0
+gpom.hei.parallelPluginRegistration.overlapSerial=false
 gpom.hei.parallelPluginRegistration.allowlist=
 gpom.hei.parallelPluginRegistration.denylist=
 ```
 
-Plugin threading is exact-allowlist territory. GPOM synchronizes targeted HEI registry surfaces, but plugins can still touch unrelated shared state. Keep the allowlist narrow and deny any plugin that crashes, corrupts outputs, or causes missing recipes.
+Plugin threading is exact-allowlist territory. GPOM synchronizes targeted HEI registry surfaces, but plugins can still touch unrelated shared state. Keep the allowlist narrow and deny any plugin that crashes, corrupts outputs, or causes missing recipes. `overlapSerial=true` submits allowlisted threaded plugins first, runs serial plugins on the client thread while workers are active, then joins worker results before HEI recipe-registry construction.
 
 Targeted HEI caches and fast paths:
 
 ```properties
 gpom.hei.jerVillagerTradeCache.enabled=true
 gpom.hei.jerVillagerTradeCache.samples=32
+gpom.hei.jerLootDropCache.enabled=true
 gpom.hei.fastForestryBottler.enabled=true
 gpom.hei.forestryBottlerRecipeCache.enabled=true
 gpom.hei.fastEnderIOTank.enabled=true
@@ -134,6 +193,38 @@ gpom.hei.thermalTransposerContainerCache.enabled=true
 ```
 
 Caches are compressed for load speed and storage size, not security. GPOM validates cache signatures and falls back to original mod behavior when versions, registries, recipe signatures, or cache contents do not match.
+
+Cache invalidation can ignore actively developed non-content jars:
+
+```properties
+gpom.cacheInvalidation.denylist=ausm,gpom
+```
+
+This should only contain mods that do not register content relevant to the cache being protected.
+
+## Log Suppression
+
+```properties
+gpom.vintageFix.suppressUcwModelErrorSpam=true
+gpom.ucw.suppressTextureStitchStdout=true
+gpom.crafttweaker.suppressFunctionTypeStdout=true
+```
+
+These switches remove known high-volume startup spam while leaving one GPOM summary line for suppressed VintageFix model/texture namespaces.
+
+## Multipart Compatibility
+
+```properties
+gpom.multipartCompat.enabled=false
+gpom.multipartCompat.ae2.enabled=false
+gpom.multipartCompat.ae2.registerPart=false
+gpom.multipartCompat.ae2.placementConverter.enabled=false
+gpom.multipartCompat.ae2.sidePartPlacement.enabled=false
+gpom.multipartCompat.ae2.blockConverter.enabled=false
+gpom.multipartCompat.ae2.disabledWarning.enabled=true
+```
+
+The AE2/Forge Multipart bridge is experimental and must remain off for normal play profiles unless a test world is dedicated to that feature. Disabling the bridge after placing bridged parts can make existing multipart data unsafe, so GPOM can warn when the feature is off.
 
 ## Safety Model
 

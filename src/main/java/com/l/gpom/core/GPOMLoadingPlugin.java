@@ -1,8 +1,11 @@
 package com.l.gpom.core;
 
 import com.l.gpom.client.EarlySplashWindow;
+import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.ForgeEventSubscriptionTransformerOptimizations;
 import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.launch.MixinBootstrap;
 import org.spongepowered.asm.mixin.Mixins;
@@ -12,21 +15,33 @@ import java.util.Map;
 @IFMLLoadingPlugin.Name("General Purpose Optimization Mod Core")
 @IFMLLoadingPlugin.MCVersion("1.12.2")
 public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
+    private static final Logger LOGGER = LogManager.getLogger("General Purpose Optimization Mod");
+
     static {
         if (System.getProperty("gpom.bootStartNanos") == null) {
             System.setProperty("gpom.bootStartNanos", Long.toString(System.nanoTime()));
         }
+        markBoot("GPOM core plugin static init entered");
+        long startedAt = System.nanoTime();
         EarlySplashWindow.startIfEnabled();
+        markBootDuration("EarlySplashWindow.startIfEnabled", startedAt);
         EarlySplashWindow.setBootProgress("GPOM core plugin", 1, 4);
+        startedAt = System.nanoTime();
         MixinBootstrap.init();
+        markBootDuration("MixinBootstrap.init", startedAt);
         EarlySplashWindow.setBootProgress("Mixin bootstrap", 2, 4);
+        startedAt = System.nanoTime();
         Mixins.addConfiguration("gpom.mod.mixin.json");
+        markBootDuration("Mixins.addConfiguration(gpom.mod.mixin.json)", startedAt);
         EarlySplashWindow.setBootProgress("GPOM mixins registered", 3, 4);
+        startedAt = System.nanoTime();
         preloadRuntimeHelpers();
+        markBootDuration("GPOM preloadRuntimeHelpers", startedAt);
     }
 
     @Override
     public @Nullable String[] getASMTransformerClass() {
+        markBoot("GPOM getASMTransformerClass entered");
         return new String[] {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
                 "com.l.gpom.core.Ae2MultipartGridHostTransformer",
@@ -63,7 +78,9 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
 
     @Override
     public void injectData(Map<String, Object> data) {
+        long startedAt = System.nanoTime();
         ForgeEventSubscriptionTransformerOptimizations.install();
+        markBootDuration("GPOM injectData/install subscription optimizer", startedAt);
     }
 
     @Override
@@ -80,5 +97,32 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
             Class.forName(className, true, GPOMLoadingPlugin.class.getClassLoader());
         } catch (Throwable ignored) {
         }
+    }
+
+    private static void markBootDuration(String label, long startedAt) {
+        markBoot(label + " completed in " + formatMillis(System.nanoTime() - startedAt) + " ms");
+    }
+
+    private static void markBoot(String label) {
+        if (!GpomEarlyConfig.startupProfilerBootLogsEnabled()) {
+            return;
+        }
+        LOGGER.info(
+                "[StartupProfiler] [Boot] {} at {} ms since GPOM core init",
+                label,
+                formatMillis(System.nanoTime() - bootStartNanos())
+        );
+    }
+
+    private static long bootStartNanos() {
+        try {
+            return Long.parseLong(System.getProperty("gpom.bootStartNanos", Long.toString(System.nanoTime())));
+        } catch (NumberFormatException ignored) {
+            return System.nanoTime();
+        }
+    }
+
+    private static String formatMillis(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.3f", nanos / 1_000_000.0D);
     }
 }

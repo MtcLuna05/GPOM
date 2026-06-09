@@ -14,6 +14,7 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -55,7 +56,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.init.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.init.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft,topaddons,thaumicaugmentation,smoothfont");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "crafttweaker,cofhcore,cyclopscore,integrateddynamics,integrateddynamicscompat,integratednbt,integratedtunnels,integratedtunnelscompat,journeymap,thebetweenlands,iceandfire,scannable,randomthings,nuclearcraft,topaddons,thaumicaugmentation,smoothfont");
         DEFAULTS.setProperty("fml.parallel.postInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "");
@@ -66,29 +67,35 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.clientLifecycleOpenGlScan.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.includeRelatedMods", "true");
+        DEFAULTS.setProperty("gpom.construction.genericSidedProxies.denylist", "thaumcraft");
+        DEFAULTS.setProperty("gpom.construction.genericAutomaticSubscribers.denylist", "thaumcraft");
         DEFAULTS.setProperty("gpom.logging.enabled", "true");
-        DEFAULTS.setProperty("gpom.logging.fmlScheduler.enabled", "true");
-        DEFAULTS.setProperty("gpom.logging.optimizationInfo.enabled", "true");
-        DEFAULTS.setProperty("gpom.logging.cacheInfo.enabled", "true");
-        DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.enabled", "true");
+        DEFAULTS.setProperty("gpom.logging.fmlScheduler.enabled", "false");
+        DEFAULTS.setProperty("gpom.logging.optimizationInfo.enabled", "false");
+        DEFAULTS.setProperty("gpom.logging.cacheInfo.enabled", "false");
+        DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.queueSize", "8192");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.boot.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseLifecycle.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.modDetails.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseSummary.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseDigest.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.memoryDetails.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.probes.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.probeSummary.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.wallDiagnostics.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.stackSamples.enabled", "true");
-        DEFAULTS.setProperty("gpom.startupProfiler.logs.resourceLoadOrder.enabled", "true");
+        DEFAULTS.setProperty("gpom.vintageFix.suppressUcwModelErrorSpam", "true");
+        DEFAULTS.setProperty("gpom.cacheInvalidation.denylist", "ausm,gpom");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.boot.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseLifecycle.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.modDetails.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseSummary.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseDigest.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.memoryDetails.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.probes.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.probeSummary.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.wallDiagnostics.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.stackSamples.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.resourceLoadOrder.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.nonFmlGaps.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.logs.constructCriticalPath.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.preInitCriticalPath.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled", "false");
-        DEFAULTS.setProperty("gpom.startupProfiler.probeLogs.enabled", "true");
+        DEFAULTS.setProperty("gpom.startupProfiler.probeLogs.enabled", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.probeHighVolumeEventBusPosts", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.topCount", "40");
         DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressBars", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressSteps", "96");
@@ -138,6 +145,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitAllowlist", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitPrefixes", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeClasses", "false");
+        DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeAllowlist", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.explicitClasses", "");
         DEFAULTS.setProperty("gpom.gendustryConfigCache", "true");
         DEFAULTS.setProperty("gpom.gendustryCallProfiler", "false");
@@ -145,31 +153,47 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.erebus.deferOreConfigs", "true");
         DEFAULTS.setProperty("gpom.enderio.fastSpawnerEntityValidation", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister.parallelClassLoad", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister.classLoadWorkers", "0");
+        DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister.deepProbes", "false");
         DEFAULTS.setProperty("gpom.crafttweaker.lazyItemList", "true");
+        DEFAULTS.setProperty("gpom.crafttweaker.suppressFunctionTypeStdout", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.enabled", "false");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.workers", "0");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.allowlist", "*");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.denylist", "");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.offThreadZenParse", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs", "true");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts", "false");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.deepProbes", "false");
         DEFAULTS.setProperty("gpom.nuclearcraft.fastManufactoryMetalRecipes", "false");
         DEFAULTS.setProperty("gpom.nuclearcraft.cacheManufactoryLogCraftingResults", "true");
         DEFAULTS.setProperty("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback", "false");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.enabled", "false");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:entities,ebwizardry:spells");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:items,minecraft:entities,ebwizardry:spells");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.workers", "0");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.queuedCommit", "true");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "minecraft:entities");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistry", "true");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist", "moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "minecraft:items,minecraft:entities");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyImmediateRegistries", "false");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.orderedWaveRegistries", "minecraft:items");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis", "5000");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,natura@minecraft:blocks,natura@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:recipes");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,actuallybaubles@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,industrialforegoing@minecraft:items,mysticalagradditions@minecraft:items,mysticalagriculture@minecraft:items,natura@minecraft:blocks,natura@minecraft:items,plustic@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:recipes");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
-        DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "true");
-        DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "true");
+        DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "false");
+        DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "false");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.recipeProgressBar.stepSize", "256");
         DEFAULTS.setProperty("gpom.hei.searchWorkers", "0");
+        DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false");
+        DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.workers", "0");
+        DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.enabled", "false");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.workers", "0");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.overlapSerial", "false");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.allowlist", "");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.denylist", "");
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.enabled", "true");
@@ -280,6 +304,14 @@ public final class GpomEarlyConfig {
         return booleanValue("fml.parallel.autoQuarantineGlErrors.includeRelatedMods");
     }
 
+    public static Set<String> constructionGenericSidedProxiesDenylist() {
+        return setValue("gpom.construction.genericSidedProxies.denylist");
+    }
+
+    public static Set<String> constructionGenericAutomaticSubscribersDenylist() {
+        return setValue("gpom.construction.genericAutomaticSubscribers.denylist");
+    }
+
     public static Set<String> parallelInitAllowlist() {
         return setValue("fml.parallel.init.allowlist");
     }
@@ -335,11 +367,15 @@ public final class GpomEarlyConfig {
             return;
         }
 
+        Properties loaded = new Properties();
         try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file))) {
-            VALUES.load(input);
+            loaded.load(input);
+            VALUES.putAll(loaded);
         } catch (IOException exception) {
             GPOM.LOGGER.warn("[GPOM Config] Failed to load {}; using defaults", file, exception);
+            return;
         }
+        appendMissingDefaults(file, loaded);
     }
 
     private static void ensureDefaultFile(File file) {
@@ -360,6 +396,35 @@ public final class GpomEarlyConfig {
             writeDefaultFile(writer);
         } catch (IOException exception) {
             GPOM.LOGGER.warn("[GPOM Config] Failed to write default {}", file, exception);
+        }
+    }
+
+    private static void appendMissingDefaults(File file, Properties loaded) {
+        List<String> missing = new ArrayList<>();
+        for (String key : DEFAULTS.stringPropertyNames()) {
+            if (!loaded.containsKey(key)) {
+                missing.add(key);
+            }
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+        Collections.sort(missing);
+
+        try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(
+                new BufferedOutputStream(new FileOutputStream(file, true)),
+                StandardCharsets.UTF_8
+        ))) {
+            writer.println();
+            writeComment(writer, "== Added Defaults ==");
+            writeComment(writer, "GPOM appended these keys because this build defines options missing from the existing file.");
+            for (String key : missing) {
+                writeProperty(writer, key);
+            }
+            writer.println();
+            GPOM.LOGGER.info("[GPOM Config] Added {} missing default option(s) to {}", missing.size(), file);
+        } catch (IOException exception) {
+            GPOM.LOGGER.warn("[GPOM Config] Failed to append missing defaults to {}", file, exception);
         }
     }
 
@@ -416,6 +481,10 @@ public final class GpomEarlyConfig {
                 "fml.parallel.autoQuarantineGlErrors.enabled",
                 "fml.parallel.autoQuarantineGlErrors.includeRelatedMods"
         );
+        writeSection(writer, "Construction Shortcuts", "Fine-grained controls for GPOM's Forge construction shortcuts. Denied mods fall back to Forge's original behavior for the named shortcut only.",
+                "gpom.construction.genericSidedProxies.denylist",
+                "gpom.construction.genericAutomaticSubscribers.denylist"
+        );
         writeSection(writer, "GPOM Logging", "Controls GPOM's own logger and high-volume categories. Keep the root logger enabled when diagnostics such as world lifecycle snapshots are needed.",
                 "gpom.logging.enabled",
                 "gpom.logging.fmlScheduler.enabled",
@@ -423,6 +492,9 @@ public final class GpomEarlyConfig {
                 "gpom.logging.cacheInfo.enabled",
                 "gpom.logging.asyncProbeLogs.enabled",
                 "gpom.logging.asyncProbeLogs.queueSize"
+        );
+        writeSection(writer, "Cache Invalidation", "Mod ids, jar names, or file stems ignored by GPOM cache input signatures. Use this for local no-registry dev mods that change often but do not affect cached data.",
+                "gpom.cacheInvalidation.denylist"
         );
         writeSection(writer, "Startup Profiler Logs", "Controls how much startup timing data GPOM emits. Disabling logs does not disable the underlying optimized code paths.",
                 "gpom.startupProfiler.logs.enabled",
@@ -438,10 +510,12 @@ public final class GpomEarlyConfig {
                 "gpom.startupProfiler.logs.stackSamples.enabled",
                 "gpom.startupProfiler.logs.resourceLoadOrder.enabled",
                 "gpom.startupProfiler.logs.nonFmlGaps.enabled",
+                "gpom.startupProfiler.logs.constructCriticalPath.enabled",
                 "gpom.startupProfiler.logs.preInitCriticalPath.enabled",
                 "gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled",
                 "gpom.startupProfiler.logs.postPreInitProbeSummary.enabled",
                 "gpom.startupProfiler.probeLogs.enabled",
+                "gpom.startupProfiler.probeHighVolumeEventBusPosts",
                 "gpom.startupProfiler.topCount",
                 "gpom.startupProfiler.postPreInitProgressBars",
                 "gpom.startupProfiler.postPreInitProgressSteps"
@@ -495,12 +569,19 @@ public final class GpomEarlyConfig {
                 "gpom.erebus.deferOreConfigs",
                 "gpom.enderio.fastSpawnerEntityValidation",
                 "gpom.crafttweaker.fastZenRegister",
+                "gpom.crafttweaker.fastZenRegister.parallelClassLoad",
+                "gpom.crafttweaker.fastZenRegister.classLoadWorkers",
+                "gpom.crafttweaker.fastZenRegister.deepProbes",
                 "gpom.crafttweaker.lazyItemList",
+                "gpom.crafttweaker.suppressFunctionTypeStdout",
                 "gpom.crafttweaker.parallelScriptParsing.enabled",
                 "gpom.crafttweaker.parallelScriptParsing.workers",
                 "gpom.crafttweaker.parallelScriptParsing.allowlist",
                 "gpom.crafttweaker.parallelScriptParsing.denylist",
                 "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse",
+                "gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs",
+                "gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts",
+                "gpom.crafttweaker.parallelScriptParsing.deepProbes",
                 "gpom.nuclearcraft.fastManufactoryMetalRecipes",
                 "gpom.nuclearcraft.cacheManufactoryLogCraftingResults",
                 "gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback",
@@ -508,7 +589,12 @@ public final class GpomEarlyConfig {
                 "gpom.registry.parallelRegisterEvents.registries",
                 "gpom.registry.parallelRegisterEvents.workers",
                 "gpom.registry.parallelRegisterEvents.queuedCommit",
+                "gpom.registry.parallelRegisterEvents.proxyEventRegistry",
+                "gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist",
                 "gpom.registry.parallelRegisterEvents.immediateCommitRegistries",
+                "gpom.registry.parallelRegisterEvents.proxyImmediateRegistries",
+                "gpom.registry.parallelRegisterEvents.orderedWaveRegistries",
+                "gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis",
                 "gpom.registry.parallelRegisterEvents.dependencyGating",
                 "gpom.registry.parallelRegisterEvents.allowlist",
                 "gpom.registry.parallelRegisterEvents.denylist",
@@ -531,6 +617,7 @@ public final class GpomEarlyConfig {
                 "gpom.preInitClassPrewarm.noInitAllowlist",
                 "gpom.preInitClassPrewarm.noInitPrefixes",
                 "gpom.preInitClassPrewarm.initializeClasses",
+                "gpom.preInitClassPrewarm.initializeAllowlist",
                 "gpom.preInitClassPrewarm.explicitClasses"
         );
         writeSection(writer, "HEI Progress And Search", "HEI client startup helpers that keep recipe ingestion visible and replace the single search worker with a bounded pool.",
@@ -539,8 +626,12 @@ public final class GpomEarlyConfig {
                 "gpom.hei.searchWorkers"
         );
         writeSection(writer, "HEI Plugin Parallelism", "Experimental worker dispatch for allowlisted HEI plugin registration calls. Empty allowlist means no plugin registration is threaded.",
+                "gpom.hei.fastPreInitPluginDiscovery.enabled",
+                "gpom.hei.fastPreInitPluginDiscovery.workers",
+                "gpom.hei.fastPreInitPluginDiscovery.deepProbes",
                 "gpom.hei.parallelPluginRegistration.enabled",
                 "gpom.hei.parallelPluginRegistration.workers",
+                "gpom.hei.parallelPluginRegistration.overlapSerial",
                 "gpom.hei.parallelPluginRegistration.allowlist",
                 "gpom.hei.parallelPluginRegistration.denylist"
         );
@@ -647,6 +738,10 @@ public final class GpomEarlyConfig {
                 return "Diagnostic helper that appends catchable OpenGL thread offenders to the relevant phase denylist for the next launch.";
             case "fml.parallel.autoQuarantineGlErrors.includeRelatedMods":
                 return "When auto-quarantining, also deny likely dependent/related mods so the next launch moves the whole cluster back to main thread.";
+            case "gpom.construction.genericSidedProxies.denylist":
+                return "Comma-separated mod ids that must use Forge's original sided-proxy injection instead of GPOM's generic proxy shortcut.";
+            case "gpom.construction.genericAutomaticSubscribers.denylist":
+                return "Comma-separated mod ids that must use Forge's original AutomaticEventSubscriber injection instead of GPOM's generic/lazy subscriber shortcut.";
             case "gpom.logging.enabled":
                 return "Master switch for GPOM's own logger. If false, GPOM diagnostics including WorldLifecycle lines are suppressed.";
             case "gpom.logging.fmlScheduler.enabled":
@@ -659,6 +754,10 @@ public final class GpomEarlyConfig {
                 return "Moves high-volume GPOM probe/profiler log writes onto a bounded daemon thread so console/file IO does not stall gameplay.";
             case "gpom.logging.asyncProbeLogs.queueSize":
                 return "Maximum queued GPOM probe log lines before excess probe logs are dropped instead of blocking the caller.";
+            case "gpom.vintageFix.suppressUcwModelErrorSpam":
+                return "Suppresses repeated VintageFix model retrieval stack traces after replacing them with one short GPOM notice per failing model namespace.";
+            case "gpom.cacheInvalidation.denylist":
+                return "Comma-separated mod ids, jar names, or file stems excluded from GPOM cache input signatures; default ignores local AUSM dev jar churn.";
             case "gpom.startupProfiler.logs.enabled":
                 return "Master switch for startup profiler log output. Timings may still be collected for UI or summaries.";
             case "gpom.startupProfiler.logs.boot.enabled":
@@ -685,6 +784,8 @@ public final class GpomEarlyConfig {
                 return "Logs resource/model load-order diagnostics used to locate client-side loading stalls.";
             case "gpom.startupProfiler.logs.nonFmlGaps.enabled":
                 return "Logs material wall-clock gaps between Forge lifecycle events, even when raw startup profiler probes are disabled.";
+            case "gpom.startupProfiler.logs.constructCriticalPath.enabled":
+                return "Logs a compact Construction DAG critical-path breakdown, even when scheduler chatter and raw probes are disabled.";
             case "gpom.startupProfiler.logs.preInitCriticalPath.enabled":
                 return "Logs a compact PreInitialization DAG critical-path breakdown, even when scheduler chatter and raw probes are disabled.";
             case "gpom.startupProfiler.logs.loadCompleteCriticalPath.enabled":
@@ -693,6 +794,8 @@ public final class GpomEarlyConfig {
                 return "Records and logs compact POST_PREINIT_TRANSITION probe summaries without enabling raw probe lines or broad startup profiler output.";
             case "gpom.startupProfiler.probeLogs.enabled":
                 return "Compatibility alias for older configs; false also disables raw [Probe] startup lines.";
+            case "gpom.startupProfiler.probeHighVolumeEventBusPosts":
+                return "When true, records per-post probe totals for very high-volume EventBus events such as VintageFix model bake and CTM texture collection; keep false unless investigating those events directly.";
             case "gpom.startupProfiler.topCount":
                 return "Number of top mods/probes included in startup profiler summaries.";
             case "gpom.startupProfiler.postPreInitProgressBars":
@@ -790,7 +893,9 @@ public final class GpomEarlyConfig {
             case "gpom.preInitClassPrewarm.noInitPrefixes":
                 return "Extra no-static-init prefixes, formatted modid:internal/prefix|other/prefix;modid2:prefix.";
             case "gpom.preInitClassPrewarm.initializeClasses":
-                return "Allows static initializers during explicit class prewarm. Risky; keep false unless testing a precise class list.";
+                return "Allows static initializers during scanned class prewarm for every allowlisted mod. Risky; prefer gpom.preInitClassPrewarm.initializeAllowlist for targeted testing.";
+            case "gpom.preInitClassPrewarm.initializeAllowlist":
+                return "Comma-separated mod ids whose scanned prewarm classes may run static initializers. Overrides the safe no-init bucket only for listed mods.";
             case "gpom.preInitClassPrewarm.explicitClasses":
                 return "Explicit class names to prewarm, formatted modid:pkg.Class|other.Class;modid2:pkg.Class.";
             case "gpom.gendustryConfigCache":
@@ -805,8 +910,16 @@ public final class GpomEarlyConfig {
                 return "Caches EnderIO powered-spawner XML entity validation during core recipe loading.";
             case "gpom.crafttweaker.fastZenRegister":
                 return "Uses ASMData to register CraftTweaker ZenRegister classes without reflective annotation scans.";
+            case "gpom.crafttweaker.fastZenRegister.parallelClassLoad":
+                return "Defines CraftTweaker ZenRegister classes on bounded worker threads, then performs all CraftTweaker global registry writes serially in original order.";
+            case "gpom.crafttweaker.fastZenRegister.classLoadWorkers":
+                return "Worker count for CraftTweaker fast ZenRegister parallel class loading. 0 lets GPOM choose a conservative bounded value.";
+            case "gpom.crafttweaker.fastZenRegister.deepProbes":
+                return "Adds aggregate timing around CraftTweaker ZenRegister class load, mod filters, and global registry writes.";
             case "gpom.crafttweaker.lazyItemList":
                 return "Defers CraftTweaker's regex item-list build until the regex item APIs are actually used.";
+            case "gpom.crafttweaker.suppressFunctionTypeStdout":
+                return "Removes an unconditional ZenScript function-type System.out.println that can spam ContentTweaker-heavy packs during script compile.";
             case "gpom.crafttweaker.parallelScriptParsing.enabled":
                 return "Enables CraftTweaker script-loading acceleration inside each priority bucket while preserving sorted compile and execution order.";
             case "gpom.crafttweaker.parallelScriptParsing.workers":
@@ -817,6 +930,12 @@ public final class GpomEarlyConfig {
                 return "Comma-separated CraftTweaker script effective names, group names, or file names forced back to stock serial source-open and parse behavior.";
             case "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse":
                 return "If true, runs ZenParsedFile parsing on workers. If false, only script source reads are off-thread and Zen parsing remains on the main thread.";
+            case "gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs":
+                return "Suppresses CraftTweaker global debug-mode ZenScript compile chatter while preserving per-script debug and normal error logging.";
+            case "gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts":
+                return "Compiles and executes accelerated scripts once per allowed same-priority chunk while preserving script order; denylisted or execution-blocked scripts remain serial.";
+            case "gpom.crafttweaker.parallelScriptParsing.deepProbes":
+                return "Adds aggregated timing probes around CraftTweaker script source read, parse, compile, module creation, execution, and script load events.";
             case "gpom.nuclearcraft.fastManufactoryMetalRecipes":
                 return "Uses a cached ore-name set for NuclearCraft Manufactory metal recipe registration with stock fallback.";
             case "gpom.nuclearcraft.cacheManufactoryLogCraftingResults":
@@ -831,8 +950,18 @@ public final class GpomEarlyConfig {
                 return "Worker count for parallel registry listener dispatch. 0 lets GPOM choose a bounded automatic value.";
             case "gpom.registry.parallelRegisterEvents.queuedCommit":
                 return "Uses per-listener registry proxies and commits queued mutations back to Forge in original listener order.";
+            case "gpom.registry.parallelRegisterEvents.proxyEventRegistry":
+                return "Passes GPOM's queueing registry proxy to non-immediate registry worker listeners so normal event.getRegistry().register calls avoid ForgeRegistry's synchronized backing lock.";
+            case "gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist":
+                return "Comma-separated mod ids or modid@registry entries that must receive the real Forge registry object even when proxyEventRegistry is enabled; registrations still queue through the coremod hook.";
             case "gpom.registry.parallelRegisterEvents.immediateCommitRegistries":
-                return "Comma-separated registry names whose worker-thread registrations are serialized into Forge immediately instead of queued until the listener batch commits.";
+                return "Comma-separated registry names whose worker-thread registrations are serialized into Forge immediately instead of queued until the listener batch commits; keep narrow because this reduces parallelism.";
+            case "gpom.registry.parallelRegisterEvents.proxyImmediateRegistries":
+                return "Passes GPOM's ordered immediate-commit registry proxy to immediate registries too, preserving visibility while avoiding direct concurrent Forge registry mutation.";
+            case "gpom.registry.parallelRegisterEvents.orderedWaveRegistries":
+                return "Comma-separated registry names that must keep conservative adjacent dependency waves; remove a registry here only when testing more aggressive topological scheduling.";
+            case "gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis":
+                return "Logs ordered immediate-commit coordinator state when a worker waits longer than this many milliseconds; 0 disables this diagnostic.";
             case "gpom.registry.parallelRegisterEvents.dependencyGating":
                 return "Splits registry worker batches at declared mod dependency edges so dependent listeners wait for required earlier listeners.";
             case "gpom.registry.parallelRegisterEvents.allowlist":
@@ -851,10 +980,18 @@ public final class GpomEarlyConfig {
                 return "Number of HEI recipe registrations between progress updates.";
             case "gpom.hei.searchWorkers":
                 return "Worker count for HEI search indexing. 0 lets GPOM choose an automatic bounded pool size.";
+            case "gpom.hei.fastPreInitPluginDiscovery.enabled":
+                return "Predefines JEI plugin classes on bounded worker threads during HEI PreInit, then constructs plugin instances serially in JEI's original order.";
+            case "gpom.hei.fastPreInitPluginDiscovery.workers":
+                return "Worker count for HEI PreInit plugin class loading. 0 lets GPOM choose a conservative bounded value.";
+            case "gpom.hei.fastPreInitPluginDiscovery.deepProbes":
+                return "Logs aggregate timing for HEI PreInit plugin annotation scan, class loading, and plugin construction.";
             case "gpom.hei.parallelPluginRegistration.enabled":
                 return "Enables experimental worker dispatch for HEI IModPlugin.register calls that match the allowlist.";
             case "gpom.hei.parallelPluginRegistration.workers":
                 return "Worker count for HEI plugin registration. 0 lets GPOM choose an automatic bounded pool size.";
+            case "gpom.hei.parallelPluginRegistration.overlapSerial":
+                return "Starts allowlisted threaded HEI plugins before running non-allowlisted plugins on the client thread, letting tested worker work overlap conservative serial work.";
             case "gpom.hei.parallelPluginRegistration.allowlist":
                 return "Comma-separated HEI plugin class names allowed to register off-thread; '*' allows all before denylist filtering.";
             case "gpom.hei.parallelPluginRegistration.denylist":
@@ -883,9 +1020,15 @@ public final class GpomEarlyConfig {
     }
 
     private static void applyEarlySystemProperties() {
+        copySystemPropertyIfAbsent("gpom.cacheInvalidation.denylist");
         copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.enabled");
         copySystemPropertyIfAbsent("gpom.logging.asyncProbeLogs.queueSize");
+        copySystemPropertyIfAbsent("gpom.construction.genericSidedProxies.denylist");
+        copySystemPropertyIfAbsent("gpom.construction.genericAutomaticSubscribers.denylist");
+        copySystemPropertyIfAbsent("gpom.vintageFix.suppressUcwModelErrorSpam");
+        copySystemPropertyIfAbsent("gpom.startupProfiler.logs.constructCriticalPath.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
+        copySystemPropertyIfAbsent("gpom.startupProfiler.probeHighVolumeEventBusPosts");
         copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressBars");
         copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressSteps");
         copySystemPropertyIfAbsent("gpom.railcraftLazyItemConditions");
@@ -916,6 +1059,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.preInitClassPrewarm.noInitAllowlist");
         copySystemPropertyIfAbsent("gpom.preInitClassPrewarm.noInitPrefixes");
         copySystemPropertyIfAbsent("gpom.preInitClassPrewarm.initializeClasses");
+        copySystemPropertyIfAbsent("gpom.preInitClassPrewarm.initializeAllowlist");
         copySystemPropertyIfAbsent("gpom.preInitClassPrewarm.explicitClasses");
         copySystemPropertyIfAbsent("gpom.gendustryConfigCache");
         copySystemPropertyIfAbsent("gpom.gendustryCallProfiler");
@@ -923,12 +1067,19 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.erebus.deferOreConfigs");
         copySystemPropertyIfAbsent("gpom.enderio.fastSpawnerEntityValidation");
         copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister.parallelClassLoad");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister.classLoadWorkers");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.fastZenRegister.deepProbes");
         copySystemPropertyIfAbsent("gpom.crafttweaker.lazyItemList");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.suppressFunctionTypeStdout");
         copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.enabled");
         copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.workers");
         copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.allowlist");
         copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.denylist");
         copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.offThreadZenParse");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts");
+        copySystemPropertyIfAbsent("gpom.crafttweaker.parallelScriptParsing.deepProbes");
         copySystemPropertyIfAbsent("gpom.nuclearcraft.fastManufactoryMetalRecipes");
         copySystemPropertyIfAbsent("gpom.nuclearcraft.cacheManufactoryLogCraftingResults");
         copySystemPropertyIfAbsent("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback");
@@ -936,13 +1087,21 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.registries");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.workers");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.queuedCommit");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.proxyEventRegistry");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.immediateCommitRegistries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.proxyImmediateRegistries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.orderedWaveRegistries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.dependencyGating");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.allowlist");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.denylist");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.deepDiagnostics");
         copySystemPropertyIfAbsent("gpom.preInitHighSinkCallProfiler");
         copySystemPropertyIfAbsent("gpom.postPreInitTopCallProfiler");
+        copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.workers");
+        copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.deepProbes");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
@@ -1007,6 +1166,10 @@ public final class GpomEarlyConfig {
         return gpomLoggingEnabled() && booleanValue("gpom.logging.cacheInfo.enabled");
     }
 
+    public static Set<String> cacheInvalidationDenylist() {
+        return setValue("gpom.cacheInvalidation.denylist");
+    }
+
     public static boolean asyncProbeLogsEnabled() {
         return gpomLoggingEnabled() && booleanValue("gpom.logging.asyncProbeLogs.enabled");
     }
@@ -1069,6 +1232,10 @@ public final class GpomEarlyConfig {
         return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.nonFmlGaps.enabled");
     }
 
+    public static boolean startupProfilerConstructCriticalPathLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.constructCriticalPath.enabled");
+    }
+
     public static boolean startupProfilerPreInitCriticalPathLogsEnabled() {
         return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.preInitCriticalPath.enabled");
     }
@@ -1079,6 +1246,10 @@ public final class GpomEarlyConfig {
 
     public static boolean startupProfilerPostPreInitProbeSummaryLogsEnabled() {
         return gpomLoggingEnabled() && booleanValue("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled");
+    }
+
+    public static boolean startupProfilerHighVolumeEventBusPostProbesEnabled() {
+        return booleanValue("gpom.startupProfiler.probeHighVolumeEventBusPosts");
     }
 
     public static boolean startupProfilerPostPreInitProgressBarsEnabled() {
@@ -1217,6 +1388,10 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.preInitClassPrewarm.initializeClasses");
     }
 
+    public static Set<String> preInitClassPrewarmInitializeAllowlist() {
+        return setValue("gpom.preInitClassPrewarm.initializeAllowlist");
+    }
+
     public static String preInitClassPrewarmExplicitClasses() {
         return stringValue("gpom.preInitClassPrewarm.explicitClasses", "");
     }
@@ -1239,6 +1414,10 @@ public final class GpomEarlyConfig {
 
     public static int heiParallelPluginRegistrationWorkers() {
         return intValue("gpom.hei.parallelPluginRegistration.workers", 0);
+    }
+
+    public static boolean heiParallelPluginRegistrationOverlapSerialEnabled() {
+        return booleanValue("gpom.hei.parallelPluginRegistration.overlapSerial");
     }
 
     public static Set<String> heiParallelPluginRegistrationAllowlist() {
@@ -1289,8 +1468,28 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.registry.parallelRegisterEvents.queuedCommit");
     }
 
+    public static boolean registryParallelRegisterEventsProxyEventRegistryEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.proxyEventRegistry");
+    }
+
+    public static Set<String> registryParallelRegisterEventsProxyEventRegistryDenylist() {
+        return setValue("gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist");
+    }
+
     public static Set<String> registryParallelRegisterEventsImmediateCommitRegistries() {
         return setValue("gpom.registry.parallelRegisterEvents.immediateCommitRegistries");
+    }
+
+    public static boolean registryParallelRegisterEventsProxyImmediateRegistriesEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.proxyImmediateRegistries");
+    }
+
+    public static Set<String> registryParallelRegisterEventsOrderedWaveRegistries() {
+        return setValue("gpom.registry.parallelRegisterEvents.orderedWaveRegistries");
+    }
+
+    public static int registryParallelRegisterEventsImmediateCommitWaitDiagnosticsMillis() {
+        return intValue("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis", 5000);
     }
 
     public static boolean registryParallelRegisterEventsDependencyGatingEnabled() {

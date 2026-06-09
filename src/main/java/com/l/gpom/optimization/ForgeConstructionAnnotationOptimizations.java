@@ -5,6 +5,7 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.SetMultimap;
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.FMLLog;
@@ -124,6 +125,10 @@ public final class ForgeConstructionAnnotationOptimizations {
         if (container == null || asmData == null || side == null || adapter == null) {
             return false;
         }
+        String modId = safeModId(container);
+        if (GpomEarlyConfig.constructionGenericSidedProxiesDenylist().contains(modId.toLowerCase())) {
+            return false;
+        }
 
         long startedAt = StartupProfiler.beginProbe();
         try {
@@ -204,6 +209,10 @@ public final class ForgeConstructionAnnotationOptimizations {
 
     public static boolean tryInjectAutomaticSubscribers(ModContainer mod, ASMDataTable asmData, Side side) {
         if (mod == null || asmData == null || side == null) {
+            return false;
+        }
+        String modId = safeModId(mod);
+        if (GpomEarlyConfig.constructionGenericAutomaticSubscribersDenylist().contains(modId.toLowerCase())) {
             return false;
         }
 

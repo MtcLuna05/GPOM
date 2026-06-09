@@ -1,7 +1,8 @@
 package com.l.gpom.mixin.fml;
 
-import com.l.gpom.profiling.StartupProfiler;
+import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.EventBusRegistrationOptimizations;
+import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.EventBus;
@@ -50,6 +51,11 @@ public abstract class MixinEventBusStartupProfiler {
     private void gpom$beginPost(Event event, CallbackInfoReturnable<Boolean> cir) {
         StartupProfiler.postPreInitProgressStage(gpom$postPreInitProgressStage(event));
         if (!StartupProfiler.isPostPreInitTransitionActive()) {
+            gpom$postStarts.get().push(0L);
+            gpom$postNames.get().push("");
+            return;
+        }
+        if (gpom$isSuppressedHighVolumeProbe(event)) {
             gpom$postStarts.get().push(0L);
             gpom$postNames.get().push("");
             return;
@@ -119,5 +125,15 @@ public abstract class MixinEventBusStartupProfiler {
             }
         }
         return null;
+    }
+
+    @Unique
+    private static boolean gpom$isSuppressedHighVolumeProbe(Event event) {
+        if (GpomEarlyConfig.startupProfilerHighVolumeEventBusPostProbesEnabled() || event == null) {
+            return false;
+        }
+        String name = event.getClass().getName();
+        return "org.embeddedt.vintagefix.event.DynamicModelBakeEvent".equals(name)
+                || "team.chisel.ctm.api.event.TextureCollectedEvent".equals(name);
     }
 }

@@ -41,6 +41,7 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static final boolean FAST_EXTRATREES_LUMBERMILL = Boolean.parseBoolean(System.getProperty("gpom.hei.fastExtraTreesLumbermill", "true"));
     private static final boolean FAST_ENDERIO_TANK = Boolean.parseBoolean(System.getProperty("gpom.hei.fastEnderIOTank", "true"));
     private static final boolean FAST_TE_TRANSPOSER_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastThermalTransposerContainers", "true"));
+    private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false"));
     private static final boolean LOG_HEI_REGISTRY_ONLY_ITEMS = Boolean.parseBoolean(System.getProperty("gpom.hei.logRegistryOnlyItems", "true"));
     private static final boolean PLUGIN_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.hei.pluginProfiler", "true"));
     private static final boolean HOT_METHOD_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.hei.hotMethodProfiler", "false"));
@@ -98,6 +99,9 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         }
         if (supportedHeiClass && "mezz.jei.startup.JeiStarter".equals(className)) {
             basicClass = patchJeiStarterParallelPluginRegistration(basicClass);
+        }
+        if (supportedHeiClass && "mezz.jei.startup.AnnotatedInstanceUtil".equals(className) && FAST_PREINIT_PLUGIN_DISCOVERY) {
+            basicClass = patchJeiPreInitPluginDiscovery(basicClass);
         }
         if (supportedJerClass && "jeresources.jei.enchantment.EnchantmentMaker".equals(className) && FAST_JER_ENCHANTMENTS) {
             basicClass = patchJerEnchantmentMaker(basicClass);
@@ -471,6 +475,42 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
             }
             if (changed) {
                 return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchJeiPreInitPluginDiscovery(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"getModPlugins".equals(method.name)
+                        || !"(Lnet/minecraftforge/fml/common/discovery/ASMDataTable;)Ljava/util/List;".equals(method.desc)) {
+                    continue;
+                }
+                LabelNode original = new LabelNode();
+                InsnList instructions = new InsnList();
+                instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                instructions.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/HeiOptimizations",
+                        "getModPluginsFast",
+                        "(Lnet/minecraftforge/fml/common/discovery/ASMDataTable;)Ljava/util/List;",
+                        false
+                ));
+                instructions.add(new InsnNode(Opcodes.DUP));
+                instructions.add(new JumpInsnNode(Opcodes.IFNULL, original));
+                instructions.add(new InsnNode(Opcodes.ARETURN));
+                instructions.add(original);
+                instructions.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[]{Opcodes.NULL}));
+                instructions.add(new InsnNode(Opcodes.POP));
+                method.instructions.insert(instructions);
+                changed = true;
+            }
+            if (changed) {
+                return writeNodeWithFrames(node);
             }
         } catch (Throwable ignored) {
         }
@@ -1185,6 +1225,17 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
 
     private static byte[] writeNode(ClassNode node) {
         ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        node.accept(writer);
+        return writer.toByteArray();
+    }
+
+    private static byte[] writeNodeWithFrames(ClassNode node) {
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                return "java/lang/Object";
+            }
+        };
         node.accept(writer);
         return writer.toByteArray();
     }

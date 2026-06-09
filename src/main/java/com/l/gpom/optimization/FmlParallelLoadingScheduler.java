@@ -63,6 +63,14 @@ public final class FmlParallelLoadingScheduler {
     };
     private static final Map<String, Boolean> OPENGL_REFERENCE_CACHE = Collections.synchronizedMap(new HashMap<>());
     private static final Set<String> REPORTED_OPENGL_SERIAL_MODS = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<String> POST_INIT_DRAIN_BEFORE_SERIAL_MODS = fixedSet(
+            "cyclopscore",
+            "integrateddynamics",
+            "integrateddynamicscompat",
+            "integratednbt",
+            "integratedtunnels",
+            "integratedtunnelscompat"
+    );
     private static volatile Field progressBarMessageField;
 
     private FmlParallelLoadingScheduler() {
@@ -369,7 +377,7 @@ public final class FmlParallelLoadingScheduler {
                 );
 
                 if (nextSerial != null && !nextSerial.completed && nextSerial.remainingDependencies == 0) {
-                    if (serialHandlersDrainWorkers && inFlight.pending > 0) {
+                    if (shouldDrainWorkersBeforeDagSerial(event, nextSerial, serialHandlersDrainWorkers) && inFlight.pending > 0) {
                         drainOneDagInFlight(event, inFlight, nodesByModId, modStates, progress, progressState, continueOnModError, "dagSerialBarrier", diagnostics);
                         continue;
                     }
@@ -401,7 +409,7 @@ public final class FmlParallelLoadingScheduler {
                 } else {
                     DagNode readySerialPredecessor = firstReadySerialPredecessor(nodes, nextSerial);
                     if (readySerialPredecessor != null) {
-                        if (serialHandlersDrainWorkers && inFlight.pending > 0) {
+                        if (shouldDrainWorkersBeforeDagSerial(event, readySerialPredecessor, serialHandlersDrainWorkers) && inFlight.pending > 0) {
                             drainOneDagInFlight(event, inFlight, nodesByModId, modStates, progress, progressState, continueOnModError, "dagSerialPredecessorBarrier", diagnostics);
                             continue;
                         }
@@ -532,7 +540,7 @@ public final class FmlParallelLoadingScheduler {
                 throw new RuntimeException("Interrupted while waiting for parallel FML loading", exception);
             } catch (ExecutionException exception) {
                 Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-                DispatchResult result = DispatchResult.failed(null, cause);
+                DispatchResult result = DispatchResult.failed(null, cause, 0L, true);
                 inFlight.complete(result);
                 handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
             }
@@ -726,6 +734,8 @@ public final class FmlParallelLoadingScheduler {
             addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integratedtunnels");
             addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integrateddynamicscompat");
             addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integratedtunnelscompat");
+            addKnownDagEdge(event, nodesByModId, "integrateddynamicscompat", "integratedtunnels");
+            addKnownDagEdge(event, nodesByModId, "integrateddynamicscompat", "integratedtunnelscompat");
             addKnownDagEdge(event, nodesByModId, "integratedtunnels", "integratedtunnelscompat");
         }
     }
@@ -1016,7 +1026,7 @@ public final class FmlParallelLoadingScheduler {
             throw new RuntimeException("Interrupted while waiting for parallel FML loading", exception);
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-            DispatchResult result = DispatchResult.failed(null, cause);
+            DispatchResult result = DispatchResult.failed(null, cause, 0L, true);
             inFlight.complete(result);
             handleFailure(phaseEvent, result, modStates, progressState, continueOnModError);
             return true;
@@ -1214,6 +1224,15 @@ public final class FmlParallelLoadingScheduler {
         return event instanceof FMLConstructionEvent;
     }
 
+    private static boolean shouldDrainWorkersBeforeDagSerial(FMLEvent event, DagNode node, boolean phaseDrainsWorkers) {
+        if (phaseDrainsWorkers) {
+            return true;
+        }
+        return event instanceof FMLPostInitializationEvent
+                && node != null
+                && POST_INIT_DRAIN_BEFORE_SERIAL_MODS.contains(normalize(node.mod.getModId()));
+    }
+
     private static void maybeLogProgressSnapshot(ModContainer mod, ProgressState state) {
         if (state.totalParallelHandlers <= 0) {
             return;
@@ -1268,7 +1287,7 @@ public final class FmlParallelLoadingScheduler {
                         phaseEvent.getEventType(),
                         modId
                 );
-                return DispatchResult.state(mod, LoaderState.ModState.ERRORED, System.nanoTime() - startedAt);
+                return DispatchResult.state(mod, LoaderState.ModState.ERRORED, System.nanoTime() - startedAt, !mainThread);
             }
 
             long cloneStartedAt = StartupProfiler.beginProbe();
@@ -1307,9 +1326,9 @@ public final class FmlParallelLoadingScheduler {
             DispatchResult result;
             long elapsedNanos = System.nanoTime() - startedAt;
             if (event instanceof FMLStateEvent) {
-                result = DispatchResult.state(mod, ((FMLStateEvent) event).getModState(), elapsedNanos);
+                result = DispatchResult.state(mod, ((FMLStateEvent) event).getModState(), elapsedNanos, !mainThread);
             } else {
-                result = DispatchResult.ok(mod, elapsedNanos);
+                result = DispatchResult.ok(mod, elapsedNanos, !mainThread);
             }
             if (!mainThread && schedulerLogsEnabled()) {
                 GPOM.LOGGER.info(
@@ -1333,7 +1352,7 @@ public final class FmlParallelLoadingScheduler {
                         throwable
                 );
             }
-            return DispatchResult.failed(mod, throwable, elapsedNanos);
+            return DispatchResult.failed(mod, throwable, elapsedNanos, !mainThread);
         } finally {
             deleteThreadedBreadcrumb(breadcrumb);
             if (originalThreadName != null) {
@@ -1420,8 +1439,9 @@ public final class FmlParallelLoadingScheduler {
             ModContainer mod = result.mod;
             if (mod != null) {
                 GPOM.LOGGER.error(
-                        "[FmlParallelLoading] Aborting {} after threaded failure in {} ({})",
+                        "[FmlParallelLoading] Aborting {} after {} failure in {} ({})",
                         event.getEventType(),
+                        result.workerThread ? "threaded" : "serial",
                         mod.getModId(),
                         mod.getName(),
                         result.throwable
@@ -1978,6 +1998,18 @@ public final class FmlParallelLoadingScheduler {
         return GpomEarlyConfig.fmlSchedulerLogsEnabled();
     }
 
+    private static Set<String> fixedSet(String... values) {
+        Set<String> set = new LinkedHashSet<>();
+        if (values != null) {
+            for (String value : values) {
+                if (value != null && !value.trim().isEmpty()) {
+                    set.add(normalize(value));
+                }
+            }
+        }
+        return Collections.unmodifiableSet(set);
+    }
+
     private static final class DagNode {
         private final int index;
         private final ModContainer mod;
@@ -2121,12 +2153,16 @@ public final class FmlParallelLoadingScheduler {
         private final List<WaitTiming> waits = new ArrayList<>();
 
         private DagDiagnostics(FMLEvent event) {
+            boolean construct = event instanceof FMLConstructionEvent;
             boolean preInit = event instanceof FMLPreInitializationEvent;
             boolean loadComplete = event instanceof FMLLoadCompleteEvent;
-            this.enabled = (preInit && GpomEarlyConfig.startupProfilerPreInitCriticalPathLogsEnabled())
+            this.enabled = (construct && GpomEarlyConfig.startupProfilerConstructCriticalPathLogsEnabled())
+                    || (preInit && GpomEarlyConfig.startupProfilerPreInitCriticalPathLogsEnabled())
                     || (loadComplete && GpomEarlyConfig.startupProfilerLoadCompleteCriticalPathLogsEnabled());
             this.eventType = eventType(event);
-            this.logPrefix = loadComplete ? "LoadCompleteCriticalPath" : "PreInitCriticalPath";
+            this.logPrefix = loadComplete
+                    ? "LoadCompleteCriticalPath"
+                    : construct ? "ConstructionCriticalPath" : "PreInitCriticalPath";
         }
 
         private void recordSerial(DagNode node, long elapsedNanos) {
@@ -2270,12 +2306,14 @@ public final class FmlParallelLoadingScheduler {
         private final LoaderState.ModState state;
         private final Throwable throwable;
         private final long elapsedNanos;
+        private final boolean workerThread;
 
-        private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable, long elapsedNanos) {
+        private DispatchResult(ModContainer mod, LoaderState.ModState state, Throwable throwable, long elapsedNanos, boolean workerThread) {
             this.mod = mod;
             this.state = state;
             this.throwable = throwable;
             this.elapsedNanos = elapsedNanos;
+            this.workerThread = workerThread;
         }
 
         private static DispatchResult ok(ModContainer mod) {
@@ -2283,7 +2321,11 @@ public final class FmlParallelLoadingScheduler {
         }
 
         private static DispatchResult ok(ModContainer mod, long elapsedNanos) {
-            return new DispatchResult(mod, null, null, elapsedNanos);
+            return ok(mod, elapsedNanos, false);
+        }
+
+        private static DispatchResult ok(ModContainer mod, long elapsedNanos, boolean workerThread) {
+            return new DispatchResult(mod, null, null, elapsedNanos, workerThread);
         }
 
         private static DispatchResult state(ModContainer mod, LoaderState.ModState state) {
@@ -2291,7 +2333,11 @@ public final class FmlParallelLoadingScheduler {
         }
 
         private static DispatchResult state(ModContainer mod, LoaderState.ModState state, long elapsedNanos) {
-            return new DispatchResult(mod, state, null, elapsedNanos);
+            return state(mod, state, elapsedNanos, false);
+        }
+
+        private static DispatchResult state(ModContainer mod, LoaderState.ModState state, long elapsedNanos, boolean workerThread) {
+            return new DispatchResult(mod, state, null, elapsedNanos, workerThread);
         }
 
         private static DispatchResult failed(ModContainer mod, Throwable throwable) {
@@ -2299,7 +2345,11 @@ public final class FmlParallelLoadingScheduler {
         }
 
         private static DispatchResult failed(ModContainer mod, Throwable throwable, long elapsedNanos) {
-            return new DispatchResult(mod, null, throwable, elapsedNanos);
+            return failed(mod, throwable, elapsedNanos, false);
+        }
+
+        private static DispatchResult failed(ModContainer mod, Throwable throwable, long elapsedNanos, boolean workerThread) {
+            return new DispatchResult(mod, null, throwable, elapsedNanos, workerThread);
         }
     }
 }

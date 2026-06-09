@@ -1925,6 +1925,30 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
         add(targets, ModTarget.ASTRALSORCERY, "hellfirepvp.astralsorcery.common.constellation.ConstellationRegistry",
                 "<clinit>", "registerConstellation", "resolve", "getAllConstellations");
 
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.TwilightForestMod",
+                "<clinit>", "<init>", "preInit", "registerTileEntities");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.TFCommonProxy",
+                "<clinit>", "<init>", "preInit", "registerCritterTileEntities");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.client.TFClientProxy",
+                "<clinit>", "<init>", "preInit", "registerCritterTileEntities");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.compat.TFCompat",
+                "<clinit>", "<init>", "values", "preInit", "preInitCompat", "initCompatItems", "registerSidedHandler");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.capabilities.CapabilityList",
+                "<clinit>", "<init>", "registerCapabilities");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.TFFeature",
+                "<clinit>", "<init>", "init", "addMonster", "addWaterCreature");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.structures.hollowtree.TFHollowTreePieces",
+                "<clinit>", "<init>", "registerPieces");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.block.RegisterBlockEvent",
+                "<clinit>", "<init>", "onRegisterBlocks", "registerWoodVariants", "getBlockModels", "registerFluid",
+                "registerFluidBlock");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.item.RegisterItemEvent",
+                "<clinit>", "<init>", "onRegisterItems", "registerWoodVariants", "getItemModels");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.client.ModelRegistrationHandler",
+                "<clinit>", "<init>", "registerModels");
+        add(targets, ModTarget.TWILIGHT_FOREST, "twilightforest.client.ModelUtils",
+                "<clinit>", "<init>", "registerToState", "registerToStateSingleVariant", "registerIncludingItemModels");
+
         add(targets, ModTarget.PROJECTE, "moze_intel.projecte.PECore",
                 "preInit", "load", "postInit", "serverStarting", "serverStopping", "serverQuit",
                 "onIMCMessage", "refreshJEI");
@@ -2397,6 +2421,18 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
                     || methodName.equals("setupModCompat") || methodName.equals("setupCapabilities")
                     || methodName.equals("reflect");
         }
+        if (className.equals("twilightforest.TwilightForestMod")) {
+            return methodName.equals("preInit") || methodName.equals("registerTileEntities");
+        }
+        if (className.equals("twilightforest.client.TFClientProxy")) {
+            return methodName.equals("preInit") || methodName.equals("registerCritterTileEntities");
+        }
+        if (className.equals("twilightforest.compat.TFCompat")) {
+            return methodName.equals("preInitCompat") || methodName.equals("preInit") || methodName.equals("values");
+        }
+        if (className.equals("twilightforest.TFFeature")) {
+            return methodName.equals("init");
+        }
         return false;
     }
 
@@ -2513,6 +2549,12 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             @Override
             boolean isAvailable(String className) {
                 return TargetedModVersions.isAstralSorceryClass(className);
+            }
+        },
+        TWILIGHT_FOREST("TF") {
+            @Override
+            boolean isAvailable(String className) {
+                return TargetedModVersions.isTwilightForestClass(className);
             }
         },
         OPENCOMPUTERS("OC") {

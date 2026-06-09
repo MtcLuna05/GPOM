@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -35,6 +36,12 @@ public final class CraftTweakerScriptLoadOptimizations {
     private static final int CONFIGURED_WORKERS = intProperty("gpom.crafttweaker.parallelScriptParsing.workers", 0);
     private static final boolean OFF_THREAD_ZEN_PARSE = Boolean.parseBoolean(System.getProperty(
             "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse", "false"));
+    private static final boolean SUPPRESS_GLOBAL_DEBUG_COMPILE_LOGS = Boolean.parseBoolean(System.getProperty(
+            "gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs", "true"));
+    private static final boolean DEEP_PROBES = Boolean.parseBoolean(System.getProperty(
+            "gpom.crafttweaker.parallelScriptParsing.deepProbes", "false"));
+    private static final boolean BATCH_ALLOWED_SCRIPTS = Boolean.parseBoolean(System.getProperty(
+            "gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts", "false"));
     private static final AtomicBoolean BRIDGE_FAILURE_LOGGED = new AtomicBoolean();
     private static final AtomicBoolean ENABLED_LOGGED = new AtomicBoolean();
     private static volatile Bridge bridge;
@@ -106,8 +113,8 @@ public final class CraftTweakerScriptLoadOptimizations {
             }
             if (ENABLED_LOGGED.compareAndSet(false, true)) {
                 GPOM.LOGGER.info(
-                        "CraftTweaker parallel script loading enabled with {} worker(s), offThreadZenParse={}, allowlist={}, denylist={}",
-                        Math.max(1, workers), OFF_THREAD_ZEN_PARSE, ALLOWLIST, DENYLIST
+                        "CraftTweaker parallel script loading enabled with {} worker(s), offThreadZenParse={}, batchAllowedScripts={}, deepProbes={}, allowlist={}, denylist={}",
+                        Math.max(1, workers), OFF_THREAD_ZEN_PARSE, BATCH_ALLOWED_SCRIPTS, DEEP_PROBES, ALLOWLIST, DENYLIST
                 );
             }
 
@@ -127,6 +134,7 @@ public final class CraftTweakerScriptLoadOptimizations {
                     descriptor,
                     executor
             );
+            context.planCount = plans.size();
             processPlans(context, plans);
             finishLoad(context, System.currentTimeMillis() - startedAt);
             return Boolean.valueOf(context.success);
@@ -260,9 +268,13 @@ public final class CraftTweakerScriptLoadOptimizations {
         }
         StartupProfiler.endProbeAlways("CT parallel script parse priority " + chunk.get(0).priority + " count " + chunk.size(), parseStartedAt);
 
-        for (ScriptPlan plan : chunk) {
-            completeParsedPlan(context, plan, plan.parseResult);
-            plan.parseResult = null;
+        if (canBatchChunk(context, chunk)) {
+            completeParsedPlansBatch(context, chunk);
+        } else {
+            for (ScriptPlan plan : chunk) {
+                completeParsedPlan(context, plan, plan.parseResult);
+                plan.parseResult = null;
+            }
         }
     }
 
@@ -277,11 +289,15 @@ public final class CraftTweakerScriptLoadOptimizations {
         }
         StartupProfiler.endProbeAlways("CT parallel script source preload priority " + chunk.get(0).priority + " count " + chunk.size(), readStartedAt);
 
-        for (ScriptPlan plan : chunk) {
-            publishScriptPre(context, plan);
-            ParseResult earlyResult = prepareScriptForParse(context, plan);
-            completeParsedPlan(context, plan, earlyResult != null ? earlyResult : plan.parseResult);
-            plan.parseResult = null;
+        if (canBatchChunk(context, chunk)) {
+            completeParsedPlansBatch(context, chunk);
+        } else {
+            for (ScriptPlan plan : chunk) {
+                publishScriptPre(context, plan);
+                ParseResult earlyResult = prepareScriptForParse(context, plan);
+                completeParsedPlan(context, plan, earlyResult != null ? earlyResult : plan.parseResult);
+                plan.parseResult = null;
+            }
         }
     }
 
@@ -295,14 +311,19 @@ public final class CraftTweakerScriptLoadOptimizations {
     }
 
     private static ParseResult prepareScriptForParse(LoadContext context, ScriptPlan plan) throws Exception {
-        context.bridge.classNameGeneratorSetPrefix.invoke(
-                context.classNameGenerator,
-                context.bridge.scriptFileLoaderNamesConcatCapitalized.invoke(plan.script)
-        );
-        context.bridge.preprocessorManagerPostLoadEvent.invoke(
-                context.preprocessorManager,
-                context.bridge.crtScriptLoadEvent.newInstance(plan.script)
-        );
+        long startedAt = beginDeepProbe();
+        try {
+            context.bridge.classNameGeneratorSetPrefix.invoke(
+                    context.classNameGenerator,
+                    context.bridge.scriptFileLoaderNamesConcatCapitalized.invoke(plan.script)
+            );
+            context.bridge.preprocessorManagerPostLoadEvent.invoke(
+                    context.preprocessorManager,
+                    context.bridge.crtScriptLoadEvent.newInstance(plan.script)
+            );
+        } finally {
+            endDeepProbe("CT parallel prepare script", startedAt);
+        }
         if (Boolean.TRUE.equals(context.bridge.scriptFileIsParsingBlocked.invoke(plan.script))) {
             return ParseResult.parsingBlocked();
         }
@@ -310,6 +331,7 @@ public final class CraftTweakerScriptLoadOptimizations {
     }
 
     private static ParseResult parseScript(Bridge bridge, Object environment, Object compileEnvironment, ScriptPlan plan) {
+        long startedAt = beginDeepProbe();
         Object tokener = null;
         try (Reader reader = new InputStreamReader(
                 new BufferedInputStream((java.io.InputStream) bridge.scriptFileOpen.invoke(plan.script)),
@@ -330,10 +352,13 @@ public final class CraftTweakerScriptLoadOptimizations {
         } catch (Throwable throwable) {
             Throwable cause = unwrap(throwable);
             return ParseResult.failure(cause, tokenPosition(bridge, tokener));
+        } finally {
+            endDeepProbe("CT parallel parse", startedAt);
         }
     }
 
     private static ParseResult readScriptSource(Bridge bridge, ScriptPlan plan) {
+        long startedAt = beginDeepProbe();
         try (Reader reader = new InputStreamReader(
                 new BufferedInputStream((java.io.InputStream) bridge.scriptFileOpen.invoke(plan.script)),
                 StandardCharsets.UTF_8)) {
@@ -346,6 +371,8 @@ public final class CraftTweakerScriptLoadOptimizations {
             return ParseResult.source(builder.toString());
         } catch (Throwable throwable) {
             return ParseResult.failure(unwrap(throwable), null);
+        } finally {
+            endDeepProbe("CT parallel source read", startedAt);
         }
     }
 
@@ -385,12 +412,17 @@ public final class CraftTweakerScriptLoadOptimizations {
             return;
         }
         if (result.source != null) {
-            result = parseScriptSource(context.bridge, context.environment, context.compileEnvironment, plan, result.source);
-            if (result.throwable != null) {
-                logParseFailure(context, plan, result);
-                context.success = false;
-                publishScriptPost(context, plan);
-                return;
+            long parseSourceStartedAt = beginDeepProbe();
+            try {
+                result = parseScriptSource(context.bridge, context.environment, context.compileEnvironment, plan, result.source);
+                if (result.throwable != null) {
+                    logParseFailure(context, plan, result);
+                    context.success = false;
+                    publishScriptPost(context, plan);
+                    return;
+                }
+            } finally {
+                endDeepProbe(context, "CT parallel parse source", parseSourceStartedAt);
             }
         }
         if (result.parsedFile == null
@@ -405,34 +437,193 @@ public final class CraftTweakerScriptLoadOptimizations {
                     context.classNameGenerator,
                     context.bridge.scriptFileLoaderNamesConcatCapitalized.invoke(plan.script)
             );
-            boolean debug = Boolean.TRUE.equals(context.bridge.scriptFileIsDebugEnabled.invoke(plan.script))
-                    || Boolean.TRUE.equals(context.bridge.crtTweakerDebug.get(null));
-            context.bridge.zenModuleCompileScripts.invoke(
-                    null,
-                    plan.extractedClassName,
-                    java.util.Collections.singletonList(result.parsedFile),
-                    context.environment,
-                    debug
-            );
+            boolean scriptDebug = Boolean.TRUE.equals(context.bridge.scriptFileIsDebugEnabled.invoke(plan.script));
+            boolean debug = scriptDebug
+                    || (!SUPPRESS_GLOBAL_DEBUG_COMPILE_LOGS && Boolean.TRUE.equals(context.bridge.crtTweakerDebug.get(null)));
+            long compileStartedAt = beginDeepProbe();
+            try {
+                context.bridge.zenModuleCompileScripts.invoke(
+                        null,
+                        plan.extractedClassName,
+                        java.util.Collections.singletonList(result.parsedFile),
+                        context.environment,
+                        debug
+                );
+            } finally {
+                endDeepProbe(context, "CT parallel compile", compileStartedAt);
+            }
             if (Boolean.TRUE.equals(context.bridge.scriptFileIsExecutionBlocked.invoke(plan.script))
                     || context.forced
                     || context.syntaxCommand) {
                 publishScriptPost(context, plan);
                 return;
             }
-            Object module = context.bridge.zenModule.newInstance(
-                    context.classes,
-                    context.bridge.craftTweakerApiClass.getClassLoader()
-            );
-            Runnable main = (Runnable) context.bridge.zenModuleGetMain.invoke(module);
+            long moduleStartedAt = beginDeepProbe();
+            Object module;
+            try {
+                module = context.bridge.zenModule.newInstance(
+                        context.classes,
+                        context.bridge.craftTweakerApiClass.getClassLoader()
+                );
+            } finally {
+                endDeepProbe(context, "CT parallel module ctor", moduleStartedAt);
+            }
+            long mainStartedAt = beginDeepProbe();
+            Runnable main;
+            try {
+                main = (Runnable) context.bridge.zenModuleGetMain.invoke(module);
+            } finally {
+                endDeepProbe(context, "CT parallel module getMain", mainStartedAt);
+            }
             if (main != null) {
-                main.run();
+                long executeStartedAt = beginDeepProbe();
+                try {
+                    main.run();
+                } finally {
+                    endDeepProbe(context, "CT parallel execute main", executeStartedAt);
+                }
             }
         } catch (Throwable throwable) {
             Throwable cause = unwrap(throwable);
             logError(context.bridge, "[" + plan.mainName + "]: Error executing" + plan.script + ":" + cause.getMessage(), cause);
         }
         publishScriptPost(context, plan);
+    }
+
+    private static void completeParsedPlansBatch(LoadContext context, List<ScriptPlan> chunk) throws Exception {
+        List<ParsedPlan> parsedPlans = new ArrayList<>(chunk.size());
+        boolean success = true;
+        for (ScriptPlan plan : chunk) {
+            publishScriptPre(context, plan);
+            ParseResult result = prepareScriptForParse(context, plan);
+            if (result == null) {
+                result = plan.parseResult;
+            }
+            plan.parseResult = null;
+            if (result == null) {
+                result = ParseResult.failure(new IllegalStateException("Missing CraftTweaker parse result"), null);
+            }
+            if (result.parsingBlocked) {
+                publishScriptPost(context, plan);
+                continue;
+            }
+            if (result.throwable != null) {
+                logParseFailure(context, plan, result);
+                context.success = false;
+                success = false;
+                publishScriptPost(context, plan);
+                continue;
+            }
+            if (result.source != null) {
+                long parseSourceStartedAt = beginDeepProbe();
+                try {
+                    result = parseScriptSource(context.bridge, context.environment, context.compileEnvironment, plan, result.source);
+                    if (result.throwable != null) {
+                        logParseFailure(context, plan, result);
+                        context.success = false;
+                        success = false;
+                        publishScriptPost(context, plan);
+                        continue;
+                    }
+                } finally {
+                    endDeepProbe(context, "CT parallel parse source", parseSourceStartedAt);
+                }
+            }
+            if (result.parsedFile == null || Boolean.TRUE.equals(context.bridge.scriptFileIsCompileBlocked.invoke(plan.script))) {
+                publishScriptPost(context, plan);
+                continue;
+            }
+            parsedPlans.add(new ParsedPlan(plan, result.parsedFile));
+        }
+
+        if (!success || parsedPlans.isEmpty() || !context.success) {
+            publishRemainingScriptPost(context, parsedPlans);
+            return;
+        }
+
+        try {
+            context.bridge.classNameGeneratorSetPrefix.invoke(
+                    context.classNameGenerator,
+                    context.bridge.scriptFileLoaderNamesConcatCapitalized.invoke(parsedPlans.get(0).plan.script)
+            );
+            boolean debug = shouldDebugBatch(context, parsedPlans);
+            List parsedFiles = new ArrayList(parsedPlans.size());
+            for (ParsedPlan parsedPlan : parsedPlans) {
+                parsedFiles.add(parsedPlan.parsedFile);
+            }
+            long compileStartedAt = beginDeepProbe();
+            try {
+                context.bridge.zenModuleCompileScripts.invoke(
+                        null,
+                        parsedPlans.get(0).plan.extractedClassName,
+                        parsedFiles,
+                        context.environment,
+                        debug
+                );
+            } finally {
+                endDeepProbe(context, "CT parallel batch compile", compileStartedAt);
+            }
+            long moduleStartedAt = beginDeepProbe();
+            Object module;
+            try {
+                module = context.bridge.zenModule.newInstance(
+                        context.classes,
+                        context.bridge.craftTweakerApiClass.getClassLoader()
+                );
+            } finally {
+                endDeepProbe(context, "CT parallel batch module ctor", moduleStartedAt);
+            }
+            long mainStartedAt = beginDeepProbe();
+            Runnable main;
+            try {
+                main = (Runnable) context.bridge.zenModuleGetMain.invoke(module);
+            } finally {
+                endDeepProbe(context, "CT parallel batch module getMain", mainStartedAt);
+            }
+            if (main != null) {
+                long executeStartedAt = beginDeepProbe();
+                try {
+                    main.run();
+                } finally {
+                    endDeepProbe(context, "CT parallel batch execute main", executeStartedAt);
+                }
+            }
+        } catch (Throwable throwable) {
+            Throwable cause = unwrap(throwable);
+            logError(context.bridge, "[" + parsedPlans.get(0).plan.mainName + "]: Error executing batched CraftTweaker scripts:" + cause.getMessage(), cause);
+            context.success = false;
+        }
+        publishRemainingScriptPost(context, parsedPlans);
+    }
+
+    private static void publishRemainingScriptPost(LoadContext context, List<ParsedPlan> parsedPlans) throws Exception {
+        for (ParsedPlan parsedPlan : parsedPlans) {
+            publishScriptPost(context, parsedPlan.plan);
+        }
+    }
+
+    private static boolean shouldDebugBatch(LoadContext context, List<ParsedPlan> parsedPlans) throws Exception {
+        if (!SUPPRESS_GLOBAL_DEBUG_COMPILE_LOGS && Boolean.TRUE.equals(context.bridge.crtTweakerDebug.get(null))) {
+            return true;
+        }
+        for (ParsedPlan parsedPlan : parsedPlans) {
+            if (Boolean.TRUE.equals(context.bridge.scriptFileIsDebugEnabled.invoke(parsedPlan.plan.script))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean canBatchChunk(LoadContext context, List<ScriptPlan> chunk) throws Exception {
+        if (!BATCH_ALLOWED_SCRIPTS || context.forced || context.syntaxCommand || chunk.size() < 2) {
+            return false;
+        }
+        for (ScriptPlan plan : chunk) {
+            if (Boolean.TRUE.equals(context.bridge.scriptFileIsExecutionBlocked.invoke(plan.script))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void finishLoad(LoadContext context, long elapsedMillis) throws Exception {
@@ -451,19 +642,30 @@ public final class CraftTweakerScriptLoadOptimizations {
                     context.bridge.loadingFinishedEvent.newInstance(context.loader, context.networkSide, context.forced));
         }
         logDefault(context.bridge, "Completed script loading in:" + elapsedMillis + "ms");
+        logDeepMetrics(context, elapsedMillis);
     }
 
     private static void publishScriptPre(LoadContext context, ScriptPlan plan) throws Exception {
         if (!context.syntaxCommand) {
-            publish(context.bridge, context.bridge.crtTweakerScriptPreEventList.get(context.tweaker),
-                    context.bridge.loadingScriptPreEvent.newInstance(plan.effectiveName));
+            long startedAt = beginDeepProbe();
+            try {
+                publish(context.bridge, context.bridge.crtTweakerScriptPreEventList.get(context.tweaker),
+                        context.bridge.loadingScriptPreEvent.newInstance(plan.effectiveName));
+            } finally {
+                endDeepProbe(context, "CT parallel publish script pre", startedAt);
+            }
         }
     }
 
     private static void publishScriptPost(LoadContext context, ScriptPlan plan) throws Exception {
         if (!context.syntaxCommand) {
-            publish(context.bridge, context.bridge.crtTweakerScriptPostEventList.get(context.tweaker),
-                    context.bridge.loadingScriptPostEvent.newInstance(plan.effectiveName));
+            long startedAt = beginDeepProbe();
+            try {
+                publish(context.bridge, context.bridge.crtTweakerScriptPostEventList.get(context.tweaker),
+                        context.bridge.loadingScriptPostEvent.newInstance(plan.effectiveName));
+            } finally {
+                endDeepProbe(context, "CT parallel publish script post", startedAt);
+            }
         }
     }
 
@@ -656,6 +858,61 @@ public final class CraftTweakerScriptLoadOptimizations {
         }
     }
 
+    private static long beginDeepProbe() {
+        return DEEP_PROBES ? StartupProfiler.beginProbe() : 0L;
+    }
+
+    private static void endDeepProbe(String label, long startedAt) {
+        if (DEEP_PROBES) {
+            StartupProfiler.endProbeAlways(label, startedAt);
+        }
+    }
+
+    private static void endDeepProbe(LoadContext context, String label, long startedAt) {
+        if (!DEEP_PROBES || startedAt == 0L) {
+            return;
+        }
+        long elapsed = System.nanoTime() - startedAt;
+        if (context != null) {
+            context.recordMetric(label, elapsed);
+        }
+        StartupProfiler.endProbeAlways(label, startedAt);
+    }
+
+    private static void logDeepMetrics(LoadContext context, long elapsedMillis) {
+        if (!DEEP_PROBES || context.metrics.isEmpty()) {
+            return;
+        }
+        StringBuilder builder = new StringBuilder(256);
+        builder.append("CraftTweaker deep load metrics descriptor=")
+                .append(context.descriptor)
+                .append(" scripts=")
+                .append(context.planCount)
+                .append(" success=")
+                .append(context.success)
+                .append(" elapsed=")
+                .append(elapsedMillis)
+                .append(" ms");
+        synchronized (context.metrics) {
+            for (Map.Entry<String, Metric> entry : context.metrics.entrySet()) {
+                Metric metric = entry.getValue();
+                builder.append("; ")
+                        .append(entry.getKey())
+                        .append("=")
+                        .append(formatNanos(metric.totalNanos))
+                        .append(" ms max=")
+                        .append(formatNanos(metric.maxNanos))
+                        .append(" count=")
+                        .append(metric.count);
+            }
+        }
+        GPOM.LOGGER.info(builder.toString());
+    }
+
+    private static String formatNanos(long nanos) {
+        return String.format(Locale.ROOT, "%.3f", nanos / 1_000_000.0D);
+    }
+
     private static final class ParseTask implements Callable<ParseResult> {
         private final Bridge bridge;
         private final Object environment;
@@ -705,6 +962,8 @@ public final class CraftTweakerScriptLoadOptimizations {
         private final Map classes;
         private final String descriptor;
         private final ExecutorService executor;
+        private final Map<String, Metric> metrics = new LinkedHashMap<>();
+        private int planCount;
         private boolean success = true;
 
         private LoadContext(Bridge bridge,
@@ -736,6 +995,31 @@ public final class CraftTweakerScriptLoadOptimizations {
             this.descriptor = descriptor;
             this.executor = executor;
         }
+
+        private void recordMetric(String label, long elapsedNanos) {
+            synchronized (metrics) {
+                Metric metric = metrics.get(label);
+                if (metric == null) {
+                    metric = new Metric();
+                    metrics.put(label, metric);
+                }
+                metric.add(elapsedNanos);
+            }
+        }
+    }
+
+    private static final class Metric {
+        private long totalNanos;
+        private long maxNanos;
+        private int count;
+
+        private void add(long elapsedNanos) {
+            totalNanos += elapsedNanos;
+            if (elapsedNanos > maxNanos) {
+                maxNanos = elapsedNanos;
+            }
+            count++;
+        }
     }
 
     private static final class ScriptPlan {
@@ -765,6 +1049,16 @@ public final class CraftTweakerScriptLoadOptimizations {
             this.name = name;
             this.mainName = mainName;
             this.parallelAllowed = parallelAllowed;
+        }
+    }
+
+    private static final class ParsedPlan {
+        private final ScriptPlan plan;
+        private final Object parsedFile;
+
+        private ParsedPlan(ScriptPlan plan, Object parsedFile) {
+            this.plan = plan;
+            this.parsedFile = parsedFile;
         }
     }
 

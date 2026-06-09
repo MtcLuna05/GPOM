@@ -161,6 +161,7 @@ public final class PreInitClassPrewarmer {
         }
         boolean includeAnonClasses = GpomEarlyConfig.preInitClassPrewarmIncludeAnonClasses();
         boolean initializeClasses = GpomEarlyConfig.preInitClassPrewarmInitializeClasses();
+        Set<String> initializeAllowlist = GpomEarlyConfig.preInitClassPrewarmInitializeAllowlist();
         Map<String, List<String>> extraPrefixes = parseExtraPrefixes(GpomEarlyConfig.preInitClassPrewarmExtraPrefixes());
         Set<String> noInitAllowlist = GpomEarlyConfig.preInitClassPrewarmNoInitAllowlist();
         Map<String, List<String>> noInitPrefixes = parseExtraPrefixes(GpomEarlyConfig.preInitClassPrewarmNoInitPrefixes());
@@ -203,7 +204,10 @@ public final class PreInitClassPrewarmer {
 
                 List<String> classNames = scanSource(source, prefixes, includeAnonClasses, maxClassesPerMod);
                 if (!classNames.isEmpty()) {
-                    LinkedHashSet<String> classes = classesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
+                    Map<String, LinkedHashSet<String>> targetClasses = shouldInitializeScannedMod(modId, initializeClasses, initializeAllowlist)
+                            ? classesByMod
+                            : noInitClassesByMod;
+                    LinkedHashSet<String> classes = targetClasses.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
                     classes.addAll(classNames);
                 }
             }
@@ -220,7 +224,8 @@ public final class PreInitClassPrewarmer {
                     continue;
                 }
                 List<String> prefixes = new ArrayList<String>();
-                if (allNoInit || noInitAllowlist.contains(modId)) {
+                boolean initializeScanned = shouldInitializeScannedMod(modId, initializeClasses, initializeAllowlist);
+                if ((allNoInit || noInitAllowlist.contains(modId)) && !initializeScanned) {
                     List<String> defaults = DEFAULT_PREFIXES.get(modId);
                     if (defaults != null) {
                         prefixes.addAll(defaults);
@@ -525,15 +530,32 @@ public final class PreInitClassPrewarmer {
         prefixes.put("brandonscore", Collections.singletonList("com/brandon3055/brandonscore/"));
         prefixes.put("gendustry", Collections.singletonList("net/bdew/gendustry/"));
         prefixes.put("aoa3", Arrays.asList("net/tslat/aoa3/advent/", "net/tslat/aoa3/common/", "net/tslat/aoa3/utils/", "net/tslat/aoa3/hooks/"));
+        prefixes.put("appliedenergistics2", Collections.singletonList("appeng/"));
+        prefixes.put("ebwizardry", Collections.singletonList("electroblob/wizardry/"));
+        prefixes.put("deepmoblearning", Collections.singletonList("mustapelto/deepmoblearning/"));
+        prefixes.put("topaddons", Collections.singletonList("io/github/drmanganese/"));
         prefixes.put("railcraft", Arrays.asList("mods/railcraft/common/core/", "mods/railcraft/common/modules/", "mods/railcraft/common/items/", "mods/railcraft/common/blocks/"));
+        prefixes.put("contenttweaker", Collections.singletonList("com/teamacronymcoders/contenttweaker/"));
+        prefixes.put("crafttweaker", Arrays.asList("crafttweaker/", "stanhebben/zenscript/"));
         prefixes.put("erebus", Arrays.asList("erebus/Erebus", "erebus/Mod", "erebus/core/", "erebus/recipes/", "erebus/proxy/"));
         prefixes.put("extrautils2", Collections.singletonList("com/rwtema/extrautils2/"));
         prefixes.put("environmentaltech", Arrays.asList("com/valkyrieofnight/et/", "com/valkyrieofnight/vliblegacy/"));
+        prefixes.put("teslacorelib", Collections.singletonList("net/modcrafters/mclib/"));
         prefixes.put("rftools", Arrays.asList("mcjty/rftools/", "mcjty/lib/setup/"));
         prefixes.put("thebetweenlands", Collections.singletonList("thebetweenlands/"));
         prefixes.put("enderio", Collections.singletonList("crazypants/enderio/"));
         prefixes.put("randomthings", Collections.singletonList("lumien/randomthings/"));
         prefixes.put("nuclearcraft", Collections.singletonList("nc/"));
+        prefixes.put("twilightforest", Arrays.asList(
+                "twilightforest/TwilightForestMod",
+                "twilightforest/TFFeature",
+                "twilightforest/TFCommonProxy",
+                "twilightforest/client/TFClientProxy",
+                "twilightforest/block/",
+                "twilightforest/item/",
+                "twilightforest/entity/",
+                "twilightforest/world/"
+        ));
         prefixes.put("modularmachinery", Arrays.asList("github/kasuminova/mmce/", "hellfirepvp/modularmachinery/"));
         prefixes.put("integrateddynamics", Arrays.asList("org/cyclops/integrateddynamics/", "org/cyclops/cyclopscore/"));
         prefixes.put("expequiv", Collections.singletonList("tk/zeitheron/expequiv/"));
@@ -579,8 +601,31 @@ public final class PreInitClassPrewarmer {
             "li.cil.oc.common.init.Items$",
             "com.brandon3055.brandonscore.BrandonsCore",
             "com.brandon3055.brandonscore.CommonProxy",
-            "com.brandon3055.brandonscore.BCConfig"
+            "com.brandon3055.brandonscore.BCConfig",
+            "com.rwtema.extrautils2.ExtraUtils2",
+            "com.rwtema.extrautils2.backend.entries.XU2Entries",
+            "com.rwtema.extrautils2.backend.entries.EntryHandler",
+            "erebus.Erebus",
+            "erebus.proxy.CommonProxy",
+            "org.cyclops.integrateddynamics.IntegratedDynamics",
+            "org.cyclops.cyclopscore.init.ModBase",
+            "com.valkyrieofnight.et.ETMod",
+            "com.valkyrieofnight.vliblegacy.lib.sys.proxy.VLCommonProxy",
+            "twilightforest.TwilightForestMod",
+            "twilightforest.TFFeature",
+            "twilightforest.TFCommonProxy",
+            "twilightforest.client.TFClientProxy",
+            "crafttweaker.runtime.CrTTweaker",
+            "crafttweaker.mc1120.CraftTweaker",
+            "com.teamacronymcoders.contenttweaker.ContentTweaker"
     ));
+
+    private static boolean shouldInitializeScannedMod(String modId, boolean initializeClasses, Set<String> initializeAllowlist) {
+        if (initializeClasses) {
+            return true;
+        }
+        return initializeAllowlist != null && (initializeAllowlist.contains("*") || initializeAllowlist.contains(normalize(modId)));
+    }
 
     private static final class PreparedWarmup {
         private final List<WarmUnit> units;
