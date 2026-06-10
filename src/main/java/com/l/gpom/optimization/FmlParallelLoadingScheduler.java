@@ -4,7 +4,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import com.google.common.eventbus.EventBus;
 import com.l.gpom.GPOM;
-import com.l.gpom.client.EarlySplashWindow;
+import com.l.gpom.util.EarlySplashBridge;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.core.ChickenAsmConcurrencyTransformer;
 import com.l.gpom.profiling.StartupProfiler;
@@ -153,7 +153,7 @@ public final class FmlParallelLoadingScheduler {
         long startedAt = System.nanoTime();
         int parallelHandlers = 0;
         ProgressState progressState = new ProgressState(event.getEventType(), phaseDisplayName(event), activeModList.size(), parallelEligibleHandlers, startedAt);
-        EarlySplashWindow.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
+        EarlySplashBridge.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
         if (schedulerLogsEnabled()) {
             GPOM.LOGGER.info(
                     "[FmlParallelLoading] {} starting with {} worker(s), parallelEligible={}, activeHandlers={}, serialHandlersAreBarriers={}, allowlist={}, denylist={}",
@@ -223,7 +223,7 @@ public final class FmlParallelLoadingScheduler {
                 String serialWaitMessage = waitingFor(mod);
                 setVisibleProgressMessage(progress, serialWaitMessage);
                 stepVisibleProgress(progress, mod, progressState);
-                EarlySplashWindow.setPhaseProgress(
+                EarlySplashBridge.setPhaseProgress(
                         "FML " + progressState.displayPhaseName + " " + serialWaitMessage,
                         progressState.completedHandlers,
                         progressState.totalHandlers
@@ -335,7 +335,7 @@ public final class FmlParallelLoadingScheduler {
         int parallelHandlers = 0;
         ProgressState progressState = new ProgressState(event.getEventType(), phaseDisplayName(event), activeModList.size(), parallelEligibleHandlers, startedAt);
         DagDiagnostics diagnostics = new DagDiagnostics(event);
-        EarlySplashWindow.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
+        EarlySplashBridge.setPhaseProgress("FML " + phaseDisplayName(event), 0, activeModList.size());
         if (schedulerLogsEnabled()) {
             GPOM.LOGGER.info(
                     "[FmlParallelLoading] {} DAG starting with {} worker(s), maxInFlight={}, parallelEligible={}, activeHandlers={}, serialHandlersAreBarriers={}, serialHandlersDrainWorkers={}, allowlist={}, denylist={}",
@@ -601,7 +601,7 @@ public final class FmlParallelLoadingScheduler {
             return;
         }
         ++state.completedHandlers;
-        EarlySplashWindow.setPhaseProgress("FML " + state.displayPhaseName, state.completedHandlers, state.totalHandlers);
+        EarlySplashBridge.setPhaseProgress("FML " + state.displayPhaseName, state.completedHandlers, state.totalHandlers);
     }
 
     private static void stepThreadedProgress(ModContainer mod, ProgressState state) {
@@ -685,7 +685,7 @@ public final class FmlParallelLoadingScheduler {
                         submitted
                 );
             }
-            EarlySplashWindow.setPhaseProgress(
+            EarlySplashBridge.setPhaseProgress(
                     "FML LoadComplete running HEI; queued " + submitted + " later handler(s)",
                     progressState.completedHandlers,
                     progressState.totalHandlers
@@ -730,6 +730,12 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static void addKnownLifecycleDagEdges(FMLEvent event, Map<String, DagNode> nodesByModId) {
+        if (event instanceof FMLPreInitializationEvent) {
+            // Bewitchment registers ore entries during object construction, which can synchronously
+            // hit Extra Utilities 2 ore listeners before XU2 finishes initializing its recipe API.
+            addKnownDagEdge(event, nodesByModId, "extrautils2", "bewitchment");
+        }
+
         if (event instanceof FMLPostInitializationEvent) {
             addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integratedtunnels");
             addKnownDagEdge(event, nodesByModId, "integrateddynamics", "integrateddynamicscompat");
@@ -954,7 +960,7 @@ public final class FmlParallelLoadingScheduler {
         String serialWaitMessage = waitingFor(node.mod);
         setVisibleProgressMessage(progress, serialWaitMessage);
         stepVisibleProgress(progress, node.mod, progressState);
-        EarlySplashWindow.setPhaseProgress(
+        EarlySplashBridge.setPhaseProgress(
                 "FML " + progressState.displayPhaseName + " " + serialWaitMessage,
                 progressState.completedHandlers,
                 progressState.totalHandlers

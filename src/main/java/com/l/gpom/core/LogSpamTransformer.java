@@ -9,6 +9,8 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -23,8 +25,20 @@ public final class LogSpamTransformer implements IClassTransformer {
             "gpom.vintageFix.suppressUcwModelErrorSpam",
             "true"
     ));
+    private static final boolean VINTAGEFIX_SKIP_UCW_DEFINITION_EARLY_MODEL_LOAD = Boolean.parseBoolean(System.getProperty(
+            "gpom.vintageFix.skipUcwDefinitionEarlyModelLoad",
+            "true"
+    ));
     private static final boolean CRAFTTWEAKER_FUNCTION_TYPE_STDOUT = Boolean.parseBoolean(System.getProperty(
             "gpom.crafttweaker.suppressFunctionTypeStdout",
+            "true"
+    ));
+    private static final boolean CTM_UNKNOWN_RENDER_LAYER = Boolean.parseBoolean(System.getProperty(
+            "gpom.ctm.tolerateUnknownRenderLayer",
+            "true"
+    ));
+    private static final boolean CTM_TEXTURE_METADATA_ERROR_SPAM = Boolean.parseBoolean(System.getProperty(
+            "gpom.ctm.suppressTextureMetadataErrorSpam",
             "true"
     ));
 
@@ -40,6 +54,11 @@ public final class LogSpamTransformer implements IClassTransformer {
                 && "pl.asie.ucw.UCWProxyClient".equals(className)
                 && TargetedModVersions.isUnlimitedChiselWorksClass(className)) {
             return patchUcwTextureStitchSpam(basicClass);
+        }
+        if (VINTAGEFIX_SKIP_UCW_DEFINITION_EARLY_MODEL_LOAD
+                && "org.embeddedt.vintagefix.mixin.dynamic_resources.MixinModelManager".equals(className)
+                && TargetedModVersions.isVintageFixClass(className)) {
+            return patchVintageFixEarlyModelPathFilter(basicClass);
         }
         if (VINTAGEFIX_MODEL_ERROR_SPAM
                 && "org.embeddedt.vintagefix.mixin.dynamic_resources.MixinModelLoaderEarlyView".equals(className)
@@ -60,8 +79,140 @@ public final class LogSpamTransformer implements IClassTransformer {
                 && "stanhebben.zenscript.parser.expression.ParsedExpressionFunction".equals(className)) {
             return patchCraftTweakerFunctionTypeStdout(basicClass);
         }
+        if (CTM_UNKNOWN_RENDER_LAYER
+                && "team.chisel.ctm.client.texture.IMetadataSectionCTM$V1".equals(className)
+                && TargetedModVersions.isConnectedTexturesModClass(className)) {
+            return patchCtmUnknownRenderLayer(basicClass);
+        }
+        if (CTM_TEXTURE_METADATA_ERROR_SPAM
+                && "team.chisel.ctm.client.util.TextureMetadataHandler".equals(className)
+                && TargetedModVersions.isConnectedTexturesModClass(className)) {
+            return patchCtmTextureMetadataSpam(basicClass);
+        }
 
         return basicClass;
+    }
+
+    private static byte[] patchCtmUnknownRenderLayer(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("fromJson".equals(method.name)
+                        && "(Lcom/google/gson/JsonObject;)Lteam/chisel/ctm/client/texture/IMetadataSectionCTM;".equals(method.desc)) {
+                    changed |= replaceCtmRenderLayerValueOf(method);
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static boolean replaceCtmRenderLayerValueOf(MethodNode method) {
+        boolean changed = false;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode) {
+                MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                if ("net/minecraft/util/BlockRenderLayer".equals(methodInsn.owner)
+                        && "valueOf".equals(methodInsn.name)
+                        && "(Ljava/lang/String;)Lnet/minecraft/util/BlockRenderLayer;".equals(methodInsn.desc)) {
+                    methodInsn.owner = "com/l/gpom/optimization/ModelLogSpamSuppressor";
+                    methodInsn.name = "ctmBlockRenderLayerValueOf";
+                    methodInsn.desc = "(Ljava/lang/String;)Lnet/minecraft/util/BlockRenderLayer;";
+                    methodInsn.itf = false;
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static byte[] patchCtmTextureMetadataSpam(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("onTextureStitch".equals(method.name)
+                        && "(Lteam/chisel/ctm/api/event/TextureCollectedEvent;)V".equals(method.desc)) {
+                    changed |= replaceCtmTextureMetadataPrintStackTrace(method);
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static boolean replaceCtmTextureMetadataPrintStackTrace(MethodNode method) {
+        boolean changed = false;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode && insn.getOpcode() == Opcodes.INVOKEVIRTUAL) {
+                MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                if ("java/io/IOException".equals(methodInsn.owner)
+                        && "printStackTrace".equals(methodInsn.name)
+                        && "()V".equals(methodInsn.desc)) {
+                    method.instructions.set(insn, new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/ModelLogSpamSuppressor",
+                            "suppressCtmTextureMetadataError",
+                            "(Ljava/lang/Throwable;)V",
+                            false
+                    ));
+                    changed = true;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static byte[] patchVintageFixEarlyModelPathFilter(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("lambda$doEarlyModelLoading$0".equals(method.name)
+                        && "(Ljava/lang/String;)Z".equals(method.desc)) {
+                    InsnList guard = new InsnList();
+                    LabelNode continueLabel = new LabelNode();
+                    guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    guard.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/ModelLogSpamSuppressor",
+                            "isVintageFixUcwDefinitionPath",
+                            "(Ljava/lang/String;)Z",
+                            false
+                    ));
+                    guard.add(new JumpInsnNode(Opcodes.IFEQ, continueLabel));
+                    guard.add(new InsnNode(Opcodes.ICONST_0));
+                    guard.add(new InsnNode(Opcodes.IRETURN));
+                    guard.add(continueLabel);
+                    method.instructions.insert(guard);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
     }
 
     private static byte[] patchCraftTweakerFunctionTypeStdout(byte[] basicClass) {

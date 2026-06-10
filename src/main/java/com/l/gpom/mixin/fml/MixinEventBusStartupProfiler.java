@@ -28,6 +28,10 @@ public abstract class MixinEventBusStartupProfiler {
 
     @Inject(method = "register(Ljava/lang/Object;)V", at = @At("HEAD"), cancellable = true)
     private void gpom$tryLazyStaticRegistration(Object target, CallbackInfo ci) {
+        if (EventBusRegistrationOptimizations.tryReplaceFragileInstanceRegistration((EventBus) (Object) this, target)) {
+            ci.cancel();
+            return;
+        }
         if (EventBusRegistrationOptimizations.tryRegisterLazyStaticSubscribers((EventBus) (Object) this, target)) {
             ci.cancel();
         }

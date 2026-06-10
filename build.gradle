@@ -45,10 +45,12 @@ repositories {
 
 dependencies {
     compileOnly 'org.scala-lang:scala-library:2.11.1'
+    compileOnly 'com.cleanroommc:lwjglx:1.0.0'
     compileOnly modJarDependency('AoA3-3.3.6.jar', 'curse.maven:advent-of-ascension-nevermine-311054:3054253')
     compileOnly modJarDependency('CodeChickenLib-1.12.2-3.2.3.358-universal.jar', 'codechicken:CodeChickenLib:1.12.2-3.2.3.358:universal')
     compileOnly modJarDependency('ForgeMultipart-1.12.2-2.6.2.83-universal.jar', 'curse.maven:cb-multipart-258426:2755791')
     compileOnly modJarDependency('ae2-uel-v0.56.5.jar', 'curse.maven:ae2-extended-life-570458:5378163')
+    compileOnly modJarDependency('Baubles-1.12-1.5.2.jar', 'curse.maven:baubles-227083:2518667')
     compileOnly modJarDependency('EnderCore-1.12.2-0.5.78.jar', 'com.enderio.core:EnderCore:1.12.2-0.5.78')
     compileOnly modJarDependency('EnderIO-1.12.2-5.3.72.jar', 'com.enderio:EnderIO:1.12.2-5.3.72')
 }

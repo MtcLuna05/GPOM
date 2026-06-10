@@ -1,9 +1,9 @@
 package com.l.gpom;
 
 import com.l.gpom.config.GpomEarlyConfig;
-import com.l.gpom.compat.multipart.GpomMultipartCompatBootstrap;
-import com.l.gpom.compat.multipart.GpomMultipartSafetyWarnings;
+import com.l.gpom.proxy.CommonProxy;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.SidedProxy;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -18,16 +18,22 @@ import org.apache.logging.log4j.Logger;
 public final class GPOM {
     public static final Logger LOGGER = LogManager.getLogger(Reference.MOD_NAME);
 
+    @SidedProxy(
+            modId = Reference.MOD_ID,
+            clientSide = "com.l.gpom.proxy.ClientProxy",
+            serverSide = "com.l.gpom.proxy.CommonProxy"
+    )
+    public static CommonProxy proxy;
+
     static {
         GpomEarlyConfig.silenceGpomLoggersIfDisabled();
     }
 
     @Mod.EventHandler
     public void onPreInit(FMLPreInitializationEvent event) {
-        GpomMultipartSafetyWarnings.register();
-        GpomMultipartCompatBootstrap.preInit();
+        proxy.preInit(event);
         if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
-            LOGGER.info("{} initialized", Reference.MOD_NAME);
+            LOGGER.info("{} initialized on {} side", Reference.MOD_NAME, proxy.isClient() ? "client" : "server");
         }
     }
 

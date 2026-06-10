@@ -6,7 +6,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Multimap;
 import com.google.common.eventbus.EventBus;
 import com.l.gpom.GPOM;
-import com.l.gpom.client.EarlySplashWindow;
+import com.l.gpom.util.EarlySplashBridge;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.FmlParallelLoadingContext;
 import com.l.gpom.optimization.FmlParallelLoadingScheduler;
@@ -76,8 +76,8 @@ public abstract class MixinLoadControllerStartupProfiler {
             gpom$stateDispatchName = state.name();
             gpom$stateDispatchGapStartedAt = now;
             gpom$stateDispatchGapName = state.name();
-            EarlySplashWindow.setStatus("Forge " + state.name());
-            EarlySplashWindow.setPhaseProgress("Forge " + state.name() + " preparing", 0, activeModList == null ? 0 : activeModList.size());
+            EarlySplashBridge.setStatus("Forge " + state.name());
+            EarlySplashBridge.setPhaseProgress("Forge " + state.name() + " preparing", 0, activeModList == null ? 0 : activeModList.size());
             gpom$openPhaseTransitionProgress(state);
             StartupProfiler.beginPhase(state.name());
         }
@@ -124,8 +124,8 @@ public abstract class MixinLoadControllerStartupProfiler {
             }
             StartupProfiler.beginPhase(event.getEventType());
             gpom$closePhaseTransitionProgress();
-            EarlySplashWindow.close("Minecraft Forge splash active");
-            EarlySplashWindow.setPhaseProgress("Forge " + event.getEventType(), 0, activeModList == null ? 0 : activeModList.size());
+            EarlySplashBridge.close("Minecraft Forge splash active");
+            EarlySplashBridge.setPhaseProgress("Forge " + event.getEventType(), 0, activeModList == null ? 0 : activeModList.size());
             if (FmlParallelLoadingScheduler.shouldParallelize(event)) {
                 try {
                     if (event instanceof FMLPreInitializationEvent) {
@@ -134,7 +134,7 @@ public abstract class MixinLoadControllerStartupProfiler {
                     FmlParallelLoadingScheduler.propagate(event, activeModList, eventChannels, modStates);
                     if (event instanceof FMLLoadCompleteEvent) {
                         AoAConstructionOptimizations.logFinalGrassRegistryState("after LoadComplete");
-                        EarlySplashWindow.close("Forge LoadComplete finished");
+                        EarlySplashBridge.close("Forge LoadComplete finished");
                     }
                 } finally {
                     StartupProfiler.endPhase(event.getEventType());
@@ -153,7 +153,7 @@ public abstract class MixinLoadControllerStartupProfiler {
         if (event != null) {
             if (event instanceof FMLLoadCompleteEvent) {
                 AoAConstructionOptimizations.logFinalGrassRegistryState("after LoadComplete");
-                EarlySplashWindow.close("Forge LoadComplete finished");
+                EarlySplashBridge.close("Forge LoadComplete finished");
             }
             StartupProfiler.endPhase(event.getEventType());
             gpom$markFmlEventEnd(event);
@@ -232,7 +232,7 @@ public abstract class MixinLoadControllerStartupProfiler {
             ProgressManager.pop(progress);
         } catch (Throwable ignored) {
         }
-        EarlySplashWindow.setPhaseProgress("Forge phase starting", 0, 0);
+        EarlySplashBridge.setPhaseProgress("Forge phase starting", 0, 0);
     }
 
     @Unique
@@ -275,7 +275,7 @@ public abstract class MixinLoadControllerStartupProfiler {
                     return;
                 }
             }
-            EarlySplashWindow.setPhaseProgress(
+            EarlySplashBridge.setPhaseProgress(
                     "Forge " + stateName + " preparing" + gpom$ellipsis(gpom$phaseTransitionStep & 3),
                     gpom$phaseTransitionStep,
                     gpom$phaseTransitionSteps

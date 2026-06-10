@@ -30,6 +30,13 @@ public final class GpomEarlyConfig {
     };
     private static final Properties DEFAULTS = new Properties();
     private static final Properties VALUES = new Properties();
+    private static final String ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST =
+            "enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,"
+                    + "enderioconduitsopencomputers,enderioconduitsrefinedstorage,"
+                    + "enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,"
+                    + "enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy";
+    private static final String DEFAULT_PREINIT_DENYLIST =
+            ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",erebus";
 
     static {
         DEFAULTS.setProperty("fml.parallel.preInit.enabled", "false");
@@ -48,11 +55,11 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.construct.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.construct.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.allowlist", "");
-        DEFAULTS.setProperty("fml.parallel.preInit.denylist", "");
+        DEFAULTS.setProperty("fml.parallel.preInit.denylist", DEFAULT_PREINIT_DENYLIST);
         DEFAULTS.setProperty("fml.parallel.preInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.init.allowlist", "");
-        DEFAULTS.setProperty("fml.parallel.init.denylist", "");
+        DEFAULTS.setProperty("fml.parallel.init.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST);
         DEFAULTS.setProperty("fml.parallel.init.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.init.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
@@ -76,6 +83,9 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.queueSize", "8192");
         DEFAULTS.setProperty("gpom.vintageFix.suppressUcwModelErrorSpam", "true");
+        DEFAULTS.setProperty("gpom.vintageFix.skipUcwDefinitionEarlyModelLoad", "true");
+        DEFAULTS.setProperty("gpom.ctm.tolerateUnknownRenderLayer", "true");
+        DEFAULTS.setProperty("gpom.ctm.suppressTextureMetadataErrorSpam", "true");
         DEFAULTS.setProperty("gpom.cacheInvalidation.denylist", "ausm,gpom");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.boot.enabled", "false");
@@ -107,7 +117,16 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.enabled", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", "8");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.enabled", "false");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.maxFailures", "200");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "true");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "true");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.enabled", "false");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.visibleRows", "7");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.columns", "2");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.preferRight", "false");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.shiftRightClickEquip", "true");
         DEFAULTS.setProperty("gpom.loliasm.threadSafeStatefulRegistry", "true");
         DEFAULTS.setProperty("gpom.multipartCompat.enabled", "false");
         DEFAULTS.setProperty("gpom.multipartCompat.ae2.enabled", "false");
@@ -181,7 +200,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis", "5000");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "contenttweaker,modtweaker,abyssalcraft@minecraft:items,actuallybaubles@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,industrialforegoing@minecraft:items,mysticalagradditions@minecraft:items,mysticalagriculture@minecraft:items,natura@minecraft:blocks,natura@minecraft:items,plustic@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:recipes");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",contenttweaker,modtweaker,actuallyadditions@minecraft:items,abyssalcraft@minecraft:items,actuallybaubles@minecraft:items,bewitchment@minecraft:items,bhc@minecraft:items,bigreactors@minecraft:items,botania@minecraft:items,chickens@minecraft:items,deepmoblearningbm@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,extendedcrafting@minecraft:items,extrabotany@minecraft:items,glassential@minecraft:items,iceandfire@minecraft:items,immersiveengineering@minecraft:items,industrialforegoing@minecraft:items,mysticalagradditions@minecraft:items,mysticalagriculture@minecraft:items,natura@minecraft:blocks,natura@minecraft:items,plustic@minecraft:items,storagedrawers@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:blocks,thebetweenlands@minecraft:recipes,zerocore@minecraft:items,integrateddynamics@minecraft:blocks,rftools@minecraft:items,appliedenergistics2@minecraft:items,integrateddynamics@minecraft:items");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "false");
         DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "false");
@@ -526,12 +545,25 @@ public final class GpomEarlyConfig {
                 "gpom.worldLoadingScreen.enabled",
                 "gpom.mainMenuStartupTime.enabled"
         );
+        writeSection(writer, "Baubles UI", "Optional client-side Baubles inventory layout that moves Bauble slots to a Curios-like side rail and keeps quick-equip validated on the server.",
+                "gpom.baubles.sideSlots.enabled",
+                "gpom.baubles.sideSlots.visibleRows",
+                "gpom.baubles.sideSlots.columns",
+                "gpom.baubles.sideSlots.preferRight",
+                "gpom.baubles.sideSlots.shiftRightClickEquip"
+        );
         writeSection(writer, "World Lifecycle Profiling", "World load, unload, and dimension-switch diagnostics for tracking retained client state and memory leaks.",
                 "gpom.worldLifecycleProfiler.enabled",
                 "gpom.worldLifecycleProfiler.forceGcBeforeSnapshots",
                 "gpom.worldLifecycleProfiler.delayedSnapshotMillis",
                 "gpom.worldLifecycleProfiler.deepAttribution.enabled",
                 "gpom.worldLifecycleProfiler.deepAttribution.maxEntries"
+        );
+        writeSection(writer, "AE2 Pattern Diagnostics", "Temporary one-shot world-load scanner that builds canonical AE2 crafting patterns for registered recipes and logs recipes that AE2 cannot validate.",
+                "gpom.ae2.patternDiagnostics.enabled",
+                "gpom.ae2.patternDiagnostics.maxFailures",
+                "gpom.ae2.patternDiagnostics.logMismatchedOutputs",
+                "gpom.ae2.patternDiagnostics.skipRecipeFunctions"
         );
         writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
                 "gpom.loliasm.threadSafeStatefulRegistry"
@@ -756,6 +788,12 @@ public final class GpomEarlyConfig {
                 return "Maximum queued GPOM probe log lines before excess probe logs are dropped instead of blocking the caller.";
             case "gpom.vintageFix.suppressUcwModelErrorSpam":
                 return "Suppresses repeated VintageFix model retrieval stack traces after replacing them with one short GPOM notice per failing model namespace.";
+            case "gpom.vintageFix.skipUcwDefinitionEarlyModelLoad":
+                return "Prevents VintageFix from treating Unlimited Chisel Works ucwdefs JSON files as real model JSON during early dynamic model discovery.";
+            case "gpom.ctm.tolerateUnknownRenderLayer":
+                return "Lets CTM ignore unknown texture metadata render-layer names such as BLOOM instead of dropping the whole metadata section.";
+            case "gpom.ctm.suppressTextureMetadataErrorSpam":
+                return "Replaces repeated CTM texture metadata IOException stack traces with one concise GPOM line per unique metadata failure.";
             case "gpom.cacheInvalidation.denylist":
                 return "Comma-separated mod ids, jar names, or file stems excluded from GPOM cache input signatures; default ignores local AUSM dev jar churn.";
             case "gpom.startupProfiler.logs.enabled":
@@ -818,8 +856,26 @@ public final class GpomEarlyConfig {
                 return "Logs detailed texture, resource-manager, and renderer ownership summaries for world memory leak attribution.";
             case "gpom.worldLifecycleProfiler.deepAttribution.maxEntries":
                 return "Maximum entries shown in each WorldLifecycleDeep top-list; higher values increase log volume.";
+            case "gpom.ae2.patternDiagnostics.enabled":
+                return "Runs a temporary one-shot AE2 crafting-pattern validation scan on server overworld load. Keep false except while debugging pattern terminal failures.";
+            case "gpom.ae2.patternDiagnostics.maxFailures":
+                return "Maximum individual AE2 pattern diagnostic failure lines to log before suppressing additional details. Summary counts are always logged.";
+            case "gpom.ae2.patternDiagnostics.logMismatchedOutputs":
+                return "Logs recipes whose canonical ingredient choice matches a different recipe or output before AE2 pattern validation.";
+            case "gpom.ae2.patternDiagnostics.skipRecipeFunctions":
+                return "Skips CraftTweaker/RecipeStages recipes with recipe functions before AE2 PatternHelper validation, avoiding CT FATAL spam from synthetic diagnostic inventories.";
             case "gpom.mainMenuStartupTime.enabled":
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
+            case "gpom.baubles.sideSlots.enabled":
+                return "Repositions Baubles' expanded-inventory slots into a side rail and enables support hooks for extra Bauble slots. Requires Baubles.";
+            case "gpom.baubles.sideSlots.visibleRows":
+                return "Number of Bauble slot rows visible per side-rail page.";
+            case "gpom.baubles.sideSlots.columns":
+                return "Number of Bauble slot columns shown per side-rail page; page size is visibleRows * columns.";
+            case "gpom.baubles.sideSlots.preferRight":
+                return "When true, places the Baubles side rail to the right if there is screen space; false keeps the default left-side rail.";
+            case "gpom.baubles.sideSlots.shiftRightClickEquip":
+                return "Allows Shift+right-clicking a Bauble stack in a player inventory slot to quick-equip it through a server-validated GPOM packet.";
             case "gpom.loliasm.threadSafeStatefulRegistry":
                 return "Replaces LoliASM's crash-state registry with a concurrent set and prunes cleared weak references from BufferBuilder churn.";
             case "gpom.multipartCompat.enabled":
@@ -1026,6 +1082,9 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.construction.genericSidedProxies.denylist");
         copySystemPropertyIfAbsent("gpom.construction.genericAutomaticSubscribers.denylist");
         copySystemPropertyIfAbsent("gpom.vintageFix.suppressUcwModelErrorSpam");
+        copySystemPropertyIfAbsent("gpom.vintageFix.skipUcwDefinitionEarlyModelLoad");
+        copySystemPropertyIfAbsent("gpom.ctm.tolerateUnknownRenderLayer");
+        copySystemPropertyIfAbsent("gpom.ctm.suppressTextureMetadataErrorSpam");
         copySystemPropertyIfAbsent("gpom.startupProfiler.logs.constructCriticalPath.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
         copySystemPropertyIfAbsent("gpom.startupProfiler.probeHighVolumeEventBusPosts");
@@ -1107,6 +1166,15 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.maxEntries");
+        copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.enabled");
+        copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.maxFailures");
+        copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.logMismatchedOutputs");
+        copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.enabled");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.visibleRows");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.columns");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.preferRight");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.shiftRightClickEquip");
         copySystemPropertyIfAbsent("gpom.loliasm.threadSafeStatefulRegistry");
         copySystemPropertyIfAbsent("gpom.multipartCompat.enabled");
         copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.enabled");
@@ -1292,8 +1360,44 @@ public final class GpomEarlyConfig {
         return intValue("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", 8);
     }
 
+    public static boolean ae2PatternDiagnosticsEnabled() {
+        return booleanValue("gpom.ae2.patternDiagnostics.enabled");
+    }
+
+    public static int ae2PatternDiagnosticsMaxFailures() {
+        return Math.max(0, intValue("gpom.ae2.patternDiagnostics.maxFailures", 200));
+    }
+
+    public static boolean ae2PatternDiagnosticsLogMismatchedOutputs() {
+        return booleanValue("gpom.ae2.patternDiagnostics.logMismatchedOutputs");
+    }
+
+    public static boolean ae2PatternDiagnosticsSkipRecipeFunctions() {
+        return booleanValue("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
+    }
+
     public static boolean mainMenuStartupTimeEnabled() {
         return booleanValue("gpom.mainMenuStartupTime.enabled");
+    }
+
+    public static boolean baublesSideSlotsEnabled() {
+        return booleanValue("gpom.baubles.sideSlots.enabled");
+    }
+
+    public static int baublesSideSlotsVisibleRows() {
+        return Math.max(3, Math.min(12, intValue("gpom.baubles.sideSlots.visibleRows", 7)));
+    }
+
+    public static int baublesSideSlotsColumns() {
+        return Math.max(1, Math.min(6, intValue("gpom.baubles.sideSlots.columns", 2)));
+    }
+
+    public static boolean baublesSideSlotsPreferRight() {
+        return booleanValue("gpom.baubles.sideSlots.preferRight");
+    }
+
+    public static boolean baublesSideSlotsShiftRightClickEquipEnabled() {
+        return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.shiftRightClickEquip");
     }
 
     public static boolean loliAsmThreadSafeStatefulRegistryEnabled() {

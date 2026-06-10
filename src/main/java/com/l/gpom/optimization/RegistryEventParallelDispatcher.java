@@ -61,6 +61,8 @@ public final class RegistryEventParallelDispatcher {
     private static volatile Field eventBusIdField;
     private static volatile Field eventBusExceptionHandlerField;
     private static volatile Field asmOwnerField;
+    private static volatile Field asmHandlerField;
+    private static volatile Field asmReadableField;
     private static final Set<String> LOGGED_ENABLED_REGISTRIES = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> LOGGED_NO_PARALLEL = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final ThreadLocal<QueuingRegistry> ACTIVE_QUEUING_REGISTRY = new ThreadLocal<>();
@@ -515,7 +517,8 @@ public final class RegistryEventParallelDispatcher {
         String modId = safeModId(target.owner);
         boolean ownerKnown = !normalize(modId).isEmpty();
         boolean targetAvailable = target.parallelTarget != null;
-        boolean allowed = ownerKnown && isAllowed(modId, registryName);
+        boolean hardSerial = isEnderIoTileLifecycleListener(listener, target, registryName);
+        boolean allowed = !hardSerial && ownerKnown && isAllowed(modId, registryName);
         boolean parallel = allowed && targetAvailable;
         return new ListenerPlan(
                 index,
@@ -928,6 +931,119 @@ public final class RegistryEventParallelDispatcher {
         }
     }
 
+    private static boolean isEnderIoTileLifecycleListener(IEventListener listener, ListenerTarget target, String registryName) {
+        String registry = normalize(registryName);
+        if (!"minecraft:blocks".equals(registry) && !"minecraft:items".equals(registry)) {
+            return false;
+        }
+
+        String ownerModId = normalize(safeModId(target.owner));
+        if (ownerModId.startsWith("enderio")) {
+            return true;
+        }
+
+        return listenerReferencesEnderIo(listener, Collections.newSetFromMap(new IdentityHashMap<>()), 0);
+    }
+
+    private static boolean listenerReferencesEnderIo(Object value, Set<Object> seen, int depth) {
+        if (value == null || depth > 4) {
+            return false;
+        }
+        if (value instanceof String) {
+            return isEnderIoTileLifecycleText((String) value);
+        }
+        if (value instanceof ModContainer) {
+            return normalize(((ModContainer) value).getModId()).startsWith("enderio");
+        }
+        if (value instanceof Class<?>) {
+            return isEnderIoTileLifecycleClassName(((Class<?>) value).getName());
+        }
+
+        Class<?> type = value.getClass();
+        if (isEnderIoTileLifecycleClassName(type.getName())) {
+            return true;
+        }
+        if (!seen.add(value)) {
+            return false;
+        }
+
+        if (value instanceof ASMEventHandler) {
+            if (listenerReferencesEnderIo(reflectFieldValue(value, asmHandlerField(), "handler"), seen, depth + 1)) {
+                return true;
+            }
+            if (listenerReferencesEnderIo(reflectFieldValue(value, asmReadableField(), "readable"), seen, depth + 1)) {
+                return true;
+            }
+        }
+
+        if (!isSafeListenerContainer(type)) {
+            return false;
+        }
+
+        Class<?> current = type;
+        while (current != null) {
+            Field[] fields;
+            try {
+                fields = current.getDeclaredFields();
+            } catch (Throwable ignored) {
+                fields = new Field[0];
+            }
+            for (Field field : fields) {
+                if (field.getType().isPrimitive()) {
+                    continue;
+                }
+                Object nested;
+                try {
+                    field.setAccessible(true);
+                    nested = field.get(value);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (listenerReferencesEnderIo(nested, seen, depth + 1)) {
+                    return true;
+                }
+            }
+            current = current.getSuperclass();
+        }
+        return false;
+    }
+
+    private static boolean isSafeListenerContainer(Class<?> type) {
+        String name = type == null ? "" : type.getName();
+        return name.startsWith("net.minecraftforge.fml.common.eventhandler.")
+                || name.startsWith("com.google.common.eventbus.")
+                || name.startsWith("com.l.gpom.")
+                || name.contains("ASMEventHandler")
+                || name.contains("EventBus");
+    }
+
+    private static boolean isEnderIoTileLifecycleText(String value) {
+        String text = value == null ? "" : value;
+        return text.contains("crazypants.enderio.")
+                || text.contains("ConduitTileEntity")
+                || text.contains("ConduitObject")
+                || text.contains("TileConduitBundle");
+    }
+
+    private static boolean isEnderIoTileLifecycleClassName(String className) {
+        return className != null && className.startsWith("crazypants.enderio.");
+    }
+
+    private static Object reflectFieldValue(Object owner, Field field, String fallbackName) {
+        if (owner == null || field == null) {
+            return null;
+        }
+        try {
+            return field.get(owner);
+        } catch (Throwable ignored) {
+            try {
+                return findField(owner.getClass(), fallbackName).get(owner);
+            } catch (Throwable ignoredAgain) {
+                return null;
+            }
+        }
+    }
+
     private static int eventBusId(EventBus eventBus) throws Exception {
         return eventBusIdField().getInt(eventBus);
     }
@@ -962,6 +1078,34 @@ public final class RegistryEventParallelDispatcher {
             field = ASMEventHandler.class.getDeclaredField("owner");
             field.setAccessible(true);
             asmOwnerField = field;
+        }
+        return field;
+    }
+
+    private static Field asmHandlerField() {
+        Field field = asmHandlerField;
+        if (field == null) {
+            try {
+                field = ASMEventHandler.class.getDeclaredField("handler");
+                field.setAccessible(true);
+                asmHandlerField = field;
+            } catch (Throwable ignored) {
+                return null;
+            }
+        }
+        return field;
+    }
+
+    private static Field asmReadableField() {
+        Field field = asmReadableField;
+        if (field == null) {
+            try {
+                field = ASMEventHandler.class.getDeclaredField("readable");
+                field.setAccessible(true);
+                asmReadableField = field;
+            } catch (Throwable ignored) {
+                return null;
+            }
         }
         return field;
     }

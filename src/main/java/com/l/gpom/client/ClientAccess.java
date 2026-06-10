@@ -3,6 +3,14 @@ package com.l.gpom.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.inventory.GuiInventory;
+import net.minecraft.client.renderer.RenderItem;
+import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.InventoryPlayer;
+import net.minecraft.inventory.ClickType;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.ResourceLocation;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -14,7 +22,22 @@ public final class ClientAccess {
     private static volatile Method fontWidthMethod;
     private static volatile Method drawStringWithShadowMethod;
     private static volatile Method drawRectMethod;
+    private static volatile Method drawGradientRectMethod;
+    private static volatile Method drawTexturedModalRectMethod;
+    private static volatile Method getTextureManagerMethod;
+    private static volatile Method bindTextureMethod;
+    private static volatile Method drawInventoryEntityMethod;
+    private static volatile Method getRenderItemMethod;
+    private static volatile Method renderItemOverlayMethod;
+    private static volatile Method windowClickMethod;
+    private static volatile Method inventoryCarriedStackMethod;
     private static volatile Field fontRendererField;
+    private static volatile Field displayWidthField;
+    private static volatile Field displayHeightField;
+    private static volatile Field playerField;
+    private static volatile Field currentScreenField;
+    private static volatile Field playerControllerField;
+    private static volatile Field playerInventoryField;
 
     private ClientAccess() {
     }
@@ -87,6 +110,30 @@ public final class ClientAccess {
         }
     }
 
+    public static Object currentScreen(Minecraft minecraft) {
+        if (minecraft == null) {
+            return null;
+        }
+        try {
+            Field field = currentScreenField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71462_r", "currentScreen");
+                currentScreenField = field;
+            }
+            return field == null ? null : field.get(minecraft);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static int displayWidth(Minecraft minecraft) {
+        return intField(minecraft, true);
+    }
+
+    public static int displayHeight(Minecraft minecraft) {
+        return intField(minecraft, false);
+    }
+
     public static int stringWidth(FontRenderer font, String text) {
         if (font == null || text == null) {
             return 0;
@@ -135,6 +182,215 @@ public final class ClientAccess {
         }
     }
 
+    public static void drawGradientRect(Gui gui, int left, int top, int right, int bottom, int startColor, int endColor) {
+        if (gui == null) {
+            return;
+        }
+        try {
+            Method method = drawGradientRectMethod;
+            if (method == null) {
+                method = findMethod(Gui.class, new Class<?>[] {int.class, int.class, int.class, int.class, int.class, int.class}, "func_73733_a", "drawGradientRect");
+                drawGradientRectMethod = method;
+            }
+            if (method != null) {
+                method.invoke(gui, left, top, right, bottom, startColor, endColor);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void drawTexturedModalRect(Gui gui, int x, int y, int textureX, int textureY, int width, int height) {
+        if (gui == null) {
+            return;
+        }
+        try {
+            Method method = drawTexturedModalRectMethod;
+            if (method == null) {
+                method = findMethod(Gui.class, new Class<?>[] {int.class, int.class, int.class, int.class, int.class, int.class}, "func_73729_b", "drawTexturedModalRect");
+                drawTexturedModalRectMethod = method;
+            }
+            if (method != null) {
+                method.invoke(gui, x, y, textureX, textureY, width, height);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void bindTexture(Minecraft minecraft, ResourceLocation texture) {
+        if (minecraft == null || texture == null) {
+            return;
+        }
+        try {
+            Method textureManager = getTextureManagerMethod;
+            if (textureManager == null) {
+                textureManager = findMethod(Minecraft.class, new Class<?>[0], "func_110434_K", "getTextureManager");
+                getTextureManagerMethod = textureManager;
+            }
+            Object manager = textureManager == null ? null : textureManager.invoke(minecraft);
+            if (manager == null) {
+                return;
+            }
+
+            Method bind = bindTextureMethod;
+            if (bind == null) {
+                bind = findMethod(manager.getClass(), new Class<?>[] {ResourceLocation.class}, "func_110577_a", "bindTexture");
+                bindTextureMethod = bind;
+            }
+            if (bind != null) {
+                bind.invoke(manager, texture);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static EntityLivingBase player(Minecraft minecraft) {
+        if (minecraft == null) {
+            return null;
+        }
+        try {
+            Field field = playerField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71439_g", "player");
+                playerField = field;
+            }
+            Object value = field == null ? null : field.get(minecraft);
+            return value instanceof EntityLivingBase ? (EntityLivingBase) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static void drawInventoryEntity(int x, int y, int scale, float mouseX, float mouseY, EntityLivingBase entity) {
+        if (entity == null) {
+            return;
+        }
+        try {
+            Method method = drawInventoryEntityMethod;
+            if (method == null) {
+                method = findMethod(GuiInventory.class,
+                        new Class<?>[] {int.class, int.class, int.class, float.class, float.class, EntityLivingBase.class},
+                        "func_147046_a",
+                        "drawEntityOnScreen");
+                drawInventoryEntityMethod = method;
+            }
+            if (method != null) {
+                method.invoke(null, x, y, scale, mouseX, mouseY, entity);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void renderItemOverlayIntoGui(Minecraft minecraft,
+                                                FontRenderer font,
+                                                ItemStack stack,
+                                                int x,
+                                                int y,
+                                                String text) {
+        if (minecraft == null || font == null || stack == null) {
+            return;
+        }
+
+        try {
+            Method getRenderItem = getRenderItemMethod;
+            if (getRenderItem == null) {
+                getRenderItem = findMethod(Minecraft.class, new Class<?>[0], "func_175599_af", "getRenderItem");
+                getRenderItemMethod = getRenderItem;
+            }
+            Object renderer = getRenderItem == null ? null : getRenderItem.invoke(minecraft);
+            if (!(renderer instanceof RenderItem)) {
+                return;
+            }
+
+            Method overlay = renderItemOverlayMethod;
+            if (overlay == null) {
+                overlay = findMethod(RenderItem.class,
+                        new Class<?>[] {FontRenderer.class, ItemStack.class, int.class, int.class, String.class},
+                        "func_180453_a",
+                        "renderItemOverlayIntoGUI");
+                renderItemOverlayMethod = overlay;
+            }
+            if (overlay != null) {
+                overlay.invoke(renderer, font, stack, x, y, text);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static boolean windowClick(Minecraft minecraft, int windowId, int slotNumber, int mouseButton, ClickType clickType) {
+        if (minecraft == null || clickType == null) {
+            return false;
+        }
+
+        EntityLivingBase living = player(minecraft);
+        if (!(living instanceof EntityPlayer)) {
+            return false;
+        }
+
+        try {
+            Object controller = playerController(minecraft);
+            if (controller == null) {
+                return false;
+            }
+
+            Method method = windowClickMethod;
+            if (method == null) {
+                method = findMethod(
+                        controller.getClass(),
+                        new Class<?>[] {int.class, int.class, int.class, ClickType.class, EntityPlayer.class},
+                        "func_187098_a",
+                        "windowClick"
+                );
+                windowClickMethod = method;
+            }
+            if (method == null) {
+                return false;
+            }
+
+            method.invoke(controller, windowId, slotNumber, mouseButton, clickType, living);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static ItemStack carriedStack(Minecraft minecraft) {
+        EntityLivingBase living = player(minecraft);
+        if (!(living instanceof EntityPlayer)) {
+            return null;
+        }
+
+        try {
+            Field inventoryField = playerInventoryField;
+            if (inventoryField == null) {
+                inventoryField = findField(EntityPlayer.class, "field_71071_by", "inventory");
+                playerInventoryField = inventoryField;
+            }
+            Object inventory = inventoryField == null ? null : inventoryField.get(living);
+            if (!(inventory instanceof InventoryPlayer)) {
+                return null;
+            }
+
+            Method method = inventoryCarriedStackMethod;
+            if (method == null) {
+                method = findMethod(InventoryPlayer.class, new Class<?>[0], "func_70445_o", "getItemStack");
+                inventoryCarriedStackMethod = method;
+            }
+            Object value = method == null ? null : method.invoke(inventory);
+            return value instanceof ItemStack ? (ItemStack) value : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static Object playerController(Minecraft minecraft) throws IllegalAccessException {
+        Field field = playerControllerField;
+        if (field == null) {
+            field = findField(Minecraft.class, "field_71442_b", "playerController");
+            playerControllerField = field;
+        }
+        return field == null ? null : field.get(minecraft);
+    }
+
     private static Method findMethod(Class<?> type, Class<?>[] parameters, String... names) {
         for (String name : names) {
             try {
@@ -157,5 +413,30 @@ public final class ClientAccess {
             }
         }
         return null;
+    }
+
+    private static int intField(Minecraft minecraft, boolean width) {
+        if (minecraft == null) {
+            return 0;
+        }
+        try {
+            Field field = width ? displayWidthField : displayHeightField;
+            if (field == null) {
+                field = findField(
+                        Minecraft.class,
+                        width ? "field_71443_c" : "field_71440_d",
+                        width ? "displayWidth" : "displayHeight"
+                );
+                if (width) {
+                    displayWidthField = field;
+                } else {
+                    displayHeightField = field;
+                }
+            }
+            Object value = field == null ? null : field.get(minecraft);
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 }

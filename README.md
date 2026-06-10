@@ -40,8 +40,27 @@ If neither is set, the build falls back to the common Flatpak PrismLauncher Meat
 - Local compressed runtime caches under the instance directory at `caches/gpom/<purpose>/`.
 - Cache invalidation denylist for jars that should not invalidate GPOM runtime caches while actively developed or non-content-bearing.
 - VintageFix/Unlimited Chisel Works/model-log spam suppression that keeps one concise GPOM line per noisy namespace instead of repeated stack traces.
+- Server-safe bootstrap routing through Forge sided proxies plus side-checked early splash bridging, so common/server startup does not load client-only classes.
+- Optional Baubles side-slot inventory panel that adds real Baubles slots to the vanilla inventory instead of relying on Baubles' expanded GUI.
 - Experimental Forge Multipart/AE2 compatibility switches. These are disabled by default because multipart world data can be destructive if a bridge is disabled after use.
 - Title-screen GPOM version display.
+
+## Latest Changelog
+
+### 2026-06-10
+
+- Added `CommonProxy` / `ClientProxy` sided bootstrap so common pre-init registrations run through side-aware Forge entrypoints.
+- Added `GpomSide` and `EarlySplashBridge` so coremod and scheduler paths can update the early splash on client launches without loading `EarlySplashWindow` on dedicated servers.
+- Guarded Baubles EventBus replacement and side-slot networking so client-only handlers do not load on servers.
+- Simplified Baubles side slots to use the vanilla `GuiInventory` path: GPOM appends Baubles slots to `ContainerPlayer`, draws only the side panel/button, and redirects Baubles key/button entrypoints to vanilla inventory side slots.
+- Removed the active expanded-Baubles-GUI mixin path from the mixin config; this avoids depending on `GuiPlayerExpanded` / `ContainerPlayerExpanded`, which BringMeTheRings can make unsafe to transform.
+- Removed the manual post-render hover/durability overlay replay. Vanilla `GuiContainer` owns item hover, durability bars, and tooltips again.
+- Synced CosmeticArmorReworked per-bauble visibility toggles with the GPOM side rail. The toggle buttons are moved beside side slots while the panel is open, hidden when the panel is closed, and missing supported buttons are created reflectively for extra Baubles handler slots.
+- Fixed a Cleanroom runtime crash by replacing the last direct mapped `Slot.isEnabled()` call with SRG-safe reflective `func_111238_b` access.
+- Creative players now stay on the real creative inventory path when opening Baubles through GPOM, and GPOM removes mirrored Baubles slots from the creative survival tab instead of opening a fake survival inventory over the hotbar.
+- Fixed the creative-tab cleanup crash by avoiding direct `CreativeTabs.INVENTORY` linkage and resolving the survival inventory tab label through mapped/SRG reflective fallbacks.
+- Added `erebus` to the default PreInit parallel denylist after the MeatballCraft crash in Erebus armor/registry setup. Parallel PreInit remains available; the fix is scoped to the broken mod.
+- Validated `./gradlew build` and a dedicated-server smoke run with `./gradlew runServer --args nogui`; the server reached the normal EULA stop without client-side classloading crashes.
 
 ## Config File
 
@@ -206,11 +225,30 @@ This should only contain mods that do not register content relevant to the cache
 
 ```properties
 gpom.vintageFix.suppressUcwModelErrorSpam=true
+gpom.vintageFix.skipUcwDefinitionEarlyModelLoad=true
+gpom.ctm.tolerateUnknownRenderLayer=true
+gpom.ctm.suppressTextureMetadataErrorSpam=true
 gpom.ucw.suppressTextureStitchStdout=true
 gpom.crafttweaker.suppressFunctionTypeStdout=true
 ```
 
-These switches remove known high-volume startup spam while leaving one GPOM summary line for suppressed VintageFix model/texture namespaces.
+These switches remove known high-volume startup spam while leaving one GPOM summary line for suppressed VintageFix model/texture namespaces. The CTM compatibility switches also let CTM keep reading texture metadata when only the render-layer name is unknown, such as `BLOOM`.
+
+## Baubles Side Slots
+
+```properties
+gpom.baubles.sideSlots.enabled=false
+gpom.baubles.sideSlots.visibleRows=7
+gpom.baubles.sideSlots.columns=2
+gpom.baubles.sideSlots.preferRight=false
+gpom.baubles.sideSlots.shiftRightClickEquip=true
+```
+
+When enabled, GPOM adds Baubles handler slots to the vanilla player inventory container and renders them as a paged Curios-like side panel. The panel defaults to the left of the vanilla inventory, can be paged when the handler has more slots than fit, and uses Baubles' existing slot-type icon art for empty slots.
+
+The Baubles keybind and Baubles inventory button are redirected to the vanilla inventory side panel. Creative players keep the real creative inventory screen, with mirrored Baubles slots removed from the creative survival tab. GPOM intentionally does not use Baubles' expanded inventory screen for this feature because expanded-screen transformers from other mods can fail before GPOM can safely render the UI. Server-side quick-equip validation remains required for shift-click support.
+
+If CosmeticArmorReworked is present, GPOM reflectively syncs its small per-bauble cosmetic visibility toggles with the side rail instead of letting them remain behind in the original expanded-screen positions. Buttons are hidden when the rail is closed. BringMeTheRings and other slot-expansion mods are supported through the real Baubles handler slots, but cosmetic toggles only appear for slots backed by CosmeticArmorReworked's own cosmetic inventory.
 
 ## Multipart Compatibility
 
@@ -231,6 +269,7 @@ The AE2/Forge Multipart bridge is experimental and must remain off for normal pl
 - GPOM does not open sockets, fetch remote code, or load classes from cache/config paths.
 - ASM and reflection targets are hardcoded and exact-version checked where the optimization depends on third-party internals.
 - Runtime caches use primitive/NBT data formats, not Java object serialization.
+- Common and server bootstrap paths must not directly import client-only classes; GPOM uses sided proxies or reflective side guards for those boundaries.
 - Threaded loading is a stability risk, not a security feature. Treat broad `*` allowlists as pack-specific experiments.
 
 ## Operational Notes

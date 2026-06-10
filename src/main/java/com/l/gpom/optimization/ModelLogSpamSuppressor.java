@@ -3,6 +3,8 @@ package com.l.gpom.optimization;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import net.minecraft.util.BlockRenderLayer;
+
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Set;
@@ -13,6 +15,8 @@ public final class ModelLogSpamSuppressor {
     private static final Set<String> VINTAGEFIX_UCW_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> VINTAGEFIX_DYNAMIC_MODEL_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> VINTAGEFIX_MISSING_TEXTURE_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final Set<String> CTM_UNKNOWN_RENDER_LAYERS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final Set<String> CTM_TEXTURE_METADATA_ERRORS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     private ModelLogSpamSuppressor() {
     }
@@ -55,6 +59,47 @@ public final class ModelLogSpamSuppressor {
                     "[GPOM LogSpam] Suppressing repeated VintageFix missing-texture warnings for namespace '{}' starting at texture {}",
                     namespace,
                     textureName
+            );
+        }
+    }
+
+    public static boolean isVintageFixUcwDefinitionPath(String path) {
+        if (path == null) {
+            return false;
+        }
+        String normalized = path.replace('\\', '/').toLowerCase(Locale.ROOT);
+        return normalized.startsWith("assets/unlimitedchiselworks/ucwdefs/")
+                || normalized.contains("/assets/unlimitedchiselworks/ucwdefs/")
+                || normalized.startsWith("unlimitedchiselworks/ucwdefs/")
+                || normalized.contains("/unlimitedchiselworks/ucwdefs/");
+    }
+
+    public static void suppressCtmUnknownRenderLayer(Object layer, Throwable throwable) {
+        String layerName = String.valueOf(layer);
+        if (CTM_UNKNOWN_RENDER_LAYERS.add(layerName)) {
+            LOGGER.info(
+                    "[GPOM CTM] CTM does not know render layer {}; leaving layer unset for matching texture metadata ({})",
+                    layerName,
+                    concise(throwable)
+            );
+        }
+    }
+
+    public static BlockRenderLayer ctmBlockRenderLayerValueOf(String layerName) {
+        try {
+            return BlockRenderLayer.valueOf(layerName);
+        } catch (IllegalArgumentException exception) {
+            suppressCtmUnknownRenderLayer(layerName, exception);
+            return null;
+        }
+    }
+
+    public static void suppressCtmTextureMetadataError(Throwable throwable) {
+        String key = concise(throwable);
+        if (CTM_TEXTURE_METADATA_ERRORS.add(key)) {
+            LOGGER.info(
+                    "[GPOM CTM] Suppressing repeated CTM texture metadata stack traces ({})",
+                    key
             );
         }
     }

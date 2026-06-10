@@ -1,8 +1,8 @@
 package com.l.gpom.core;
 
-import com.l.gpom.client.EarlySplashWindow;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.ForgeEventSubscriptionTransformerOptimizations;
+import com.l.gpom.util.EarlySplashBridge;
 import net.minecraftforge.fml.relauncher.IFMLLoadingPlugin;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,17 +23,17 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         }
         markBoot("GPOM core plugin static init entered");
         long startedAt = System.nanoTime();
-        EarlySplashWindow.startIfEnabled();
+        EarlySplashBridge.startIfEnabled();
         markBootDuration("EarlySplashWindow.startIfEnabled", startedAt);
-        EarlySplashWindow.setBootProgress("GPOM core plugin", 1, 4);
+        EarlySplashBridge.setBootProgress("GPOM core plugin", 1, 4);
         startedAt = System.nanoTime();
         MixinBootstrap.init();
         markBootDuration("MixinBootstrap.init", startedAt);
-        EarlySplashWindow.setBootProgress("Mixin bootstrap", 2, 4);
+        EarlySplashBridge.setBootProgress("Mixin bootstrap", 2, 4);
         startedAt = System.nanoTime();
         Mixins.addConfiguration("gpom.mod.mixin.json");
         markBootDuration("Mixins.addConfiguration(gpom.mod.mixin.json)", startedAt);
-        EarlySplashWindow.setBootProgress("GPOM mixins registered", 3, 4);
+        EarlySplashBridge.setBootProgress("GPOM mixins registered", 3, 4);
         startedAt = System.nanoTime();
         preloadRuntimeHelpers();
         markBootDuration("GPOM preloadRuntimeHelpers", startedAt);

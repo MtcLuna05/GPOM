@@ -1,6 +1,8 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomSide;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.event.RegistryEvent;
@@ -69,6 +71,53 @@ public final class EventBusRegistrationOptimizations {
     private static volatile Field eventBusListenerOwnersField;
 
     private EventBusRegistrationOptimizations() {
+    }
+
+    public static boolean tryReplaceFragileInstanceRegistration(EventBus eventBus, Object target) {
+        if (target == null) {
+            return false;
+        }
+
+        String targetClass = target.getClass().getName();
+        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !GpomSide.isClientLaunch()) {
+            return false;
+        }
+
+        if ("baubles.client.ClientEventHandler".equals(targetClass)) {
+            registerReplacement(
+                    eventBus,
+                    "com.l.gpom.compat.baubles.BaublesSideSlotsClientEvents",
+                    "[GPOM Baubles] Replaced Baubles ClientEventHandler with vanilla-inventory side-slot handler",
+                    "[GPOM Baubles] Could not register vanilla-inventory side-slot client handler; dropping Baubles ClientEventHandler to avoid expanded inventory screen"
+            );
+            return true;
+        }
+
+        if (!"baubles.client.gui.GuiEvents".equals(targetClass)) {
+            return false;
+        }
+        registerReplacement(
+                eventBus,
+                "com.l.gpom.compat.baubles.BaublesSideSlotsGuiEvents",
+                "[GPOM Baubles] Replaced Baubles GuiEvents with vanilla-inventory side-slot GUI handler",
+                "[GPOM Baubles] Could not register vanilla-inventory side-slot GUI handler; dropping Baubles GuiEvents to avoid expanded inventory screen"
+        );
+        return true;
+    }
+
+    private static void registerReplacement(EventBus eventBus, String className, String successMessage, String failureMessage) {
+        try {
+            Class<?> replacementClass = Class.forName(
+                    className,
+                    true,
+                    EventBusRegistrationOptimizations.class.getClassLoader()
+            );
+            Object replacement = replacementClass.getConstructor().newInstance();
+            eventBus.register(replacement);
+            GPOM.LOGGER.info(successMessage);
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn(failureMessage, throwable);
+        }
     }
 
     @SuppressWarnings("unchecked")

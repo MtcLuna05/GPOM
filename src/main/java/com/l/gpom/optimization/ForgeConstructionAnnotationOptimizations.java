@@ -915,6 +915,7 @@ public final class ForgeConstructionAnnotationOptimizations {
         private final ModContainer owner;
         private final Class<?> subscriberClass;
         private final SubscriberHandlerSpec spec;
+        private static final MethodHandle NOOP_HANDLER = noopHandler();
         private volatile MethodHandle handler;
 
         private LazyStaticSubscriberListener(ModContainer owner,
@@ -999,17 +1000,32 @@ public final class ForgeConstructionAnnotationOptimizations {
                         .unreflect(method)
                         .asType(MethodType.methodType(Void.TYPE, Event.class));
             } catch (Throwable throwable) {
-                throw new RuntimeException(
-                        "Unable to initialize lazy automatic subscriber "
-                                + subscriberClass.getName()
-                                + '#'
-                                + spec.methodName
-                                + '('
-                                + spec.eventType.getName()
-                                + ')',
+                GPOM.LOGGER.error(
+                        "[ForgeConstructionAnnotationOptimizations] Disabling broken lazy automatic subscriber {}#{}({}) for {}; handler could not be initialized",
+                        subscriberClass.getName(),
+                        spec.methodName,
+                        spec.eventType.getName(),
+                        safeModId(owner),
                         throwable
                 );
+                return NOOP_HANDLER;
             }
+        }
+
+        private static MethodHandle noopHandler() {
+            try {
+                return MethodHandles.lookup().findStatic(
+                        LazyStaticSubscriberListener.class,
+                        "noop",
+                        MethodType.methodType(Void.TYPE, Event.class)
+                );
+            } catch (Throwable throwable) {
+                throw new ExceptionInInitializerError(throwable);
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static void noop(Event event) {
         }
 
         private Method findSubscriberMethod() throws NoSuchMethodException {
