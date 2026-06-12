@@ -40,6 +40,8 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Set;
 
 public final class EventBusRegistrationOptimizations {
     private static final String SUBSCRIBE_EVENT_DESCRIPTOR = Type.getDescriptor(SubscribeEvent.class);
@@ -69,6 +71,11 @@ public final class EventBusRegistrationOptimizations {
     private static volatile Field eventBusIdField;
     private static volatile Field eventBusListenersField;
     private static volatile Field eventBusListenerOwnersField;
+    private static volatile Field listenerListInstancesField;
+    private static volatile Field listenerListInstListenersField;
+    private static volatile Field listenerListInstPrioritiesField;
+    private static volatile Field listenerListInstRebuildField;
+    private static volatile boolean listenerCacheSanitizerWarningLogged;
 
     private EventBusRegistrationOptimizations() {
     }
@@ -127,6 +134,11 @@ public final class EventBusRegistrationOptimizations {
         }
 
         Class<?> subscriberClass = (Class<?>) target;
+        ModContainer owner = activeOwner();
+        if (isLazyStaticSubscriberDenied(subscriberClass, owner)) {
+            return false;
+        }
+
         SubscriberScan scan = STATIC_SUBSCRIBERS.get(subscriberClass);
         if (!scan.supported || scan.handlers.isEmpty()) {
             return false;
@@ -140,26 +152,51 @@ public final class EventBusRegistrationOptimizations {
                 return true;
             }
 
-            ModContainer owner = activeOwner();
-            Map<Object, ModContainer> listenerOwners =
-                    (Map<Object, ModContainer>) eventBusListenerOwnersField().get(eventBus);
-            listenerOwners.put(subscriberClass, owner);
-
-            int busId = eventBusIdField().getInt(eventBus);
-            ArrayList<IEventListener> registeredListeners = new ArrayList<>(scan.handlers.size());
+            List<ListenerRegistration> registrations = new ArrayList<>(scan.handlers.size());
             for (SubscriberHandlerSpec spec : scan.handlers) {
                 ListenerList listenerList = listenerListFor(spec);
                 if (listenerList == null) {
                     return false;
                 }
-
-                IEventListener listener = new LazyStaticEventBusListener(owner, subscriberClass, spec);
-                listenerList.register(busId, spec.priority, listener);
-                registeredListeners.add(listener);
+                registrations.add(new ListenerRegistration(spec, listenerList));
             }
 
-            listeners.put(subscriberClass, registeredListeners);
-            return true;
+            Map<Object, ModContainer> listenerOwners =
+                    (Map<Object, ModContainer>) eventBusListenerOwnersField().get(eventBus);
+            int busId = eventBusIdField().getInt(eventBus);
+
+            synchronized (ListenerList.class) {
+                if (listeners.containsKey(subscriberClass)) {
+                    return true;
+                }
+
+                ArrayList<IEventListener> registeredListeners = new ArrayList<>(registrations.size());
+                listenerOwners.put(subscriberClass, owner);
+                try {
+                    for (ListenerRegistration registration : registrations) {
+                        IEventListener listener = new LazyStaticEventBusListener(owner, subscriberClass, registration.spec);
+                        registration.listenerList.register(busId, registration.spec.priority, listener);
+                        registeredListeners.add(listener);
+                    }
+
+                    for (ListenerRegistration registration : registrations) {
+                        sanitizeCachedListenersLocked(
+                                registration.listenerList,
+                                busId,
+                                "lazy EventBus registration " + subscriberClass.getName()
+                        );
+                    }
+
+                    listeners.put(subscriberClass, registeredListeners);
+                    return true;
+                } catch (Throwable throwable) {
+                    for (IEventListener listener : registeredListeners) {
+                        ListenerList.unregisterAll(busId, listener);
+                    }
+                    listenerOwners.remove(subscriberClass);
+                    throw throwable;
+                }
+            }
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn(
                     "[EventBusRegistrationOptimizations] Lazy static EventBus registration failed for {}; falling back to Forge",
@@ -242,6 +279,184 @@ public final class EventBusRegistrationOptimizations {
         return spec.eventType.getConstructor().newInstance();
     }
 
+    public static void sanitizePostedEventListeners(EventBus eventBus, Event event) {
+        if (eventBus == null || event == null || !shouldSanitizePostedEventListeners()) {
+            return;
+        }
+        try {
+            int busId = eventBusIdField().getInt(eventBus);
+            synchronized (ListenerList.class) {
+                sanitizeCachedListenersLocked(
+                        event.getListenerList(),
+                        busId,
+                        "worker EventBus.post " + event.getClass().getName()
+                );
+            }
+        } catch (Throwable throwable) {
+            warnListenerCacheSanitizerOnce(
+                    "[EventBusRegistrationOptimizations] Could not inspect Forge listener cache before worker EventBus.post",
+                    throwable
+            );
+        }
+    }
+
+    static void sanitizeCachedListeners(ListenerList listenerList, int busId, String context) {
+        if (listenerList == null) {
+            return;
+        }
+        synchronized (ListenerList.class) {
+            sanitizeCachedListenersLocked(listenerList, busId, context);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void sanitizeCachedListenersLocked(ListenerList listenerList, int busId, String context) {
+        IEventListener[] cached = listenerList.getListeners(busId);
+        int nullCount = countNullListeners(cached);
+        if (nullCount == 0) {
+            return;
+        }
+
+        try {
+            Object instance = listenerListInstance(listenerList, busId);
+            int removedFromPriorities = removeNullPriorityListeners(instance);
+            listenerListInstRebuildField().setBoolean(instance, true);
+            IEventListener[] rebuilt = listenerList.getListeners(busId);
+            int remainingNulls = countNullListeners(rebuilt);
+            if (remainingNulls > 0) {
+                listenerListInstListenersField().set(instance, compactListeners(rebuilt));
+            }
+            GPOM.LOGGER.warn(
+                    "[EventBusRegistrationOptimizations] Removed {} null cached Forge listener(s) during {}; priorityNulls={}",
+                    nullCount,
+                    context,
+                    removedFromPriorities
+            );
+        } catch (Throwable throwable) {
+            warnListenerCacheSanitizerOnce(
+                    "[EventBusRegistrationOptimizations] Could not compact Forge listener cache after null listener detection",
+                    throwable
+            );
+        }
+    }
+
+    private static boolean shouldSanitizePostedEventListeners() {
+        String threadName = Thread.currentThread().getName();
+        return FmlParallelLoadingContext.getActiveContainer() != null
+                || StartupProfiler.isPostPreInitTransitionActive()
+                || (threadName != null
+                && (threadName.startsWith("ForkJoinPool.")
+                || threadName.startsWith("GPOM-FML-")));
+    }
+
+    private static int countNullListeners(IEventListener[] listeners) {
+        int count = 0;
+        if (listeners == null) {
+            return 0;
+        }
+        for (IEventListener listener : listeners) {
+            if (listener == null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static IEventListener[] compactListeners(IEventListener[] listeners) {
+        if (listeners == null || listeners.length == 0) {
+            return new IEventListener[0];
+        }
+        int size = 0;
+        for (IEventListener listener : listeners) {
+            if (listener != null) {
+                size++;
+            }
+        }
+        IEventListener[] compacted = new IEventListener[size];
+        int index = 0;
+        for (IEventListener listener : listeners) {
+            if (listener != null) {
+                compacted[index++] = listener;
+            }
+        }
+        return compacted;
+    }
+
+    private static Object listenerListInstance(ListenerList listenerList, int busId) throws IllegalAccessException, NoSuchFieldException {
+        Object[] instances = (Object[]) listenerListInstancesField().get(listenerList);
+        if (busId < 0 || busId >= instances.length || instances[busId] == null) {
+            throw new IllegalStateException("No ListenerList instance for bus " + busId);
+        }
+        return instances[busId];
+    }
+
+    @SuppressWarnings("unchecked")
+    private static int removeNullPriorityListeners(Object listenerListInstance) throws IllegalAccessException, NoSuchFieldException {
+        Object[] priorities = (Object[]) listenerListInstPrioritiesField().get(listenerListInstance);
+        int removed = 0;
+        for (Object priority : priorities) {
+            if (!(priority instanceof ArrayList)) {
+                continue;
+            }
+            ArrayList<IEventListener> listeners = (ArrayList<IEventListener>) priority;
+            while (listeners.remove(null)) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    private static void warnListenerCacheSanitizerOnce(String message, Throwable throwable) {
+        if (listenerCacheSanitizerWarningLogged) {
+            return;
+        }
+        listenerCacheSanitizerWarningLogged = true;
+        GPOM.LOGGER.warn(message, throwable);
+    }
+
+    private static boolean isLazyStaticSubscriberDenied(Class<?> subscriberClass, ModContainer owner) {
+        Set<String> denylist = GpomEarlyConfig.constructionGenericAutomaticSubscribersDenylist();
+        if (denylist.isEmpty()) {
+            return false;
+        }
+        if (owner != null && denylist.contains(safeModId(owner).toLowerCase(Locale.ROOT))) {
+            return true;
+        }
+        String inferredModId = inferModId(subscriberClass.getName());
+        return inferredModId != null && denylist.contains(inferredModId);
+    }
+
+    private static String inferModId(String className) {
+        if (className == null) {
+            return null;
+        }
+        if (className.startsWith("team.chisel.ctm.")) {
+            return "ctm";
+        }
+        if (className.startsWith("team.chisel.")) {
+            return "chisel";
+        }
+        if (className.startsWith("pl.asie.ucw.")) {
+            return "unlimitedchiselworks";
+        }
+        if (className.startsWith("thebetweenlands.")) {
+            return "thebetweenlands";
+        }
+        if (className.startsWith("twilightforest.")) {
+            return "twilightforest";
+        }
+        if (className.startsWith("erebus.")) {
+            return "erebus";
+        }
+        if (className.startsWith("landmaster.plustic.")) {
+            return "plustic";
+        }
+        if (className.startsWith("thecodex6824.thaumcraftfix.")) {
+            return "thaumcraftfix";
+        }
+        return null;
+    }
+
     private static ModContainer activeOwner() {
         Loader loader = Loader.instance();
         ModContainer owner = loader.activeModContainer();
@@ -276,6 +491,55 @@ public final class EventBusRegistrationOptimizations {
             eventBusListenerOwnersField = field;
         }
         return field;
+    }
+
+    private static Field listenerListInstancesField() throws NoSuchFieldException {
+        Field field = listenerListInstancesField;
+        if (field == null) {
+            field = ListenerList.class.getDeclaredField("lists");
+            field.setAccessible(true);
+            listenerListInstancesField = field;
+        }
+        return field;
+    }
+
+    private static Field listenerListInstListenersField() throws NoSuchFieldException {
+        Field field = listenerListInstListenersField;
+        if (field == null) {
+            field = listenerListInstField("listeners");
+            listenerListInstListenersField = field;
+        }
+        return field;
+    }
+
+    private static Field listenerListInstPrioritiesField() throws NoSuchFieldException {
+        Field field = listenerListInstPrioritiesField;
+        if (field == null) {
+            field = listenerListInstField("priorities");
+            listenerListInstPrioritiesField = field;
+        }
+        return field;
+    }
+
+    private static Field listenerListInstRebuildField() throws NoSuchFieldException {
+        Field field = listenerListInstRebuildField;
+        if (field == null) {
+            field = listenerListInstField("rebuild");
+            listenerListInstRebuildField = field;
+        }
+        return field;
+    }
+
+    private static Field listenerListInstField(String fieldName) throws NoSuchFieldException {
+        Class<?>[] declaredClasses = ListenerList.class.getDeclaredClasses();
+        for (Class<?> declaredClass : declaredClasses) {
+            if ("ListenerListInst".equals(declaredClass.getSimpleName())) {
+                Field field = declaredClass.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            }
+        }
+        throw new NoSuchFieldException("ListenerListInst." + fieldName);
     }
 
     private static String safeModId(ModContainer owner) {
@@ -377,6 +641,16 @@ public final class EventBusRegistrationOptimizations {
 
         private static SubscriberScan unsupported() {
             return UNSUPPORTED;
+        }
+    }
+
+    private static final class ListenerRegistration {
+        private final SubscriberHandlerSpec spec;
+        private final ListenerList listenerList;
+
+        private ListenerRegistration(SubscriberHandlerSpec spec, ListenerList listenerList) {
+            this.spec = spec;
+            this.listenerList = listenerList;
         }
     }
 
@@ -511,6 +785,7 @@ public final class EventBusRegistrationOptimizations {
         private final ModContainer owner;
         private final Class<?> subscriberClass;
         private final SubscriberHandlerSpec spec;
+        private static final MethodHandle NOOP_HANDLER = noopHandler();
         private volatile MethodHandle handler;
 
         private LazyStaticEventBusListener(ModContainer owner,
@@ -613,18 +888,33 @@ public final class EventBusRegistrationOptimizations {
                             .unreflect(method)
                             .asType(MethodType.methodType(Void.TYPE, Event.class));
                 } catch (Throwable reflectiveFailure) {
-                    throw new RuntimeException(
-                            "Unable to initialize lazy static EventBus subscriber "
-                                    + subscriberClass.getName()
-                                    + '#'
-                                    + spec.methodName
-                                    + '('
-                                    + spec.eventType.getName()
-                                    + ')',
+                    GPOM.LOGGER.error(
+                            "[EventBusRegistrationOptimizations] Disabling broken lazy static EventBus subscriber {}#{}({}) for {}; handler could not be initialized",
+                            subscriberClass.getName(),
+                            spec.methodName,
+                            spec.eventType.getName(),
+                            safeModId(owner),
                             reflectiveFailure
                     );
+                    return NOOP_HANDLER;
                 }
             }
+        }
+
+        private static MethodHandle noopHandler() {
+            try {
+                return MethodHandles.lookup().findStatic(
+                        LazyStaticEventBusListener.class,
+                        "noop",
+                        MethodType.methodType(Void.TYPE, Event.class)
+                );
+            } catch (Throwable throwable) {
+                throw new ExceptionInInitializerError(throwable);
+            }
+        }
+
+        @SuppressWarnings("unused")
+        private static void noop(Event event) {
         }
 
         @Override

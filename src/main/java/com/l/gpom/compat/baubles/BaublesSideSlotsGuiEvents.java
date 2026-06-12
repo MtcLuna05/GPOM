@@ -1,23 +1,33 @@
 package com.l.gpom.compat.baubles;
 
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.gui.inventory.GuiInventory;
-import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 public final class BaublesSideSlotsGuiEvents {
+    private static final String COSMETIC_ARMOR_BUTTON_CLASS = "lain.mods.cos.client.GuiCosArmorButton";
+    private static final String AETHER_ACCESSORY_BUTTON_CLASS =
+            "com.gildedgames.the_aether.client.gui.button.GuiAccessoryButton";
+
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void guiPostInit(GuiScreenEvent.InitGuiEvent.Post event) {
+        if (GpomEarlyConfig.baublesSideSlotsAetherEnabled()) {
+            event.getButtonList().removeIf(BaublesSideSlotsGuiEvents::isAetherAccessoryButton);
+        }
         if (!(event.getGui() instanceof GuiInventory)) {
             return;
         }
         event.getButtonList().removeIf(BaublesSideSlotsGuiEvents::isManagedBaublesButton);
         if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
             return;
+        }
+        if (GpomEarlyConfig.baublesSideSlotsCosmeticArmorEnabled()) {
+            event.getButtonList().removeIf(BaublesSideSlotsGuiEvents::isCosmeticArmorButton);
         }
 
         event.getButtonList().add(new SafeBaublesToggleButton(55, (GuiContainer) event.getGui()));
@@ -27,6 +37,14 @@ public final class BaublesSideSlotsGuiEvents {
     private static boolean isManagedBaublesButton(Object button) {
         return button instanceof SafeBaublesToggleButton
                 || (button != null && "baubles.client.gui.GuiBaublesButton".equals(button.getClass().getName()));
+    }
+
+    private static boolean isCosmeticArmorButton(Object button) {
+        return button != null && COSMETIC_ARMOR_BUTTON_CLASS.equals(button.getClass().getName());
+    }
+
+    private static boolean isAetherAccessoryButton(Object button) {
+        return button != null && AETHER_ACCESSORY_BUTTON_CLASS.equals(button.getClass().getName());
     }
 
     private static final class SafeBaublesToggleButton extends GuiButton {

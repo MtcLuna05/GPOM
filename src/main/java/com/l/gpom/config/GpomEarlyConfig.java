@@ -21,6 +21,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class GpomEarlyConfig {
     private static final String FILE_NAME = "gpom-early.properties";
@@ -30,13 +32,18 @@ public final class GpomEarlyConfig {
     };
     private static final Properties DEFAULTS = new Properties();
     private static final Properties VALUES = new Properties();
+    private static final ConcurrentMap<String, Set<String>> SET_VALUES = new ConcurrentHashMap<>();
     private static final String ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST =
             "enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,"
                     + "enderioconduitsopencomputers,enderioconduitsrefinedstorage,"
                     + "enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,"
                     + "enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy";
     private static final String DEFAULT_PREINIT_DENYLIST =
-            ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",erebus";
+            ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",erebus,extracells,draconicevolution,aether_legacy";
+    private static final String DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST =
+            "thaumcraft,aether_legacy";
+    private static final String DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST =
+            "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy";
 
     static {
         DEFAULTS.setProperty("fml.parallel.preInit.enabled", "false");
@@ -51,7 +58,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.init.workers", "0");
         DEFAULTS.setProperty("fml.parallel.loadComplete.workers", "0");
         DEFAULTS.setProperty("fml.parallel.construct.allowlist", "");
-        DEFAULTS.setProperty("fml.parallel.construct.denylist", "");
+        DEFAULTS.setProperty("fml.parallel.construct.denylist", "aether_legacy");
         DEFAULTS.setProperty("fml.parallel.construct.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.construct.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.allowlist", "");
@@ -74,8 +81,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.clientLifecycleOpenGlScan.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.includeRelatedMods", "true");
-        DEFAULTS.setProperty("gpom.construction.genericSidedProxies.denylist", "thaumcraft");
-        DEFAULTS.setProperty("gpom.construction.genericAutomaticSubscribers.denylist", "thaumcraft");
+        DEFAULTS.setProperty("gpom.construction.genericSidedProxies.denylist", DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST);
+        DEFAULTS.setProperty("gpom.construction.genericAutomaticSubscribers.denylist", DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST);
         DEFAULTS.setProperty("gpom.logging.enabled", "true");
         DEFAULTS.setProperty("gpom.logging.fmlScheduler.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.optimizationInfo.enabled", "false");
@@ -127,7 +134,13 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.baubles.sideSlots.columns", "2");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.preferRight", "false");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.shiftRightClickEquip", "true");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.aether.enabled", "false");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.cosmeticArmor.enabled", "false");
         DEFAULTS.setProperty("gpom.loliasm.threadSafeStatefulRegistry", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.fixMissingNewTarget", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
         DEFAULTS.setProperty("gpom.multipartCompat.enabled", "false");
         DEFAULTS.setProperty("gpom.multipartCompat.ae2.enabled", "false");
         DEFAULTS.setProperty("gpom.multipartCompat.ae2.registerPart", "false");
@@ -200,7 +213,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis", "5000");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",contenttweaker,modtweaker,actuallyadditions@minecraft:items,abyssalcraft@minecraft:items,actuallybaubles@minecraft:items,bewitchment@minecraft:items,bhc@minecraft:items,bigreactors@minecraft:items,botania@minecraft:items,chickens@minecraft:items,deepmoblearningbm@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,extendedcrafting@minecraft:items,extrabotany@minecraft:items,glassential@minecraft:items,iceandfire@minecraft:items,immersiveengineering@minecraft:items,industrialforegoing@minecraft:items,mysticalagradditions@minecraft:items,mysticalagriculture@minecraft:items,natura@minecraft:blocks,natura@minecraft:items,plustic@minecraft:items,storagedrawers@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:blocks,thebetweenlands@minecraft:recipes,zerocore@minecraft:items,integrateddynamics@minecraft:blocks,rftools@minecraft:items,appliedenergistics2@minecraft:items,integrateddynamics@minecraft:items");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",contenttweaker,modtweaker,betterportals,actuallyadditions@minecraft:items,abyssalcraft@minecraft:items,actuallybaubles@minecraft:items,bewitchment@minecraft:blocks,bewitchment@minecraft:items,bhc@minecraft:items,bigreactors@minecraft:items,botania@minecraft:items,chickens@minecraft:items,chisel@minecraft:blocks,chisel@minecraft:items,chisel@minecraft:recipes,deepmoblearningbm@minecraft:items,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,extendedcrafting@minecraft:items,extrabotany@minecraft:items,glassential@minecraft:items,iceandfire@minecraft:items,immersiveengineering@minecraft:items,industrialforegoing@minecraft:items,mysticalagradditions@minecraft:items,mysticalagriculture@minecraft:items,natura@minecraft:blocks,natura@minecraft:items,plustic@minecraft:items,storagedrawers@minecraft:items,tconstruct@minecraft:items,thebetweenlands@minecraft:blocks,thebetweenlands@minecraft:recipes,unlimitedchiselworks@minecraft:blocks,unlimitedchiselworks@minecraft:items,unlimitedchiselworks@minecraft:recipes,zerocore@minecraft:items,integrateddynamics@minecraft:blocks,rftools@minecraft:items,appliedenergistics2@minecraft:items,integrateddynamics@minecraft:items");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "false");
         DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "false");
@@ -550,7 +563,9 @@ public final class GpomEarlyConfig {
                 "gpom.baubles.sideSlots.visibleRows",
                 "gpom.baubles.sideSlots.columns",
                 "gpom.baubles.sideSlots.preferRight",
-                "gpom.baubles.sideSlots.shiftRightClickEquip"
+                "gpom.baubles.sideSlots.shiftRightClickEquip",
+                "gpom.baubles.sideSlots.aether.enabled",
+                "gpom.baubles.sideSlots.cosmeticArmor.enabled"
         );
         writeSection(writer, "World Lifecycle Profiling", "World load, unload, and dimension-switch diagnostics for tracking retained client state and memory leaks.",
                 "gpom.worldLifecycleProfiler.enabled",
@@ -566,7 +581,11 @@ public final class GpomEarlyConfig {
                 "gpom.ae2.patternDiagnostics.skipRecipeFunctions"
         );
         writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
-                "gpom.loliasm.threadSafeStatefulRegistry"
+                "gpom.loliasm.threadSafeStatefulRegistry",
+                "gpom.betterPortals.fixMissingNewTarget",
+                "gpom.betterPortals.remapLegacyAetherBridge",
+                "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
+                "gpom.betterPortals.fixGuavaAddCallback"
         );
         writeSection(writer, "Multipart Compatibility", "Experimental bridges that make selected full-block cable systems host their state inside ForgeMultipart parts. Keep disabled unless actively testing a bridge.",
                 "gpom.multipartCompat.enabled",
@@ -773,7 +792,7 @@ public final class GpomEarlyConfig {
             case "gpom.construction.genericSidedProxies.denylist":
                 return "Comma-separated mod ids that must use Forge's original sided-proxy injection instead of GPOM's generic proxy shortcut.";
             case "gpom.construction.genericAutomaticSubscribers.denylist":
-                return "Comma-separated mod ids that must use Forge's original AutomaticEventSubscriber injection instead of GPOM's generic/lazy subscriber shortcut.";
+                return "Comma-separated mod ids that must use Forge's original AutomaticEventSubscriber and EventBus.register(Class) paths instead of GPOM's generic/lazy subscriber shortcuts.";
             case "gpom.logging.enabled":
                 return "Master switch for GPOM's own logger. If false, GPOM diagnostics including WorldLifecycle lines are suppressed.";
             case "gpom.logging.fmlScheduler.enabled":
@@ -875,9 +894,21 @@ public final class GpomEarlyConfig {
             case "gpom.baubles.sideSlots.preferRight":
                 return "When true, places the Baubles side rail to the right if there is screen space; false keeps the default left-side rail.";
             case "gpom.baubles.sideSlots.shiftRightClickEquip":
-                return "Allows Shift+right-clicking a Bauble stack in a player inventory slot to quick-equip it through a server-validated GPOM packet.";
+                return "Allows Shift+clicking a supported accessory stack while the side rail is open to quick-equip it through server-validated GPOM handling.";
+            case "gpom.baubles.sideSlots.aether.enabled":
+                return "Adds The Aether accessory slots to the same Baubles side rail when Aether Legacy is loaded. Requires gpom.baubles.sideSlots.enabled.";
+            case "gpom.baubles.sideSlots.cosmeticArmor.enabled":
+                return "Adds Cosmetic Armor Reworked armor slots to the same Baubles side rail when Cosmetic Armor Reworked is loaded. Requires gpom.baubles.sideSlots.enabled.";
             case "gpom.loliasm.threadSafeStatefulRegistry":
                 return "Replaces LoliASM's crash-state registry with a concurrent set and prunes cleared weak references from BufferBuilder churn.";
+            case "gpom.betterPortals.fixMissingNewTarget":
+                return "Patches BetterPortals' legacy EntityRenderer @At(\"NEW\") mixin metadata with an explicit Frustum target on newer Mixin runtimes.";
+            case "gpom.betterPortals.remapLegacyAetherBridge":
+                return "Remaps BetterPortals' optional Aether bridge from the old com.legacy.aether package to the installed com.gildedgames.the_aether package when needed.";
+            case "gpom.betterPortals.skipLegacyAetherBridgeIfMissing":
+                return "Skips BetterPortals' optional Aether bridge when neither its legacy Aether target nor GPOM's remap target is available.";
+            case "gpom.betterPortals.fixGuavaAddCallback":
+                return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
             case "gpom.multipartCompat.enabled":
                 return "Master switch for all GPOM ForgeMultipart compatibility bridges. When false, no multipart bridge classes are loaded.";
             case "gpom.multipartCompat.ae2.enabled":
@@ -1175,7 +1206,13 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.columns");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.preferRight");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.shiftRightClickEquip");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.aether.enabled");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.cosmeticArmor.enabled");
         copySystemPropertyIfAbsent("gpom.loliasm.threadSafeStatefulRegistry");
+        copySystemPropertyIfAbsent("gpom.betterPortals.fixMissingNewTarget");
+        copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
+        copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
+        copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
         copySystemPropertyIfAbsent("gpom.multipartCompat.enabled");
         copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.enabled");
         copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.registerPart");
@@ -1400,8 +1437,32 @@ public final class GpomEarlyConfig {
         return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.shiftRightClickEquip");
     }
 
+    public static boolean baublesSideSlotsAetherEnabled() {
+        return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.aether.enabled");
+    }
+
+    public static boolean baublesSideSlotsCosmeticArmorEnabled() {
+        return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.cosmeticArmor.enabled");
+    }
+
     public static boolean loliAsmThreadSafeStatefulRegistryEnabled() {
         return booleanValue("gpom.loliasm.threadSafeStatefulRegistry");
+    }
+
+    public static boolean betterPortalsMissingNewTargetFixEnabled() {
+        return booleanValue("gpom.betterPortals.fixMissingNewTarget");
+    }
+
+    public static boolean betterPortalsRemapLegacyAetherBridgeEnabled() {
+        return booleanValue("gpom.betterPortals.remapLegacyAetherBridge");
+    }
+
+    public static boolean betterPortalsSkipLegacyAetherBridgeIfMissingEnabled() {
+        return booleanValue("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
+    }
+
+    public static boolean betterPortalsGuavaAddCallbackFixEnabled() {
+        return booleanValue("gpom.betterPortals.fixGuavaAddCallback");
     }
 
     public static boolean multipartCompatEnabled() {
@@ -1680,7 +1741,9 @@ public final class GpomEarlyConfig {
     }
 
     private static Set<String> setValue(String key) {
-        return parseSet(VALUES.getProperty(key, DEFAULTS.getProperty(key, "")));
+        return SET_VALUES.computeIfAbsent(key, ignored ->
+                Collections.unmodifiableSet(parseSet(VALUES.getProperty(key, DEFAULTS.getProperty(key, ""))))
+        );
     }
 
     private static Set<String> parseSet(String raw) {
@@ -1734,7 +1797,7 @@ public final class GpomEarlyConfig {
             }
         }
 
-        Set<String> values = fileValue == null ? setValue(key) : parseSet(fileValue);
+        Set<String> values = new LinkedHashSet<>(fileValue == null ? setValue(key) : parseSet(fileValue));
         int before = values.size();
         for (String addition : additions) {
             String value = addition == null ? "" : addition.trim().toLowerCase(Locale.ROOT);
@@ -1765,6 +1828,7 @@ public final class GpomEarlyConfig {
         try {
             Files.write(file.toPath(), lines, StandardCharsets.UTF_8);
             VALUES.setProperty(key, updated);
+            SET_VALUES.put(key, Collections.unmodifiableSet(parseSet(updated)));
             return true;
         } catch (IOException exception) {
             GPOM.LOGGER.warn("[GPOM Config] Failed to write {} while appending {}", file, key, exception);

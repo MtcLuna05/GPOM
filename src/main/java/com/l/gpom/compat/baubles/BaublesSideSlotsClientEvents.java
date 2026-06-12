@@ -17,13 +17,16 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.text.TextFormatting;
+import net.minecraft.world.World;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.client.event.ModelRegistryEvent;
 import net.minecraftforge.client.model.ModelLoader;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
+import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
 import java.lang.reflect.Field;
@@ -40,6 +43,7 @@ public final class BaublesSideSlotsClientEvents {
     private static volatile Method tooltipListMethod;
     private static volatile Field currentScreenField;
     private static volatile Field inGameHasFocusField;
+    private static volatile Field worldIsRemoteField;
 
     @SubscribeEvent
     public void registerItemModels(ModelRegistryEvent event) {
@@ -48,6 +52,22 @@ public final class BaublesSideSlotsClientEvents {
                 0,
                 new ModelResourceLocation("baubles:ring", "inventory")
         );
+    }
+
+    @SubscribeEvent
+    public void clientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        BaublesSideSlotsClient.resetClientState();
+    }
+
+    @SubscribeEvent
+    public void worldUnload(WorldEvent.Unload event) {
+        try {
+            if (isRemoteWorld(event.getWorld())) {
+                BaublesSideSlotsClient.resetClientState();
+            }
+        } catch (Throwable ignored) {
+            BaublesSideSlotsClient.resetClientState();
+        }
     }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -90,6 +110,9 @@ public final class BaublesSideSlotsClientEvents {
         }
         Object currentScreen = currentScreen(minecraft);
         if (isCreativePlayer((EntityPlayer) player)) {
+            if (currentScreen instanceof GuiInventory) {
+                BaublesSideSlotsClient.removeGuiInventorySideSlots((GuiInventory) currentScreen);
+            }
             if (!(currentScreen instanceof GuiContainerCreative)) {
                 displayGuiScreen(minecraft, new GuiContainerCreative((EntityPlayer) player));
             }
@@ -220,6 +243,22 @@ public final class BaublesSideSlotsClientEvents {
 
     private static Object currentScreen(Minecraft minecraft) {
         return fieldValue(minecraft, currentScreenField, false, "field_71462_r", "currentScreen");
+    }
+
+    private static boolean isRemoteWorld(World world) {
+        if (world == null) {
+            return false;
+        }
+        try {
+            Field field = worldIsRemoteField;
+            if (field == null) {
+                field = findField(World.class, "field_72995_K", "isRemote");
+                worldIsRemoteField = field;
+            }
+            return field != null && field.getBoolean(world);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static void displayGuiScreen(Minecraft minecraft, GuiScreen screen) {

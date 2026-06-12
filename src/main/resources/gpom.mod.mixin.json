@@ -36,7 +36,7 @@
     "client.render.MixinRenderGlobalLifecycleCleanup",
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",
-    "baubles.MixinGuiContainerCreativeBaublesSlots",
+    "baubles.MixinGuiInventoryBaublesSideSlots",
     "baubles.MixinGuiContainerBaublesQuickEquip"
   ],
   "server": [],

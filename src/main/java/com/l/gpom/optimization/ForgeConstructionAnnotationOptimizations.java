@@ -24,6 +24,7 @@ import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.IContextSetter;
 import net.minecraftforge.fml.common.eventhandler.IGenericEvent;
 import net.minecraftforge.fml.common.eventhandler.IEventListener;
+import net.minecraftforge.fml.common.eventhandler.ListenerList;
 import net.minecraftforge.fml.common.network.NetworkCheckHandler;
 import net.minecraftforge.fml.common.network.NetworkRegistry;
 import net.minecraftforge.fml.common.versioning.InvalidVersionSpecificationException;
@@ -492,20 +493,48 @@ public final class ForgeConstructionAnnotationOptimizations {
                 return true;
             }
 
-            Map<Object, ModContainer> listenerOwners =
-                    (Map<Object, ModContainer>) eventBusListenerOwnersField().get(eventBus);
-            listenerOwners.put(subscriberClass, owner);
-
-            int busId = eventBusIdField().getInt(eventBus);
-            ArrayList<IEventListener> registeredListeners = new ArrayList<>(handlerSpecs.size());
+            List<ListenerRegistration> registrations = new ArrayList<>(handlerSpecs.size());
             for (SubscriberHandlerSpec spec : handlerSpecs) {
                 Event event = spec.eventType.getConstructor().newInstance();
-                IEventListener listener = new LazyStaticSubscriberListener(owner, subscriberClass, spec);
-                event.getListenerList().register(busId, spec.priority, listener);
-                registeredListeners.add(listener);
+                registrations.add(new ListenerRegistration(spec, event.getListenerList()));
             }
-            listeners.put(subscriberClass, registeredListeners);
-            return true;
+
+            Map<Object, ModContainer> listenerOwners =
+                    (Map<Object, ModContainer>) eventBusListenerOwnersField().get(eventBus);
+            int busId = eventBusIdField().getInt(eventBus);
+
+            synchronized (ListenerList.class) {
+                if (listeners.containsKey(subscriberClass)) {
+                    return true;
+                }
+
+                ArrayList<IEventListener> registeredListeners = new ArrayList<>(registrations.size());
+                listenerOwners.put(subscriberClass, owner);
+                try {
+                    for (ListenerRegistration registration : registrations) {
+                        IEventListener listener = new LazyStaticSubscriberListener(owner, subscriberClass, registration.spec);
+                        registration.listenerList.register(busId, registration.spec.priority, listener);
+                        registeredListeners.add(listener);
+                    }
+
+                    for (ListenerRegistration registration : registrations) {
+                        EventBusRegistrationOptimizations.sanitizeCachedListeners(
+                                registration.listenerList,
+                                busId,
+                                "lazy automatic subscriber registration " + subscriberClass.getName()
+                        );
+                    }
+
+                    listeners.put(subscriberClass, registeredListeners);
+                    return true;
+                } catch (Throwable throwable) {
+                    for (IEventListener listener : registeredListeners) {
+                        ListenerList.unregisterAll(busId, listener);
+                    }
+                    listenerOwners.remove(subscriberClass);
+                    throw throwable;
+                }
+            }
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn(
                     "[ForgeConstructionAnnotationOptimizations] Lazy automatic subscriber registration failed for {}; falling back to Forge",
@@ -513,6 +542,16 @@ public final class ForgeConstructionAnnotationOptimizations {
                     throwable
             );
             return false;
+        }
+    }
+
+    private static final class ListenerRegistration {
+        private final SubscriberHandlerSpec spec;
+        private final ListenerList listenerList;
+
+        private ListenerRegistration(SubscriberHandlerSpec spec, ListenerList listenerList) {
+            this.spec = spec;
+            this.listenerList = listenerList;
         }
     }
 

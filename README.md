@@ -41,25 +41,28 @@ If neither is set, the build falls back to the common Flatpak PrismLauncher Meat
 - Cache invalidation denylist for jars that should not invalidate GPOM runtime caches while actively developed or non-content-bearing.
 - VintageFix/Unlimited Chisel Works/model-log spam suppression that keeps one concise GPOM line per noisy namespace instead of repeated stack traces.
 - Server-safe bootstrap routing through Forge sided proxies plus side-checked early splash bridging, so common/server startup does not load client-only classes.
-- Optional Baubles side-slot inventory panel that adds real Baubles slots to the vanilla inventory instead of relying on Baubles' expanded GUI.
+- Optional Baubles side-slot inventory panel that adds packet-symmetric hidden Baubles slots to the vanilla inventory instead of relying on Baubles' expanded GUI, with optional Aether Legacy and CosmeticArmorReworked side-rail integration.
+- Optional BetterPortals compatibility shims for newer Mixin metadata, modern Guava callback signatures, and the installed Aether Legacy package.
 - Experimental Forge Multipart/AE2 compatibility switches. These are disabled by default because multipart world data can be destructive if a bridge is disabled after use.
 - Title-screen GPOM version display.
 
 ## Latest Changelog
 
-### 2026-06-10
+### 2026-06-12
 
 - Added `CommonProxy` / `ClientProxy` sided bootstrap so common pre-init registrations run through side-aware Forge entrypoints.
 - Added `GpomSide` and `EarlySplashBridge` so coremod and scheduler paths can update the early splash on client launches without loading `EarlySplashWindow` on dedicated servers.
 - Guarded Baubles EventBus replacement and side-slot networking so client-only handlers do not load on servers.
-- Simplified Baubles side slots to use the vanilla `GuiInventory` path: GPOM appends Baubles slots to `ContainerPlayer`, draws only the side panel/button, and redirects Baubles key/button entrypoints to vanilla inventory side slots.
+- Simplified Baubles side slots to use the vanilla `GuiInventory` path: client and server player containers keep packet-symmetric hidden side-rail slots, and the client only moves them into visible side-panel positions while the GPOM panel is open.
 - Removed the active expanded-Baubles-GUI mixin path from the mixin config; this avoids depending on `GuiPlayerExpanded` / `ContainerPlayerExpanded`, which BringMeTheRings can make unsafe to transform.
 - Removed the manual post-render hover/durability overlay replay. Vanilla `GuiContainer` owns item hover, durability bars, and tooltips again.
 - Synced CosmeticArmorReworked per-bauble visibility toggles with the GPOM side rail. The toggle buttons are moved beside side slots while the panel is open, hidden when the panel is closed, and missing supported buttons are created reflectively for extra Baubles handler slots.
 - Fixed a Cleanroom runtime crash by replacing the last direct mapped `Slot.isEnabled()` call with SRG-safe reflective `func_111238_b` access.
-- Creative players now stay on the real creative inventory path when opening Baubles through GPOM, and GPOM removes mirrored Baubles slots from the creative survival tab instead of opening a fake survival inventory over the hotbar.
-- Fixed the creative-tab cleanup crash by avoiding direct `CreativeTabs.INVENTORY` linkage and resolving the survival inventory tab label through mapped/SRG reflective fallbacks.
-- Added `erebus` to the default PreInit parallel denylist after the MeatballCraft crash in Erebus armor/registry setup. Parallel PreInit remains available; the fix is scoped to the broken mod.
+- Creative players now stay on the real creative inventory path when opening Baubles through GPOM. Side-rail slots stay hidden unless the panel is open, and creative survival-tab mirrors are skipped so Baubles, Aether, and Cosmetic Armor slots no longer leak over the creative hotbar.
+- Added optional Aether Legacy and CosmeticArmorReworked slots to the same Baubles side rail. Aether's native accessory button and Cosmetic Armor's native armor-screen button are hidden while GPOM owns those rails.
+- Routed Cosmetic Armor side-rail clicks through a server packet and sync pass to avoid client-only duplicate stacks. Shift-left quick-equip only runs from normal inventory/hotbar slots; armor stacks prefer real armor first, then Cosmetic Armor if real armor is occupied, and shift-clicking equipped/cosmetic armor returns it to inventory.
+- Added BetterPortals compatibility shims for newer Mixin `@At("NEW")` metadata, modern Guava `Futures.addCallback`, and BetterPortals' optional legacy-Aether bridge. GPOM no longer patches BetterPortals/AUSM see-through rendering; that belongs in AUSM or BetterPortals config.
+- Added `erebus`, `extracells`, `draconicevolution`, and `aether_legacy` to the default PreInit parallel denylist after MeatballCraft crashes in Erebus armor/registry setup, Extra Cells 2 client model loader registration, Draconic Evolution's CodeChickenLib OBJ model parser path, and Aether's client accessory button class initialization. Aether is also denied from construction parallelism and GPOM's generic construction proxy/subscriber shortcuts so it uses Forge's stock construction path. Parallel PreInit remains available; the fixes are scoped to the broken mods.
 - Validated `./gradlew build` and a dedicated-server smoke run with `./gradlew runServer --args nogui`; the server reached the normal EULA stop without client-side classloading crashes.
 
 ## Config File
@@ -115,9 +118,11 @@ Construction is the most invasive phase because mod instances, proxies, classloa
 Construction annotation shortcuts can be disabled per mod when a mod requires stock Forge injection behavior:
 
 ```properties
-gpom.construction.genericSidedProxies.denylist=thaumcraft
-gpom.construction.genericAutomaticSubscribers.denylist=thaumcraft
+gpom.construction.genericSidedProxies.denylist=thaumcraft,aether_legacy
+gpom.construction.genericAutomaticSubscribers.denylist=thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy
 ```
+
+The automatic-subscriber denylist also disables GPOM's lazy static `EventBus.register(Class)` shortcut for those mods. Keep Chisel, CTM, and Unlimited Chisel Works on the stock Forge path because their model, bake, and texture handlers are ordering-sensitive.
 
 ## Registry Event Parallelism
 
@@ -139,6 +144,8 @@ gpom.registry.parallelRegisterEvents.denylist=
 ```
 
 Registry parallelism is invasive. Use per-mod/per-registry denylist entries such as `modid@minecraft:items` for handlers that require exact vanilla ordering or mutate unguarded side state.
+
+Chisel and Unlimited Chisel Works are denied for their block/item/recipe registry handlers in the current defaults because their generated blockstates and model hooks are sensitive to registration timing.
 
 ## CraftTweaker Options
 
@@ -242,13 +249,34 @@ gpom.baubles.sideSlots.visibleRows=7
 gpom.baubles.sideSlots.columns=2
 gpom.baubles.sideSlots.preferRight=false
 gpom.baubles.sideSlots.shiftRightClickEquip=true
+gpom.baubles.sideSlots.aether.enabled=false
+gpom.baubles.sideSlots.cosmeticArmor.enabled=false
 ```
 
-When enabled, GPOM adds Baubles handler slots to the vanilla player inventory container and renders them as a paged Curios-like side panel. The panel defaults to the left of the vanilla inventory, can be paged when the handler has more slots than fit, and uses Baubles' existing slot-type icon art for empty slots.
+When enabled, GPOM adds real Baubles handler slots to both logical sides of the vanilla player inventory container so normal container sync packets stay slot-count symmetric. Those slots stay hidden by default; the client only moves them into visible side-panel positions while the GPOM panel is open. The panel defaults to the left of the vanilla inventory, can be paged when the handler has more slots than fit, and uses Baubles' existing slot-type icon art for empty slots.
 
-The Baubles keybind and Baubles inventory button are redirected to the vanilla inventory side panel. Creative players keep the real creative inventory screen, with mirrored Baubles slots removed from the creative survival tab. GPOM intentionally does not use Baubles' expanded inventory screen for this feature because expanded-screen transformers from other mods can fail before GPOM can safely render the UI. Server-side quick-equip validation remains required for shift-click support.
+The Baubles keybind and Baubles inventory button are redirected to the vanilla inventory side panel. Creative players keep the real creative inventory screen, and GPOM skips side-rail slot rendering there unless the panel is actually open. GPOM intentionally does not use Baubles' expanded inventory screen for this feature because expanded-screen transformers from other mods can fail before GPOM can safely render the UI.
+
+Shift-left quick-equip only runs while the side rail is open and only from normal inventory/hotbar slots. Armor stacks prefer an empty real armor slot first, then optional Cosmetic Armor if real armor is occupied. Other accessories target Baubles first, then optional Aether accessory slots, then optional Cosmetic Armor fallback slots. GPOM does not add custom right-click behavior.
+
+When `gpom.baubles.sideSlots.aether.enabled=true` and Aether Legacy is loaded, GPOM adds Aether's own accessory slots to the same side rail after the Baubles slots. The bridge uses Aether's `SlotAccessory` validation and Aether's empty-slot icons, hides Aether's native inventory button while the GPOM rail owns those slots, and remains disabled by default.
+
+When `gpom.baubles.sideSlots.cosmeticArmor.enabled=true` and CosmeticArmorReworked is loaded, GPOM adds Cosmetic Armor's armor slots to the same side rail after the Baubles and Aether slots. The bridge validates items through vanilla armor validation, uses the native armor empty-slot icons, routes side-rail slot writes through the server to avoid client-only ghost stacks, hides Cosmetic Armor's native armor-screen button while the GPOM rail owns those slots, and remains disabled by default.
 
 If CosmeticArmorReworked is present, GPOM reflectively syncs its small per-bauble cosmetic visibility toggles with the side rail instead of letting them remain behind in the original expanded-screen positions. Buttons are hidden when the rail is closed. BringMeTheRings and other slot-expansion mods are supported through the real Baubles handler slots, but cosmetic toggles only appear for slots backed by CosmeticArmorReworked's own cosmetic inventory.
+
+## BetterPortals Compatibility
+
+```properties
+gpom.betterPortals.fixMissingNewTarget=true
+gpom.betterPortals.remapLegacyAetherBridge=true
+gpom.betterPortals.skipLegacyAetherBridgeIfMissing=true
+gpom.betterPortals.fixGuavaAddCallback=true
+```
+
+These are narrow bytecode shims for BetterPortals 0.3.x on the current Cleanroom/Mixin/Guava stack. They add a missing `Frustum` target to legacy `@At("NEW")` mixin metadata, patch old two-argument Guava `Futures.addCallback` calls to use `MoreExecutors.directExecutor()`, and make BetterPortals' optional Aether bridge tolerate the installed `com.gildedgames.the_aether` package instead of the old `com.legacy.aether` package.
+
+GPOM intentionally does not handle BetterPortals/AUSM see-through rendering. If AUSM is installed, disable BetterPortals see-through portals in BetterPortals/AUSM-owned compatibility code, not in GPOM.
 
 ## Multipart Compatibility
 

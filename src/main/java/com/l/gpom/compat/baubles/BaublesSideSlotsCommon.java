@@ -5,6 +5,7 @@ import baubles.api.cap.IBaublesItemHandler;
 import baubles.common.container.SlotBauble;
 import com.l.gpom.GPOM;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.Slot;
@@ -25,6 +26,7 @@ public final class BaublesSideSlotsCommon {
     private static final Field CONTAINER_TRACKED_STACKS = findField(Container.class, "inventoryItemStacks", "field_75153_a");
     private static final Field CONTAINER_WINDOW_ID = findField(Container.class, "windowId", "field_75152_c");
     private static final Field SLOT_INVENTORY = findField(Slot.class, "inventory", "field_75224_c");
+    private static final Field SLOT_INDEX = findField(Slot.class, "slotIndex", "field_75225_a");
     private static final Field SLOT_NUMBER = findField(Slot.class, "slotNumber", "field_75222_d");
     private static final Field SLOT_X = findField(Slot.class, "xPos", "field_75223_e");
     private static final Field SLOT_Y = findField(Slot.class, "yPos", "field_75221_f");
@@ -126,6 +128,25 @@ public final class BaublesSideSlotsCommon {
         }
     }
 
+    public static boolean removeSlotAt(Container container, int index) {
+        if (container == null || index < 0) {
+            return false;
+        }
+
+        List<Slot> slots = slots(container);
+        if (index >= slots.size()) {
+            return false;
+        }
+
+        slots.remove(index);
+        List<ItemStack> trackedStacks = trackedStacks(container);
+        if (index < trackedStacks.size()) {
+            trackedStacks.remove(index);
+        }
+        renumberSlots(container);
+        return true;
+    }
+
     public static List<Slot> baubleSlots(Container container) {
         List<Slot> baubles = new ArrayList<>();
         if (container == null) {
@@ -138,6 +159,68 @@ public final class BaublesSideSlotsCommon {
             }
         }
         return baubles;
+    }
+
+    public static List<Slot> sideRailSlots(Container container) {
+        List<Slot> sideSlots = baubleSlots(container);
+        sideSlots.addAll(AetherSideSlotsBridge.accessorySlots(container));
+        sideSlots.addAll(CosmeticArmorSideSlotsBridge.cosmeticArmorSlots(container));
+        return sideSlots;
+    }
+
+    public static boolean isSideRailSlot(Slot slot) {
+        return slot instanceof SlotBauble
+                || AetherSideSlotsBridge.isAccessorySlot(slot)
+                || CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot);
+    }
+
+    public static Slot findEmptyVanillaArmorTarget(Container container, ItemStack stack) {
+        if (container == null || isEmptyStack(stack)) {
+            return null;
+        }
+
+        for (Slot slot : slots(container)) {
+            if (isVanillaArmorSlot(slot)
+                    && !slotHasStack(slot)
+                    && isSlotEnabled(slot)
+                    && isSlotItemValid(slot, stack)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    public static boolean isValidForVanillaArmorSlot(Container container, ItemStack stack) {
+        if (container == null || isEmptyStack(stack)) {
+            return false;
+        }
+
+        for (Slot slot : slots(container)) {
+            if (isVanillaArmorSlot(slot)
+                    && isSlotEnabled(slot)
+                    && isSlotItemValid(slot, stack)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isVanillaArmorSlot(Slot slot) {
+        if (slot == null || isSideRailSlot(slot)) {
+            return false;
+        }
+        IInventory inventory = slotInventory(slot);
+        int index = slotIndex(slot);
+        return inventory instanceof InventoryPlayer && index >= 36 && index <= 39;
+    }
+
+    public static boolean isPlayerMainInventorySlot(Slot slot) {
+        if (slot == null || isSideRailSlot(slot)) {
+            return false;
+        }
+        IInventory inventory = slotInventory(slot);
+        int index = slotIndex(slot);
+        return inventory instanceof InventoryPlayer && index >= 0 && index < 36;
     }
 
     @SuppressWarnings("unchecked")
@@ -158,6 +241,10 @@ public final class BaublesSideSlotsCommon {
 
     public static int slotNumber(Slot slot) {
         return intField(SLOT_NUMBER, slot, -1);
+    }
+
+    public static int slotIndex(Slot slot) {
+        return intField(SLOT_INDEX, slot, -1);
     }
 
     public static int slotX(Slot slot) {
@@ -284,6 +371,28 @@ public final class BaublesSideSlotsCommon {
         } else {
             setStackCount(stack, Math.max(0, stackCount(stack) - amount));
         }
+    }
+
+    public static boolean moveOneItemToSlot(Slot source, Slot target, ItemStack sourceStack) {
+        if (source == null || target == null || isEmptyStack(sourceStack)) {
+            return false;
+        }
+
+        ItemStack moved = copyStack(sourceStack);
+        if (isEmptyStack(moved)) {
+            return false;
+        }
+
+        setStackCount(moved, 1);
+        shrinkStack(sourceStack, 1);
+        if (isEmptyStack(sourceStack)) {
+            putSlotStack(source, emptyStack());
+        } else {
+            slotChanged(source);
+        }
+        putSlotStack(target, moved);
+        slotChanged(target);
+        return true;
     }
 
     private static void moveSlot(Container container, Slot added, int targetIndex) {

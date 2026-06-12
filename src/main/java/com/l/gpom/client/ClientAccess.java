@@ -24,6 +24,7 @@ public final class ClientAccess {
     private static volatile Method drawRectMethod;
     private static volatile Method drawGradientRectMethod;
     private static volatile Method drawTexturedModalRectMethod;
+    private static volatile Method drawModalRectWithCustomSizedTextureMethod;
     private static volatile Method getTextureManagerMethod;
     private static volatile Method bindTextureMethod;
     private static volatile Method drawInventoryEntityMethod;
@@ -211,6 +212,34 @@ public final class ClientAccess {
             }
             if (method != null) {
                 method.invoke(gui, x, y, textureX, textureY, width, height);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void drawModalRectWithCustomSizedTexture(Gui gui,
+                                                           int x,
+                                                           int y,
+                                                           float textureX,
+                                                           float textureY,
+                                                           int width,
+                                                           int height,
+                                                           float textureWidth,
+                                                           float textureHeight) {
+        if (gui == null) {
+            return;
+        }
+        try {
+            Method method = drawModalRectWithCustomSizedTextureMethod;
+            if (method == null) {
+                method = findMethod(Gui.class,
+                        new Class<?>[] {int.class, int.class, float.class, float.class, int.class, int.class, float.class, float.class},
+                        "func_146110_a",
+                        "drawModalRectWithCustomSizedTexture");
+                drawModalRectWithCustomSizedTextureMethod = method;
+            }
+            if (method != null) {
+                method.invoke(null, x, y, textureX, textureY, width, height, textureWidth, textureHeight);
             }
         } catch (Throwable ignored) {
         }

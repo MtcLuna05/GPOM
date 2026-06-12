@@ -9,10 +9,10 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.entity.EntityLivingBase;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Container;
-import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
@@ -24,6 +24,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -66,7 +67,7 @@ public final class BaublesSideSlotsClient {
     private static final int PANEL_BOTTOM_V = 12;
     private static final int PANEL_BR_U = 12;
     private static final int PANEL_BR_V = 12;
-    private static final int COSMETIC_ARMOR_BAUBLE_TOGGLE_ID_BASE = 84;
+    private static final int COSMETIC_ARMOR_TOGGLE_ID_BASE = 80;
     private static final int COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET = 4;
     private static final String COSMETIC_ARMOR_MAIN_CLASS = "lain.mods.cos.CosmeticArmorReworked";
     private static final String COSMETIC_ARMOR_TOGGLE_BUTTON_CLASS = "lain.mods.cos.client.GuiCosArmorToggleButton";
@@ -83,6 +84,7 @@ public final class BaublesSideSlotsClient {
     };
     private static final Map<GuiContainer, Integer> PAGE_OFFSETS = new WeakHashMap<>();
     private static final Map<GuiContainer, Boolean> PANEL_VISIBILITY = new WeakHashMap<>();
+    private static final Map<GuiContainer, Set<Slot>> GUI_INVENTORY_SIDE_SLOTS = new WeakHashMap<>();
     private static Field inventorySlotsField;
     private static Field widthField;
     private static Field heightField;
@@ -101,10 +103,10 @@ public final class BaublesSideSlotsClient {
     private static Field buttonIdField;
     private static Field buttonListField;
     private static Field hoveredSlotField;
+    private static Field creativeSlotTargetField;
     private static Field cosmeticArmorToggleStateField;
     private static Field cosmeticArmorInventoryManagerField;
     private static Field cosmeticArmorNetworkField;
-    private static Field creativeSlotTargetField;
     private static Constructor<?> cosmeticArmorToggleButtonConstructor;
     private static Constructor<?> cosmeticArmorPacketSetSkinArmorConstructor;
     private static Method entityUniqueIdMethod;
@@ -114,35 +116,33 @@ public final class BaublesSideSlotsClient {
     private static Method cosmeticArmorSetSkinArmorMethod;
     private static Method cosmeticArmorNetworkSendToServerMethod;
     private static Method activePotionEffectsMethod;
+    private static Method drawHoveringTextMethod;
 
     private BaublesSideSlotsClient() {
     }
 
     public static void arrangeSlots(GuiContainer gui, int screenWidth, int xSize, int ySize, int guiLeft) {
-        if (GpomEarlyConfig.baublesSideSlotsEnabled() && isSideRailGui(gui)) {
-            if (isPanelVisible(gui)) {
-                arrange(gui, screenWidth, 0, xSize, ySize, guiLeft, 0);
-            } else {
-                hideBaubleSlots(gui);
-                clearHoveredBaubleSlot(gui);
-            }
-            syncCosmeticArmorBaubleToggleButtons(gui);
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return;
         }
+
+        if (isSideRailGui(gui)) {
+            arrange(gui, screenWidth, 0, xSize, ySize, guiLeft, 0);
+        }
+        syncCosmeticArmorBaubleToggleButtons(gui);
     }
 
     public static void arrangeSlots(GuiContainer gui) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return;
+        }
+
         Dimensions dimensions = dimensions(gui);
         if (dimensions != null) {
-            if (isPanelVisible(gui)) {
-                arrange(gui, dimensions.screenWidth, dimensions.screenHeight, dimensions.xSize, dimensions.ySize,
-                        dimensions.guiLeft, dimensions.guiTop);
-            } else {
-                hideBaubleSlots(gui);
-                clearHoveredBaubleSlot(gui);
-            }
-        } else if (gui != null && !isPanelVisible(gui)) {
-            hideBaubleSlots(gui);
-            clearHoveredBaubleSlot(gui);
+            arrange(gui, dimensions.screenWidth, dimensions.screenHeight, dimensions.xSize, dimensions.ySize,
+                    dimensions.guiLeft, dimensions.guiTop);
         }
         syncCosmeticArmorBaubleToggleButtons(gui);
     }
@@ -158,7 +158,8 @@ public final class BaublesSideSlotsClient {
                                   int ySize,
                                   int guiLeft,
                                   int guiTop) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !isSideRailGui(gui) || !isPanelVisible(gui)) {
+        if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
+            closeSideRailRendering(gui);
             return;
         }
 
@@ -185,7 +186,7 @@ public final class BaublesSideSlotsClient {
             ClientAccess.drawStringWithShadow(font, ">", right - 11, headerTop + 1, layout.page < layout.maxPage ? textColor : 0x666666);
         }
 
-        List<Slot> slots = orderedBaubleSlots(inventorySlots(gui));
+        List<Slot> slots = orderedSideRailSlots(inventorySlots(gui));
         for (Slot slot : slots) {
             if (BaublesSideSlotsCommon.slotX(slot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2) {
                 continue;
@@ -199,6 +200,11 @@ public final class BaublesSideSlotsClient {
     }
 
     public static void drawPanel(GuiContainer gui) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return;
+        }
+
         Dimensions dimensions = dimensions(gui);
         if (dimensions != null) {
             drawPanel(gui, dimensions.screenWidth, dimensions.screenHeight, dimensions.xSize, dimensions.ySize,
@@ -207,7 +213,11 @@ public final class BaublesSideSlotsClient {
     }
 
     public static boolean handlePanelClick(GuiContainer gui, int mouseX, int mouseY, int mouseButton) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !isPanelVisible(gui) || mouseButton != 0) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return false;
+        }
+        if (mouseButton != 0) {
             return false;
         }
 
@@ -249,8 +259,49 @@ public final class BaublesSideSlotsClient {
         return true;
     }
 
+    public static boolean handleSideRailSlotClick(GuiContainer gui, int mouseX, int mouseY, int mouseButton) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return false;
+        }
+        if (mouseButton != 0) {
+            return false;
+        }
+
+        Container container = inventorySlots(gui);
+        Slot slot = findSlotAt(container, guiLeft(gui), guiTop(gui), mouseX, mouseY);
+        if (!BaublesSideSlotsCommon.isSideRailSlot(slot)
+                || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
+            return false;
+        }
+
+        ClickType clickType = isShiftKeyDown() && BaublesSideSlotsCommon.slotHasStack(slot)
+                ? ClickType.QUICK_MOVE
+                : ClickType.PICKUP;
+        int windowId = BaublesSideSlotsCommon.windowId(container);
+        int slotNumber = BaublesSideSlotsCommon.slotNumber(slot);
+        if (windowId < 0 || slotNumber < 0) {
+            return false;
+        }
+
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            BaublesSideSlotsNetwork.sendCosmeticSlotClick(windowId, slotNumber, mouseButton, clickType);
+            return true;
+        }
+
+        boolean clicked = ClientAccess.windowClick(ClientAccess.minecraft(), windowId, slotNumber, mouseButton, clickType);
+        if (clicked) {
+            syncCosmeticArmorBaubleToggleButtons(gui);
+        }
+        return clicked;
+    }
+
     public static boolean handleCosmeticArmorBaubleToggleClick(GuiContainer gui, int mouseX, int mouseY, int mouseButton) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !isPanelVisible(gui) || mouseButton != 0) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return false;
+        }
+        if (mouseButton != 0) {
             return false;
         }
 
@@ -264,17 +315,11 @@ public final class BaublesSideSlotsClient {
                 continue;
             }
 
-            int baubleSlot = intField(button, buttonIdField, -1, "field_146127_k", "id") - COSMETIC_ARMOR_BAUBLE_TOGGLE_ID_BASE;
-            if (baubleSlot < 0) {
+            int cosmeticSlot = cosmeticArmorToggleCosmeticSlot(button);
+            if (cosmeticSlot < 0) {
                 continue;
             }
 
-            // CosmeticArmorReworked already handles its original 0-6 bauble buttons through its own mouse hook.
-            if (baubleSlot < 7) {
-                return false;
-            }
-
-            int cosmeticSlot = COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET + baubleSlot;
             if (!hasCosmeticArmorSlot(gui, cosmeticSlot)) {
                 return false;
             }
@@ -299,7 +344,8 @@ public final class BaublesSideSlotsClient {
                                        int mouseX,
                                        int mouseY,
                                        int wheelDelta) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !isPanelVisible(gui) || wheelDelta == 0) {
+        if (!isSideRailOpen(gui) || wheelDelta == 0) {
+            closeSideRailRendering(gui);
             return false;
         }
 
@@ -342,7 +388,8 @@ public final class BaublesSideSlotsClient {
     }
 
     public static void syncHoveredSlotAndDrawFallback(GuiContainer gui, int mouseX, int mouseY) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !isPanelVisible(gui) || !isSideRailGui(gui)) {
+        if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
+            closeSideRailRendering(gui);
             return;
         }
 
@@ -352,16 +399,56 @@ public final class BaublesSideSlotsClient {
             return;
         }
 
-        boolean baubleSlot = slot instanceof SlotBauble;
+        boolean sideRailSlot = BaublesSideSlotsCommon.isSideRailSlot(slot);
         boolean occupiedPlayerSlot = BaublesSideSlotsCommon.slotInventory(slot) instanceof InventoryPlayer
                 && BaublesSideSlotsCommon.slotHasStack(slot);
-        if (!baubleSlot && !occupiedPlayerSlot) {
+        if (!sideRailSlot && !occupiedPlayerSlot) {
             clearHoveredBaubleSlot(gui);
             return;
         }
 
         setHoveredSlot(gui, slot);
         drawHoverOverlay(gui, slot);
+    }
+
+    public static void drawEmptySlotTooltip(GuiContainer gui, int mouseX, int mouseY) {
+        if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
+            closeSideRailRendering(gui);
+            return;
+        }
+
+        Slot slot = findSlotAt(inventorySlots(gui), guiLeft(gui), guiTop(gui), mouseX, mouseY);
+        if (slot == null
+                || !BaublesSideSlotsCommon.isSideRailSlot(slot)
+                || !BaublesSideSlotsCommon.isSlotEnabled(slot)
+                || BaublesSideSlotsCommon.slotHasStack(slot)) {
+            return;
+        }
+
+        String tooltip = sideRailSlotTooltip(slot);
+        if (tooltip == null || tooltip.isEmpty()) {
+            return;
+        }
+        drawHoveringText(gui, Collections.singletonList(tooltip), mouseX, mouseY);
+    }
+
+    private static void drawHoveringText(GuiContainer gui, List<String> lines, int mouseX, int mouseY) {
+        if (gui == null || lines == null || lines.isEmpty()) {
+            return;
+        }
+        try {
+            Method method = drawHoveringTextMethod;
+            if (method == null) {
+                method = findMethod(gui.getClass(), new Class<?>[] {List.class, int.class, int.class},
+                        "func_146283_a",
+                        "drawHoveringText");
+                drawHoveringTextMethod = method;
+            }
+            if (method != null) {
+                method.invoke(gui, lines, mouseX, mouseY);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
     }
 
     private static void drawHoverOverlay(GuiContainer gui, Slot slot) {
@@ -395,19 +482,22 @@ public final class BaublesSideSlotsClient {
                                         int mouseX,
                                         int mouseY,
                                         int mouseButton) {
+        if (mouseButton != 0) {
+            return false;
+        }
+
         if (!GpomEarlyConfig.baublesSideSlotsShiftRightClickEquipEnabled()
-                || mouseButton != 0
                 || !isShiftKeyDown()
-                || !isSupportedGui(gui)
+                || !isSideRailOpen(gui)
                 || container == null) {
+            closeSideRailRendering(gui);
             return false;
         }
 
         Slot slot = findSlotAt(container, guiLeft, guiTop, mouseX, mouseY);
-        IInventory inventory = slot == null ? null : BaublesSideSlotsCommon.slotInventory(slot);
         if (slot == null
-                || slot instanceof SlotBauble
-                || !(inventory instanceof InventoryPlayer)
+                || BaublesSideSlotsCommon.isSideRailSlot(slot)
+                || !BaublesSideSlotsCommon.isPlayerMainInventorySlot(slot)
                 || !BaublesSideSlotsCommon.slotHasStack(slot)) {
             return false;
         }
@@ -440,13 +530,144 @@ public final class BaublesSideSlotsClient {
         if (gui == null) {
             return;
         }
-        PANEL_VISIBILITY.put(gui, visible);
         if (visible) {
+            PANEL_VISIBILITY.put(gui, true);
+            prepareGuiInventorySideSlots(gui);
             arrangeSlots(gui);
         } else {
-            hideBaubleSlots(gui);
-            clearHoveredBaubleSlot(gui);
-            syncCosmeticArmorBaubleToggleButtons(gui);
+            removeGuiInventorySideSlots(gui);
+        }
+    }
+
+    public static void prepareGuiInventorySideSlots(GuiContainer gui) {
+        if (!isSideRailOpen(gui)) {
+            closeSideRailRendering(gui);
+            return;
+        }
+
+        Container container = inventorySlots(gui);
+        Minecraft minecraft = ClientAccess.minecraft();
+        EntityLivingBase player = ClientAccess.player(minecraft);
+        if (container == null || !(player instanceof EntityPlayer)) {
+            return;
+        }
+
+        Set<Slot> existingSlots = new HashSet<>(BaublesSideSlotsCommon.sideRailSlots(container));
+        BaublesSideSlotsVanillaBridge.prepare(container, (EntityPlayer) player);
+        AetherSideSlotsBridge.prepare(container, (EntityPlayer) player);
+        CosmeticArmorSideSlotsBridge.prepare(container, (EntityPlayer) player);
+
+        Set<Slot> managedSlots = GUI_INVENTORY_SIDE_SLOTS.get(gui);
+        for (Slot slot : BaublesSideSlotsCommon.sideRailSlots(container)) {
+            if (existingSlots.contains(slot)) {
+                continue;
+            }
+            if (managedSlots == null) {
+                managedSlots = new HashSet<>();
+                GUI_INVENTORY_SIDE_SLOTS.put(gui, managedSlots);
+            }
+            managedSlots.add(slot);
+        }
+        arrangeSlots(gui);
+    }
+
+    public static void removeGuiInventorySideSlots(GuiContainer gui) {
+        if (!(gui instanceof GuiInventory)) {
+            closeSideRailRendering(gui);
+            return;
+        }
+
+        Container container = inventorySlots(gui);
+        Set<Slot> managedSlots = GUI_INVENTORY_SIDE_SLOTS.remove(gui);
+        if (container != null && managedSlots != null && !managedSlots.isEmpty()) {
+            List<Slot> slots = BaublesSideSlotsCommon.slots(container);
+            for (int index = slots.size() - 1; index >= 0; index--) {
+                if (managedSlots.contains(slots.get(index))) {
+                    BaublesSideSlotsCommon.removeSlotAt(container, index);
+                }
+            }
+        }
+
+        hideBaubleSlots(gui);
+        clearHoveredBaubleSlot(gui);
+        PAGE_OFFSETS.remove(gui);
+        PANEL_VISIBILITY.remove(gui);
+        syncCosmeticArmorBaubleToggleButtons(gui);
+    }
+
+    public static void resetClientState() {
+        Minecraft minecraft = ClientAccess.minecraft();
+        Object currentScreen = ClientAccess.currentScreen(minecraft);
+        if (currentScreen instanceof GuiContainer) {
+            GuiContainer gui = (GuiContainer) currentScreen;
+            if (gui instanceof GuiInventory) {
+                removeGuiInventorySideSlots(gui);
+            } else {
+                closeSideRailRendering(gui);
+            }
+        }
+
+        PAGE_OFFSETS.clear();
+        PANEL_VISIBILITY.clear();
+        GUI_INVENTORY_SIDE_SLOTS.clear();
+        CosmeticArmorSideSlotsBridge.resetClientState();
+    }
+
+    private static void closeSideRailRendering(GuiContainer gui) {
+        if (gui == null) {
+            return;
+        }
+        hideBaubleSlots(gui);
+        clearHoveredBaubleSlot(gui);
+        PAGE_OFFSETS.remove(gui);
+        syncCosmeticArmorBaubleToggleButtons(gui, false);
+    }
+
+    private static boolean isSideRailSlotMirror(Slot slot) {
+        if (BaublesSideSlotsCommon.isSideRailSlot(slot)) {
+            return true;
+        }
+
+        Slot target = creativeSlotTarget(slot);
+        return BaublesSideSlotsCommon.isSideRailSlot(target);
+    }
+
+    public static boolean shouldSkipSlotRender(GuiContainer gui, Slot slot) {
+        if (slot == null) {
+            return false;
+        }
+
+        Slot target = creativeSlotTarget(slot);
+        boolean sideRailSlot = BaublesSideSlotsCommon.isSideRailSlot(slot);
+        boolean sideRailMirror = target != null && BaublesSideSlotsCommon.isSideRailSlot(target);
+        if (!sideRailSlot && !sideRailMirror) {
+            return false;
+        }
+
+        if (!isSideRailOpen(gui)) {
+            return true;
+        }
+
+        Slot renderedSlot = sideRailMirror ? target : slot;
+        return BaublesSideSlotsCommon.slotX(renderedSlot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2
+                || BaublesSideSlotsCommon.slotY(renderedSlot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2;
+    }
+
+    private static Slot creativeSlotTarget(Slot slot) {
+        if (slot == null) {
+            return null;
+        }
+
+        try {
+            Field field = creativeSlotTargetField;
+            if (field == null || field.getDeclaringClass() != slot.getClass()) {
+                field = findField(slot.getClass(), "slot", "field_148332_b");
+                creativeSlotTargetField = field;
+            }
+            Object value = field == null ? null : field.get(slot);
+            return value instanceof Slot ? (Slot) value : null;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
     }
 
@@ -455,7 +676,7 @@ public final class BaublesSideSlotsClient {
             return;
         }
         ensureCosmeticArmorBaubleToggleButtons(gui, buttons);
-        syncCosmeticArmorBaubleToggleButtons(gui, buttons, isPanelVisible(gui));
+        syncCosmeticArmorBaubleToggleButtons(gui, buttons, isSideRailOpen(gui));
     }
 
     public static boolean drawToggleButton(Object button, GuiContainer parent, Minecraft minecraft, int mouseX, int mouseY) {
@@ -465,6 +686,9 @@ public final class BaublesSideSlotsClient {
         if (!isActiveScreen(minecraft, parent)) {
             setButtonInteractive(button, false);
             return true;
+        }
+        if (!isSideRailOpen(parent)) {
+            closeSideRailRendering(parent);
         }
         setButtonInteractive(button, true);
         if (!booleanField(button, buttonVisibleField, true, "field_146125_m", "visible")) {
@@ -486,8 +710,11 @@ public final class BaublesSideSlotsClient {
 
     private static boolean quickEquipWithContainerClicks(Container container, Slot source) {
         ItemStack sourceStack = BaublesSideSlotsCommon.slotStack(source);
-        Slot target = findEmptyBaubleTarget(container, sourceStack);
+        Slot target = findEmptyQuickEquipTarget(container, sourceStack);
         if (target == null) {
+            return false;
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(target)) {
             return false;
         }
 
@@ -516,47 +743,6 @@ public final class BaublesSideSlotsClient {
         return true;
     }
 
-    public static void removeCreativeSurvivalBaubleMirrors(GuiContainer gui) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
-            return;
-        }
-
-        Container container = inventorySlots(gui);
-        List<Slot> slots = BaublesSideSlotsCommon.slots(container);
-        for (int index = slots.size() - 1; index >= 0; index--) {
-            if (isBaubleSlotMirror(slots.get(index))) {
-                slots.remove(index);
-            }
-        }
-    }
-
-    private static boolean isBaubleSlotMirror(Slot slot) {
-        if (slot instanceof SlotBauble) {
-            return true;
-        }
-
-        Slot target = creativeSlotTarget(slot);
-        return target instanceof SlotBauble;
-    }
-
-    private static Slot creativeSlotTarget(Slot slot) {
-        if (slot == null) {
-            return null;
-        }
-
-        try {
-            Field field = creativeSlotTargetField;
-            if (field == null || field.getDeclaringClass() != slot.getClass()) {
-                field = findField(slot.getClass(), "slot");
-                creativeSlotTargetField = field;
-            }
-            Object value = field == null ? null : field.get(slot);
-            return value instanceof Slot ? (Slot) value : null;
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            return null;
-        }
-    }
-
     private static Slot findEmptyBaubleTarget(Container container, ItemStack stack) {
         if (BaublesSideSlotsCommon.isEmptyStack(stack)) {
             return null;
@@ -571,10 +757,76 @@ public final class BaublesSideSlotsClient {
         return null;
     }
 
+    private static Slot findEmptyAetherTarget(Container container, ItemStack stack) {
+        if (BaublesSideSlotsCommon.isEmptyStack(stack)) {
+            return null;
+        }
+
+        List<Slot> slots = new ArrayList<>(AetherSideSlotsBridge.accessorySlots(container));
+        slots.sort(Comparator
+                .comparingInt(BaublesSideSlotsClient::sideRailVerticalOrder)
+                .thenComparing(BaublesSideSlotsClient::sideRailSlotTooltip, String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt(AetherSideSlotsBridge::accessorySlotIndex)
+                .thenComparingInt(BaublesSideSlotsCommon::slotNumber));
+        for (Slot slot : slots) {
+            if (!BaublesSideSlotsCommon.slotHasStack(slot)
+                    && BaublesSideSlotsCommon.isSlotItemValid(slot, stack)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static Slot findEmptyCosmeticArmorTarget(Container container, ItemStack stack) {
+        if (BaublesSideSlotsCommon.isEmptyStack(stack)) {
+            return null;
+        }
+
+        List<Slot> slots = new ArrayList<>(CosmeticArmorSideSlotsBridge.cosmeticArmorSlots(container));
+        slots.sort(Comparator
+                .comparingInt(BaublesSideSlotsClient::sideRailVerticalOrder)
+                .thenComparing(BaublesSideSlotsClient::sideRailSlotTooltip, String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt(CosmeticArmorSideSlotsBridge::cosmeticArmorSlotIndex)
+                .thenComparingInt(BaublesSideSlotsCommon::slotNumber));
+        for (Slot slot : slots) {
+            if (!BaublesSideSlotsCommon.slotHasStack(slot)
+                    && BaublesSideSlotsCommon.isSlotItemValid(slot, stack)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private static Slot findEmptyQuickEquipTarget(Container container, ItemStack stack) {
+        if (BaublesSideSlotsCommon.isValidForVanillaArmorSlot(container, stack)) {
+            Slot armor = BaublesSideSlotsCommon.findEmptyVanillaArmorTarget(container, stack);
+            if (armor != null) {
+                return armor;
+            }
+            Slot cosmeticArmor = findEmptyCosmeticArmorTarget(container, stack);
+            if (cosmeticArmor != null) {
+                return cosmeticArmor;
+            }
+        }
+
+        Slot bauble = findEmptyBaubleTarget(container, stack);
+        if (bauble != null) {
+            return bauble;
+        }
+        Slot aether = findEmptyAetherTarget(container, stack);
+        return aether != null ? aether : findEmptyCosmeticArmorTarget(container, stack);
+    }
+
     private static void syncCosmeticArmorBaubleToggleButtons(GuiContainer gui) {
+        syncCosmeticArmorBaubleToggleButtons(gui, isSideRailOpen(gui));
+    }
+
+    private static void syncCosmeticArmorBaubleToggleButtons(GuiContainer gui, boolean panelVisible) {
         Object value = objectFieldValue(gui, buttonListField, "field_146292_n", "buttonList");
         if (value instanceof List) {
-            syncCosmeticArmorBaubleToggleButtons(gui, (List<?>) value, isPanelVisible(gui));
+            List<?> buttons = (List<?>) value;
+            ensureCosmeticArmorBaubleToggleButtons(gui, buttons);
+            syncCosmeticArmorBaubleToggleButtons(gui, buttons, panelVisible);
         }
     }
 
@@ -591,14 +843,33 @@ public final class BaublesSideSlotsClient {
             }
         }
 
-        for (Slot slot : BaublesSideSlotsCommon.baubleSlots(inventorySlots(gui))) {
+        Container container = inventorySlots(gui);
+        for (Slot slot : CosmeticArmorSideSlotsBridge.cosmeticArmorSlots(container)) {
+            int cosmeticSlot = CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot);
+            if (cosmeticSlot < 0) {
+                continue;
+            }
+
+            int buttonId = COSMETIC_ARMOR_TOGGLE_ID_BASE + cosmeticSlot;
+            if (existingIds.contains(buttonId) || !hasCosmeticArmorSlot(gui, cosmeticSlot)) {
+                continue;
+            }
+
+            Object button = createCosmeticArmorToggleButton(gui, buttonId, cosmeticSlot);
+            if (button instanceof GuiButton) {
+                ((List) buttons).add(button);
+                existingIds.add(buttonId);
+            }
+        }
+
+        for (Slot slot : BaublesSideSlotsCommon.baubleSlots(container)) {
             int baubleSlot = BaublesSideSlotsCommon.baubleSlotIndex(slot);
             if (baubleSlot < 0) {
                 continue;
             }
 
-            int buttonId = COSMETIC_ARMOR_BAUBLE_TOGGLE_ID_BASE + baubleSlot;
             int cosmeticSlot = COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET + baubleSlot;
+            int buttonId = COSMETIC_ARMOR_TOGGLE_ID_BASE + cosmeticSlot;
             if (existingIds.contains(buttonId) || !hasCosmeticArmorSlot(gui, cosmeticSlot)) {
                 continue;
             }
@@ -622,25 +893,48 @@ public final class BaublesSideSlotsClient {
             if (!isCosmeticArmorBaubleToggleButton(button)) {
                 continue;
             }
-            int baubleSlot = intField(button, buttonIdField, -1, "field_146127_k", "id") - COSMETIC_ARMOR_BAUBLE_TOGGLE_ID_BASE;
-            Slot slot = baubleSlot < 0 ? null : baubleSlot(container, baubleSlot);
+            int cosmeticSlot = cosmeticArmorToggleCosmeticSlot(button);
+            Slot slot = cosmeticSlot < 0 ? null : cosmeticArmorToggleSlot(container, cosmeticSlot);
             boolean show = panelVisible
                     && slot != null
-                    && BaublesSideSlotsCommon.slotX(slot) > BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2;
+                    && BaublesSideSlotsCommon.slotX(slot) > BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2
+                    && BaublesSideSlotsCommon.slotY(slot) > BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2;
             setButtonInteractive(button, show);
             if (show) {
                 setIntField(button, buttonXField, guiLeft + BaublesSideSlotsCommon.slotX(slot) - 1, "field_146128_h", "x");
                 setIntField(button, buttonYField, guiTop + BaublesSideSlotsCommon.slotY(slot) - 1, "field_146129_i", "y");
                 setIntField(button, buttonWidthField, 5, "field_146120_f", "width");
                 setIntField(button, buttonHeightField, 5, "field_146121_g", "height");
-                setCosmeticArmorToggleButtonState(button, cosmeticArmorSlotState(gui,
-                        COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET + baubleSlot));
+                setCosmeticArmorToggleButtonState(button, cosmeticArmorSlotState(gui, cosmeticSlot));
             }
         }
     }
 
     private static boolean isCosmeticArmorBaubleToggleButton(Object button) {
-        return button != null && COSMETIC_ARMOR_TOGGLE_BUTTON_CLASS.equals(button.getClass().getName());
+        return button != null
+                && COSMETIC_ARMOR_TOGGLE_BUTTON_CLASS.equals(button.getClass().getName())
+                && cosmeticArmorToggleCosmeticSlot(button) >= 0;
+    }
+
+    private static int cosmeticArmorToggleCosmeticSlot(Object button) {
+        int id = intField(button, buttonIdField, -1, "field_146127_k", "id");
+        return id >= COSMETIC_ARMOR_TOGGLE_ID_BASE ? id - COSMETIC_ARMOR_TOGGLE_ID_BASE : -1;
+    }
+
+    private static Slot cosmeticArmorToggleSlot(Container container, int cosmeticSlot) {
+        if (cosmeticSlot < COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET) {
+            return cosmeticArmorSlot(container, cosmeticSlot);
+        }
+        return baubleSlot(container, cosmeticSlot - COSMETIC_ARMOR_BAUBLE_COSMETIC_SLOT_OFFSET);
+    }
+
+    private static Slot cosmeticArmorSlot(Container container, int cosmeticSlotIndex) {
+        for (Slot slot : CosmeticArmorSideSlotsBridge.cosmeticArmorSlots(container)) {
+            if (CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot) == cosmeticSlotIndex) {
+                return slot;
+            }
+        }
+        return null;
     }
 
     private static Slot baubleSlot(Container container, int baubleSlotIndex) {
@@ -866,7 +1160,7 @@ public final class BaublesSideSlotsClient {
 
     private static void clearHoveredBaubleSlot(GuiContainer gui) {
         Slot slot = hoveredSlot(gui);
-        if (slot instanceof SlotBauble) {
+        if (BaublesSideSlotsCommon.isSideRailSlot(slot)) {
             setHoveredSlot(gui, null);
         }
     }
@@ -887,6 +1181,12 @@ public final class BaublesSideSlotsClient {
 
     private static boolean isPanelVisible(GuiContainer gui) {
         return gui != null && Boolean.TRUE.equals(PANEL_VISIBILITY.get(gui));
+    }
+
+    private static boolean isSideRailOpen(GuiContainer gui) {
+        return GpomEarlyConfig.baublesSideSlotsEnabled()
+                && isSupportedGui(gui)
+                && isPanelVisible(gui);
     }
 
     private static boolean isActiveScreen(Minecraft minecraft, GuiContainer parent) {
@@ -942,7 +1242,7 @@ public final class BaublesSideSlotsClient {
     }
 
     private static boolean isSideRailGui(GuiContainer gui) {
-        return gui != null && isSupportedGui(gui) && !BaublesSideSlotsCommon.baubleSlots(inventorySlots(gui)).isEmpty();
+        return gui != null && isSupportedGui(gui) && !BaublesSideSlotsCommon.sideRailSlots(inventorySlots(gui)).isEmpty();
     }
 
     private static Slot findSlotAt(Container container, int guiLeft, int guiTop, int mouseX, int mouseY) {
@@ -970,7 +1270,7 @@ public final class BaublesSideSlotsClient {
                                   int guiLeft,
                                   int guiTop) {
         Container container = inventorySlots(gui);
-        List<Slot> slots = orderedBaubleSlots(container);
+        List<Slot> slots = orderedSideRailSlots(container);
         int total = slots.size();
         if (total <= 0) {
             return new Layout(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false);
@@ -986,8 +1286,8 @@ public final class BaublesSideSlotsClient {
         int firstIndex = page * pageSize;
         int lastIndex = Math.min(total, firstIndex + pageSize);
         int visibleCount = Math.max(0, lastIndex - firstIndex);
-        int pageColumns = Math.min(columns, Math.max(1, visibleCount));
-        int pageRows = Math.max(1, (visibleCount + pageColumns - 1) / pageColumns);
+        int pageColumns = Math.max(1, Math.min(columns, Math.max(1, visibleCount)));
+        int pageRows = Math.min(visibleRows, Math.max(1, (visibleCount + pageColumns - 1) / pageColumns));
         int headerHeight = maxPage > 0 ? PANEL_HEADER_HEIGHT : 0;
         int panelWidth = PANEL_BORDER * 2
                 + PANEL_PADDING * 2
@@ -1030,6 +1330,12 @@ public final class BaublesSideSlotsClient {
             return;
         }
 
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)
+                || CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            // Native-textured slots expose their own empty-slot sprite through Slot#getSlotTexture.
+            return;
+        }
+
         BaublesSideSlotsCommon.SlotType type = BaublesSideSlotsCommon.slotType(slot);
         int icon = Math.max(0, Math.min(BAUBLE_ICON_UV.length - 1, type.ordinal()));
         int[] uv = BAUBLE_ICON_UV[icon];
@@ -1040,26 +1346,153 @@ public final class BaublesSideSlotsClient {
     private static List<Slot> orderedBaubleSlots(Container container) {
         List<Slot> slots = new ArrayList<>(BaublesSideSlotsCommon.baubleSlots(container));
         slots.sort(Comparator
-                .comparingInt((Slot slot) -> slotTypeOrder(BaublesSideSlotsCommon.slotType(slot)))
+                .comparingInt(BaublesSideSlotsClient::sideRailVerticalOrder)
+                .thenComparing(BaublesSideSlotsClient::sideRailSlotTooltip, String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt((Slot slot) -> slotTypeTieOrder(BaublesSideSlotsCommon.slotType(slot)))
                 .thenComparingInt(BaublesSideSlotsCommon::baubleSlotIndex)
                 .thenComparingInt(BaublesSideSlotsCommon::slotNumber));
         return slots;
     }
 
-    private static int slotTypeOrder(BaublesSideSlotsCommon.SlotType type) {
+    private static List<Slot> orderedSideRailSlots(Container container) {
+        List<Slot> slots = new ArrayList<>(BaublesSideSlotsCommon.sideRailSlots(container));
+        slots.sort(Comparator
+                .comparingInt(BaublesSideSlotsClient::sideRailVerticalOrder)
+                .thenComparing(BaublesSideSlotsClient::sideRailSlotTooltip, String.CASE_INSENSITIVE_ORDER)
+                .thenComparingInt(BaublesSideSlotsClient::sideRailGroupOrder)
+                .thenComparingInt(BaublesSideSlotsClient::sideRailSlotOrder)
+                .thenComparingInt(BaublesSideSlotsCommon::slotNumber));
+        return slots;
+    }
+
+    private static int sideRailGroupOrder(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return 0;
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return 1;
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return 2;
+        }
+        return 99;
+    }
+
+    private static String sideRailSlotTooltip(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return slotTypeLabel(BaublesSideSlotsCommon.slotType(slot));
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return aetherSlotTypeLabel(slot);
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return CosmeticArmorSideSlotsBridge.cosmeticArmorSlotName(slot);
+        }
+        return "";
+    }
+
+    private static int sideRailVerticalOrder(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return baubleVerticalOrder(BaublesSideSlotsCommon.slotType(slot));
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return aetherVerticalOrder(AetherSideSlotsBridge.accessorySlotIndex(slot));
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return cosmeticArmorVerticalOrder(CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot));
+        }
+        return 99;
+    }
+
+    private static int sideRailSlotOrder(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return slotTypeTieOrder(BaublesSideSlotsCommon.slotType(slot)) * 100
+                    + Math.max(0, BaublesSideSlotsCommon.baubleSlotIndex(slot));
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return Math.max(0, AetherSideSlotsBridge.accessorySlotIndex(slot));
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return Math.max(0, CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot));
+        }
+        return 9999;
+    }
+
+    private static int baubleVerticalOrder(BaublesSideSlotsCommon.SlotType type) {
         if (type == null) {
             return 99;
         }
         switch (type) {
-            case AMULET:
-                return 0;
-            case RING:
-                return 1;
-            case BELT:
-                return 2;
             case HEAD:
-                return 3;
+                return 0;
+            case AMULET:
+                return 1;
             case BODY:
+                return 3;
+            case RING:
+                return 5;
+            case BELT:
+                return 6;
+            case CHARM:
+                return 9;
+            case TRINKET:
+                return 10;
+            case GENERIC:
+            default:
+                return 11;
+        }
+    }
+
+    private static int aetherVerticalOrder(int index) {
+        switch (index) {
+            case 0: // pendant
+                return 1;
+            case 1: // cape
+                return 2;
+            case 2: // shield
+                return 3;
+            case 6: // gloves
+                return 4;
+            case 4:
+            case 5:
+                return 5;
+            case 3:
+            case 7:
+                return 11;
+            default:
+                return 99;
+        }
+    }
+
+    private static int cosmeticArmorVerticalOrder(int index) {
+        switch (index) {
+            case 3: // helmet
+                return 0;
+            case 2: // chestplate
+                return 3;
+            case 1: // leggings
+                return 7;
+            case 0: // boots
+                return 8;
+            default:
+                return 99;
+        }
+    }
+
+    private static int slotTypeTieOrder(BaublesSideSlotsCommon.SlotType type) {
+        if (type == null) {
+            return 99;
+        }
+        switch (type) {
+            case HEAD:
+                return 0;
+            case AMULET:
+                return 1;
+            case BODY:
+                return 2;
+            case RING:
+                return 3;
+            case BELT:
                 return 4;
             case CHARM:
                 return 5;
@@ -1068,6 +1501,52 @@ public final class BaublesSideSlotsClient {
             case GENERIC:
             default:
                 return 7;
+        }
+    }
+
+    private static String slotTypeLabel(BaublesSideSlotsCommon.SlotType type) {
+        if (type == null) {
+            return "Accessory";
+        }
+        switch (type) {
+            case AMULET:
+                return "Necklace";
+            case RING:
+                return "Ring";
+            case BELT:
+                return "Belt";
+            case HEAD:
+                return "Head";
+            case BODY:
+                return "Body";
+            case CHARM:
+                return "Charm";
+            case TRINKET:
+                return "Trinket";
+            case GENERIC:
+            default:
+                return "Accessory";
+        }
+    }
+
+    private static String aetherSlotTypeLabel(Slot slot) {
+        switch (AetherSideSlotsBridge.accessorySlotIndex(slot)) {
+            case 0:
+                return "Necklace";
+            case 1:
+                return "Cape";
+            case 2:
+                return "Shield";
+            case 3:
+            case 7:
+                return "Misc";
+            case 4:
+            case 5:
+                return "Ring";
+            case 6:
+                return "Gloves";
+            default:
+                return "Aether Accessory";
         }
     }
 
@@ -1133,7 +1612,7 @@ public final class BaublesSideSlotsClient {
     }
 
     private static void hideBaubleSlots(GuiContainer gui) {
-        for (Slot slot : BaublesSideSlotsCommon.baubleSlots(inventorySlots(gui))) {
+        for (Slot slot : BaublesSideSlotsCommon.sideRailSlots(inventorySlots(gui))) {
             BaublesSideSlotsCommon.setSlotPos(slot,
                     BaublesSideSlotsCommon.HIDDEN_SLOT_POS,
                     BaublesSideSlotsCommon.HIDDEN_SLOT_POS);
@@ -1367,7 +1846,7 @@ public final class BaublesSideSlotsClient {
     }
 
     private static Dimensions dimensions(GuiContainer gui) {
-        if (gui == null || !isSideRailGui(gui)) {
+        if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
             return null;
         }
 

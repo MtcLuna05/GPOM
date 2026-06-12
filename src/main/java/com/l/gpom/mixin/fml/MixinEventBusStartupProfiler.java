@@ -53,6 +53,7 @@ public abstract class MixinEventBusStartupProfiler {
 
     @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("HEAD"))
     private void gpom$beginPost(Event event, CallbackInfoReturnable<Boolean> cir) {
+        EventBusRegistrationOptimizations.sanitizePostedEventListeners((EventBus) (Object) this, event);
         StartupProfiler.postPreInitProgressStage(gpom$postPreInitProgressStage(event));
         if (!StartupProfiler.isPostPreInitTransitionActive()) {
             gpom$postStarts.get().push(0L);
