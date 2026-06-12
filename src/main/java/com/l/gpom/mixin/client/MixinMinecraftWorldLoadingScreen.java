@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.client;
 
 import com.l.gpom.client.WorldLoadingProgress;
+import com.l.gpom.compat.journeymap.JourneyMapLeakCleanup;
 import com.l.gpom.profiling.WorldLifecycleProfiler;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
@@ -75,6 +76,9 @@ public abstract class MixinMinecraftWorldLoadingScreen {
     private void gpom$loadWorldStarted(WorldClient worldClient, String message, CallbackInfo ci) {
         WorldClient previousWorld = gpom$getWorld();
         WorldLifecycleProfiler.beginLoadWorld((Minecraft) (Object) this, previousWorld, worldClient, message);
+        if (previousWorld != null && previousWorld != worldClient) {
+            JourneyMapLeakCleanup.cleanup("Minecraft loadWorld boundary");
+        }
         if (worldClient == null) {
             if (!WorldLoadingProgress.isActive()) {
                 WorldLoadingProgress.beginLeaving(message);

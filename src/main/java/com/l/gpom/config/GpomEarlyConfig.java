@@ -141,6 +141,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
+        DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
         DEFAULTS.setProperty("gpom.multipartCompat.enabled", "false");
         DEFAULTS.setProperty("gpom.multipartCompat.ae2.enabled", "false");
         DEFAULTS.setProperty("gpom.multipartCompat.ae2.registerPart", "false");
@@ -585,7 +586,8 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.fixMissingNewTarget",
                 "gpom.betterPortals.remapLegacyAetherBridge",
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
-                "gpom.betterPortals.fixGuavaAddCallback"
+                "gpom.betterPortals.fixGuavaAddCallback",
+                "gpom.journeymap.cleanupLeaks"
         );
         writeSection(writer, "Multipart Compatibility", "Experimental bridges that make selected full-block cable systems host their state inside ForgeMultipart parts. Keep disabled unless actively testing a bridge.",
                 "gpom.multipartCompat.enabled",
@@ -909,6 +911,8 @@ public final class GpomEarlyConfig {
                 return "Skips BetterPortals' optional Aether bridge when neither its legacy Aether target nor GPOM's remap target is available.";
             case "gpom.betterPortals.fixGuavaAddCallback":
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
+            case "gpom.journeymap.cleanupLeaks":
+                return "Reflectively clears JourneyMap client world/task/chunk/render caches on client world unload, disconnect, and Minecraft loadWorld boundaries. No-op when JourneyMap is absent.";
             case "gpom.multipartCompat.enabled":
                 return "Master switch for all GPOM ForgeMultipart compatibility bridges. When false, no multipart bridge classes are loaded.";
             case "gpom.multipartCompat.ae2.enabled":
@@ -1213,6 +1217,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
+        copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
         copySystemPropertyIfAbsent("gpom.multipartCompat.enabled");
         copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.enabled");
         copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.registerPart");
@@ -1463,6 +1468,10 @@ public final class GpomEarlyConfig {
 
     public static boolean betterPortalsGuavaAddCallbackFixEnabled() {
         return booleanValue("gpom.betterPortals.fixGuavaAddCallback");
+    }
+
+    public static boolean journeyMapCleanupLeaksEnabled() {
+        return booleanValue("gpom.journeymap.cleanupLeaks");
     }
 
     public static boolean multipartCompatEnabled() {

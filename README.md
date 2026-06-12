@@ -272,11 +272,14 @@ gpom.betterPortals.fixMissingNewTarget=true
 gpom.betterPortals.remapLegacyAetherBridge=true
 gpom.betterPortals.skipLegacyAetherBridgeIfMissing=true
 gpom.betterPortals.fixGuavaAddCallback=true
+gpom.journeymap.cleanupLeaks=true
 ```
 
 These are narrow bytecode shims for BetterPortals 0.3.x on the current Cleanroom/Mixin/Guava stack. They add a missing `Frustum` target to legacy `@At("NEW")` mixin metadata, patch old two-argument Guava `Futures.addCallback` calls to use `MoreExecutors.directExecutor()`, and make BetterPortals' optional Aether bridge tolerate the installed `com.gildedgames.the_aether` package instead of the old `com.legacy.aether` package.
 
 GPOM intentionally does not handle BetterPortals/AUSM see-through rendering. If AUSM is installed, disable BetterPortals see-through portals in BetterPortals/AUSM-owned compatibility code, not in GPOM.
+
+When `gpom.journeymap.cleanupLeaks=true`, GPOM reflectively stops JourneyMap mapping tasks and clears JourneyMap's static world/provider, chunk-retention, data-cache, tile-draw, and region-image caches on client world unload, disconnect, and Minecraft `loadWorld` handoff boundaries. The cleanup has no hard JourneyMap dependency and no-ops if JourneyMap is absent or a target class changed.
 
 ## Multipart Compatibility
 
