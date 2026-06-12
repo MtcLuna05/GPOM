@@ -8,6 +8,7 @@ import org.lwjgl.input.Mouse;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.io.IOException;
@@ -99,6 +100,70 @@ public abstract class MixinGuiContainerBaublesQuickEquip {
         if (BaublesSideSlotsClient.shouldSkipSlotRender((GuiContainer) (Object) this, slot)) {
             ci.cancel();
         }
+    }
+
+    @ModifyArg(
+            method = {
+                    "drawScreen(IIF)V",
+                    "func_73863_a(IIF)V"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/inventory/GuiContainer;drawGradientRect(IIIIII)V"
+            ),
+            index = 4,
+            require = 0
+    )
+    private int gpom$lightenBaublesHoverOverlayStart(int color) {
+        return BaublesSideSlotsClient.hoverOverlayColor((GuiContainer) (Object) this, color);
+    }
+
+    @ModifyArg(
+            method = {
+                    "drawScreen(IIF)V",
+                    "func_73863_a(IIF)V"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/inventory/GuiContainer;drawGradientRect(IIIIII)V"
+            ),
+            index = 5,
+            require = 0
+    )
+    private int gpom$lightenBaublesHoverOverlayEnd(int color) {
+        return BaublesSideSlotsClient.hoverOverlayColor((GuiContainer) (Object) this, color);
+    }
+
+    @ModifyArg(
+            method = {
+                    "drawScreen(IIF)V",
+                    "func_73863_a(IIF)V"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/inventory/GuiContainer;func_73733_a(IIIIII)V"
+            ),
+            index = 4,
+            require = 0
+    )
+    private int gpom$lightenBaublesHoverOverlayStartSrg(int color) {
+        return BaublesSideSlotsClient.hoverOverlayColor((GuiContainer) (Object) this, color);
+    }
+
+    @ModifyArg(
+            method = {
+                    "drawScreen(IIF)V",
+                    "func_73863_a(IIF)V"
+            },
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/gui/inventory/GuiContainer;func_73733_a(IIIIII)V"
+            ),
+            index = 5,
+            require = 0
+    )
+    private int gpom$lightenBaublesHoverOverlayEndSrg(int color) {
+        return BaublesSideSlotsClient.hoverOverlayColor((GuiContainer) (Object) this, color);
     }
 
     @Inject(

@@ -7,7 +7,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.inventory.GuiContainer;
+import net.minecraft.client.gui.inventory.GuiContainerCreative;
 import net.minecraft.client.gui.inventory.GuiInventory;
+import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
@@ -17,7 +19,6 @@ import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -47,6 +48,8 @@ public final class BaublesSideSlotsClient {
     private static final ResourceLocation SIDE_SLOTS_TEXTURE = new ResourceLocation("gpom", "textures/gui/baubles_side_slots.png");
     private static final int SIDE_SLOT_U = 48;
     private static final int SIDE_SLOT_V = 0;
+    private static final int HOVER_OVERLAY_COLOR = 0x40FFFFFF;
+    private static final int CREATIVE_SURVIVAL_INVENTORY_TAB_INDEX = 11;
     private static final int PANEL_CORNER = 4;
     private static final int PANEL_TILE = 8;
     private static final int PANEL_TL_U = 0;
@@ -104,6 +107,7 @@ public final class BaublesSideSlotsClient {
     private static Field buttonListField;
     private static Field hoveredSlotField;
     private static Field creativeSlotTargetField;
+    private static Field creativeSelectedTabIndexField;
     private static Field cosmeticArmorToggleStateField;
     private static Field cosmeticArmorInventoryManagerField;
     private static Field cosmeticArmorNetworkField;
@@ -388,6 +392,14 @@ public final class BaublesSideSlotsClient {
     }
 
     public static void syncHoveredSlotAndDrawFallback(GuiContainer gui, int mouseX, int mouseY) {
+        syncHoveredSlot(gui, mouseX, mouseY, true);
+    }
+
+    public static void syncHoveredSlotForTooltip(GuiContainer gui, int mouseX, int mouseY) {
+        syncHoveredSlot(gui, mouseX, mouseY, false);
+    }
+
+    private static void syncHoveredSlot(GuiContainer gui, int mouseX, int mouseY, boolean drawFallbackOverlay) {
         if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
             closeSideRailRendering(gui);
             return;
@@ -407,8 +419,11 @@ public final class BaublesSideSlotsClient {
             return;
         }
 
+        Slot vanillaHovered = hoveredSlot(gui);
         setHoveredSlot(gui, slot);
-        drawHoverOverlay(gui, slot);
+        if (drawFallbackOverlay && vanillaHovered != slot) {
+            drawHoverOverlay(gui, slot);
+        }
     }
 
     public static void drawEmptySlotTooltip(GuiContainer gui, int mouseX, int mouseY) {
@@ -454,13 +469,13 @@ public final class BaublesSideSlotsClient {
     private static void drawHoverOverlay(GuiContainer gui, Slot slot) {
         int x = BaublesSideSlotsCommon.slotX(slot);
         int y = BaublesSideSlotsCommon.slotY(slot);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glColorMask(true, true, true, false);
-        ClientAccess.drawGradientRect(gui, x, y, x + SLOT_SIZE, y + SLOT_SIZE, 0x80FFFFFF, 0x80FFFFFF);
-        GL11.glColorMask(true, true, true, true);
-        GL11.glEnable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GlStateManager.disableLighting();
+        GlStateManager.disableDepth();
+        GlStateManager.colorMask(true, true, true, false);
+        ClientAccess.drawGradientRect(gui, x, y, x + SLOT_SIZE, y + SLOT_SIZE, HOVER_OVERLAY_COLOR, HOVER_OVERLAY_COLOR);
+        GlStateManager.colorMask(true, true, true, true);
+        GlStateManager.enableLighting();
+        GlStateManager.enableDepth();
     }
 
     public static boolean tryQuickEquip(GuiContainer gui,
@@ -645,12 +660,23 @@ public final class BaublesSideSlotsClient {
         }
 
         if (!isSideRailOpen(gui)) {
+            hideSlot(slot);
+            hideSlot(target);
             return true;
         }
 
         Slot renderedSlot = sideRailMirror ? target : slot;
-        return BaublesSideSlotsCommon.slotX(renderedSlot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2
+        boolean hidden = BaublesSideSlotsCommon.slotX(renderedSlot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2
                 || BaublesSideSlotsCommon.slotY(renderedSlot) <= BaublesSideSlotsCommon.HIDDEN_SLOT_POS / 2;
+        if (hidden) {
+            hideSlot(slot);
+            hideSlot(target);
+        }
+        return hidden;
+    }
+
+    public static int hoverOverlayColor(GuiContainer gui, int originalColor) {
+        return shouldUseReducedHoverOverlay(gui) ? HOVER_OVERLAY_COLOR : originalColor;
     }
 
     private static Slot creativeSlotTarget(Slot slot) {
@@ -1237,6 +1263,29 @@ public final class BaublesSideSlotsClient {
         return gui instanceof GuiInventory;
     }
 
+    private static boolean shouldUseReducedHoverOverlay(GuiContainer gui) {
+        return GpomEarlyConfig.baublesSideSlotsEnabled()
+                && (isSideRailOpen(gui) || isCreativeSurvivalInventoryTab(gui));
+    }
+
+    private static boolean isCreativeSurvivalInventoryTab(GuiContainer gui) {
+        return gui instanceof GuiContainerCreative
+                && creativeSelectedTabIndex((GuiContainerCreative) gui) == CREATIVE_SURVIVAL_INVENTORY_TAB_INDEX;
+    }
+
+    private static int creativeSelectedTabIndex(GuiContainerCreative gui) {
+        try {
+            Field field = creativeSelectedTabIndexField;
+            if (field == null) {
+                field = findField(gui.getClass(), "selectedTabIndex", "field_147058_w");
+                creativeSelectedTabIndexField = field;
+            }
+            return field == null ? -1 : field.getInt(null);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return -1;
+        }
+    }
+
     private static boolean isShiftKeyDown() {
         return Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT);
     }
@@ -1613,6 +1662,12 @@ public final class BaublesSideSlotsClient {
 
     private static void hideBaubleSlots(GuiContainer gui) {
         for (Slot slot : BaublesSideSlotsCommon.sideRailSlots(inventorySlots(gui))) {
+            hideSlot(slot);
+        }
+    }
+
+    private static void hideSlot(Slot slot) {
+        if (slot != null) {
             BaublesSideSlotsCommon.setSlotPos(slot,
                     BaublesSideSlotsCommon.HIDDEN_SLOT_POS,
                     BaublesSideSlotsCommon.HIDDEN_SLOT_POS);
