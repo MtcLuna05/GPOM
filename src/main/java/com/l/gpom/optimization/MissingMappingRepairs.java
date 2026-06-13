@@ -2,6 +2,7 @@ package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.Reference;
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.potion.Potion;
@@ -57,6 +58,8 @@ public final class MissingMappingRepairs {
             "editable_stairs_reinforced",
             "editable_door_reinforced"
     ));
+    private static final Set<String> IGNORED_MISSING_SOUND_NAMESPACES =
+            GpomEarlyConfig.registryIgnoredMissingSoundEventNamespaces();
 
     private MissingMappingRepairs() {
     }
@@ -111,13 +114,31 @@ public final class MissingMappingRepairs {
 
     @SubscribeEvent
     public static void onMissingSoundMappings(RegistryEvent.MissingMappings<SoundEvent> event) {
+        int ignoredNamespaceMappings = 0;
+        StringBuilder ignoredExamples = new StringBuilder();
         for (RegistryEvent.MissingMappings.Mapping<SoundEvent> mapping : event.getAllMappings()) {
             if (isAromaCritSound(mapping.key)) {
                 if (!remapSameKey(mapping, ForgeRegistries.SOUND_EVENTS, "sound")) {
                     mapping.ignore();
                     GPOM.LOGGER.warn("[MissingMappingRepairs] Ignored legacy Aroma1997Core sound mapping {}; no live target exists", mapping.key);
                 }
+            } else if (isIgnoredMissingSoundNamespace(mapping.key)) {
+                mapping.ignore();
+                ignoredNamespaceMappings++;
+                if (ignoredExamples.length() < 160) {
+                    if (ignoredExamples.length() > 0) {
+                        ignoredExamples.append(", ");
+                    }
+                    ignoredExamples.append(mapping.key);
+                }
             }
+        }
+        if (ignoredNamespaceMappings > 0) {
+            GPOM.LOGGER.warn(
+                    "[MissingMappingRepairs] Ignored {} stale missing sound event mapping(s) from configured namespace(s) {}; examples: {}",
+                    ignoredNamespaceMappings,
+                    IGNORED_MISSING_SOUND_NAMESPACES,
+                    ignoredExamples);
         }
     }
 
@@ -143,6 +164,10 @@ public final class MissingMappingRepairs {
 
     private static boolean isAromaCritSound(ResourceLocation key) {
         return key != null && "aroma1997core".equals(namespace(key)) && "crit".equals(path(key));
+    }
+
+    private static boolean isIgnoredMissingSoundNamespace(ResourceLocation key) {
+        return key != null && IGNORED_MISSING_SOUND_NAMESPACES.contains(namespace(key));
     }
 
     private static String namespace(ResourceLocation key) {

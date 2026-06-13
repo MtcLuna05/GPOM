@@ -44,7 +44,6 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         markBoot("GPOM getASMTransformerClass entered");
         return new String[] {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
-                "com.l.gpom.core.Ae2MultipartGridHostTransformer",
                 "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
                 "com.l.gpom.core.ForestryRecipeManagerSerializationTransformer",

@@ -16,12 +16,12 @@
     "fml.MixinGameRegistryRegistryParallel",
     "fml.MixinForgeModContainerConstructionProfiler",
     "fml.MixinLoadControllerStartupProfiler",
-    "ae2.MixinItemPartMultipartPlacement",
     "baubles.MixinContainerPlayerSideSlots"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
     "client.MixinMinecraftWorldLoadingScreen",
+    "client.MixinWorldNotifyBlockUpdateSnapshot",
     "client.MixinLoadingScreenRendererWorldLoading",
     "client.MixinGuiDownloadTerrainWorldLoading",
     "client.MixinGuiScreenWorkingWorldLoading",

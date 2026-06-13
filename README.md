@@ -43,7 +43,6 @@ If neither is set, the build falls back to the common Flatpak PrismLauncher Meat
 - Server-safe bootstrap routing through Forge sided proxies plus side-checked early splash bridging, so common/server startup does not load client-only classes.
 - Optional Baubles side-slot inventory panel that adds packet-symmetric hidden Baubles slots to the vanilla inventory instead of relying on Baubles' expanded GUI, with optional Aether Legacy and CosmeticArmorReworked side-rail integration.
 - Optional BetterPortals compatibility shims for newer Mixin metadata, modern Guava callback signatures, and the installed Aether Legacy package.
-- Experimental Forge Multipart/AE2 compatibility switches. These are disabled by default because multipart world data can be destructive if a bridge is disabled after use.
 - Title-screen GPOM version display.
 
 ## Latest Changelog
@@ -272,28 +271,23 @@ gpom.betterPortals.fixMissingNewTarget=true
 gpom.betterPortals.remapLegacyAetherBridge=true
 gpom.betterPortals.skipLegacyAetherBridgeIfMissing=true
 gpom.betterPortals.fixGuavaAddCallback=true
+gpom.betterPortals.cleanupClientWorlds=true
 gpom.journeymap.cleanupLeaks=true
+gpom.enderio.repairMissingTileEntityMappings=true
+gpom.registry.ignoreMissingSoundEventNamespaces=erebus
 ```
 
-These are narrow bytecode shims for BetterPortals 0.3.x on the current Cleanroom/Mixin/Guava stack. They add a missing `Frustum` target to legacy `@At("NEW")` mixin metadata, patch old two-argument Guava `Futures.addCallback` calls to use `MoreExecutors.directExecutor()`, and make BetterPortals' optional Aether bridge tolerate the installed `com.gildedgames.the_aether` package instead of the old `com.legacy.aether` package.
+These are narrow compatibility shims for BetterPortals 0.3.x on the current Cleanroom/Mixin/Guava stack. They add a missing `Frustum` target to legacy `@At("NEW")` mixin metadata, patch old two-argument Guava `Futures.addCallback` calls to use `MoreExecutors.directExecutor()`, make BetterPortals' optional Aether bridge tolerate the installed `com.gildedgames.the_aether` package instead of the old `com.legacy.aether` package, let that remapped bridge treat Skyroot-water activation as an empty portal interior while linking, suppress the Skyroot bucket's follow-up water placement after a successful portal link, and reset BetterPortals' retained client view-world registry on client world handoffs/disconnects.
 
 GPOM intentionally does not handle BetterPortals/AUSM see-through rendering. If AUSM is installed, disable BetterPortals see-through portals in BetterPortals/AUSM-owned compatibility code, not in GPOM.
 
-When `gpom.journeymap.cleanupLeaks=true`, GPOM reflectively stops JourneyMap mapping tasks and clears JourneyMap's static world/provider, chunk-retention, data-cache, tile-draw, and region-image caches on client world unload, disconnect, and Minecraft `loadWorld` handoff boundaries. The cleanup has no hard JourneyMap dependency and no-ops if JourneyMap is absent or a target class changed.
+GPOM also snapshots vanilla `World` block-update listeners on the client before notifying them. This prevents stale render/listener cleanup during chunk data handling from shrinking the listener list mid-loop and crashing the client.
 
-## Multipart Compatibility
+When `gpom.journeymap.cleanupLeaks=true`, GPOM reflectively stops JourneyMap mapping tasks and clears JourneyMap's static world/provider, chunk-retention, data-cache, tile-draw, and region-image caches on client world unload, disconnect, and Minecraft `loadWorld` handoff boundaries. Cleanup is forced onto the Minecraft client thread so JourneyMap's data-cache purge cannot deadlock against its own main-thread mapping reset. The cleanup has no hard JourneyMap dependency and no-ops if JourneyMap is absent or a target class changed.
 
-```properties
-gpom.multipartCompat.enabled=false
-gpom.multipartCompat.ae2.enabled=false
-gpom.multipartCompat.ae2.registerPart=false
-gpom.multipartCompat.ae2.placementConverter.enabled=false
-gpom.multipartCompat.ae2.sidePartPlacement.enabled=false
-gpom.multipartCompat.ae2.blockConverter.enabled=false
-gpom.multipartCompat.ae2.disabledWarning.enabled=true
-```
+When `gpom.enderio.repairMissingTileEntityMappings=true`, GPOM runs a late EnderIO-only repair pass that re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. This prevents chunk save/sync paths, including BetterPortals' extra view chunks, from crashing on EnderIO tile entities whose class mapping was lost earlier in startup.
 
-The AE2/Forge Multipart bridge is experimental and must remain off for normal play profiles unless a test world is dedicated to that feature. Disabling the bridge after placing bridged parts can make existing multipart data unsafe, so GPOM can warn when the feature is off.
+When `gpom.registry.ignoreMissingSoundEventNamespaces` contains a namespace such as `erebus`, GPOM ignores stale missing `SoundEvent` world mappings from that namespace during Forge missing-mapping handling. This avoids the hidden Forge startup confirmation gate for removed/renamed sound IDs while leaving block, item, entity, and tile mappings untouched.
 
 ## Safety Model
 

@@ -1,6 +1,8 @@
 package com.l.gpom.compat.journeymap;
 
 import com.l.gpom.config.GpomEarlyConfig;
+import net.minecraft.client.multiplayer.WorldClient;
+import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
@@ -23,12 +25,9 @@ public final class JourneyMapLeakCleanupEvents {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void worldUnload(WorldEvent.Unload event) {
-        try {
-            if (event.getWorld() == null || event.getWorld().isRemote) {
-                JourneyMapLeakCleanup.cleanup("client world unload");
-            }
-        } catch (Throwable ignored) {
-            JourneyMapLeakCleanup.cleanup("client world unload fallback");
+        World world = event.getWorld();
+        if (world instanceof WorldClient) {
+            JourneyMapLeakCleanup.cleanup("client world unload");
         }
     }
 

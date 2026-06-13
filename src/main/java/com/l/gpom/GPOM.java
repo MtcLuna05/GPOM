@@ -1,9 +1,11 @@
 package com.l.gpom;
 
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.compat.enderio.EnderIOTileEntityMappingFix;
 import com.l.gpom.proxy.CommonProxy;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.SidedProxy;
+import net.minecraftforge.fml.common.event.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,6 +37,11 @@ public final class GPOM {
         if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
             LOGGER.info("{} initialized on {} side", Reference.MOD_NAME, proxy.isClient() ? "client" : "server");
         }
+    }
+
+    @Mod.EventHandler
+    public void onLoadComplete(FMLLoadCompleteEvent event) {
+        EnderIOTileEntityMappingFix.repairIfEnabled();
     }
 
 }

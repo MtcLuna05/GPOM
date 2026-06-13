@@ -1216,7 +1216,8 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static boolean serialHandlersAreBarriers(FMLEvent event) {
-        return event instanceof FMLConstructionEvent;
+        return event instanceof FMLConstructionEvent
+                || event instanceof FMLPreInitializationEvent;
     }
 
     private static boolean dagSerialHandlersAreBarriers(FMLEvent event) {
@@ -1227,7 +1228,8 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static boolean dagSerialHandlersDrainWorkers(FMLEvent event) {
-        return event instanceof FMLConstructionEvent;
+        return event instanceof FMLConstructionEvent
+                || event instanceof FMLPreInitializationEvent;
     }
 
     private static boolean shouldDrainWorkersBeforeDagSerial(FMLEvent event, DagNode node, boolean phaseDrainsWorkers) {

@@ -141,15 +141,10 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
-        DEFAULTS.setProperty("gpom.multipartCompat.enabled", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.enabled", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.registerPart", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.placementConverter.enabled", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.sidePartPlacement.enabled", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.blockConverter.enabled", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.debugLogs", "false");
-        DEFAULTS.setProperty("gpom.multipartCompat.ae2.disabledWarning.enabled", "true");
+        DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
+        DEFAULTS.setProperty("gpom.registry.ignoreMissingSoundEventNamespaces", "erebus");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleIC2Containers", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleContainers", "false");
@@ -587,17 +582,10 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.remapLegacyAetherBridge",
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
                 "gpom.betterPortals.fixGuavaAddCallback",
-                "gpom.journeymap.cleanupLeaks"
-        );
-        writeSection(writer, "Multipart Compatibility", "Experimental bridges that make selected full-block cable systems host their state inside ForgeMultipart parts. Keep disabled unless actively testing a bridge.",
-                "gpom.multipartCompat.enabled",
-                "gpom.multipartCompat.ae2.enabled",
-                "gpom.multipartCompat.ae2.registerPart",
-                "gpom.multipartCompat.ae2.placementConverter.enabled",
-                "gpom.multipartCompat.ae2.sidePartPlacement.enabled",
-                "gpom.multipartCompat.ae2.blockConverter.enabled",
-                "gpom.multipartCompat.ae2.debugLogs",
-                "gpom.multipartCompat.ae2.disabledWarning.enabled"
+                "gpom.betterPortals.cleanupClientWorlds",
+                "gpom.journeymap.cleanupLeaks",
+                "gpom.enderio.repairMissingTileEntityMappings",
+                "gpom.registry.ignoreMissingSoundEventNamespaces"
         );
         writeSection(writer, "Railcraft Deferrals", "Exact-version startup deferrals for Railcraft 12.1.0-beta-8 module/container initialization.",
                 "gpom.railcraftLazyItemConditions",
@@ -906,29 +894,19 @@ public final class GpomEarlyConfig {
             case "gpom.betterPortals.fixMissingNewTarget":
                 return "Patches BetterPortals' legacy EntityRenderer @At(\"NEW\") mixin metadata with an explicit Frustum target on newer Mixin runtimes.";
             case "gpom.betterPortals.remapLegacyAetherBridge":
-                return "Remaps BetterPortals' optional Aether bridge from the old com.legacy.aether package to the installed com.gildedgames.the_aether package when needed.";
+                return "Remaps BetterPortals' optional Aether bridge from the old com.legacy.aether package to the installed com.gildedgames.the_aether package when needed, including Aether's Skyroot-water portal activation path.";
             case "gpom.betterPortals.skipLegacyAetherBridgeIfMissing":
                 return "Skips BetterPortals' optional Aether bridge when neither its legacy Aether target nor GPOM's remap target is available.";
             case "gpom.betterPortals.fixGuavaAddCallback":
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
+            case "gpom.betterPortals.cleanupClientWorlds":
+                return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. No-op when BetterPortals is absent.";
             case "gpom.journeymap.cleanupLeaks":
                 return "Reflectively clears JourneyMap client world/task/chunk/render caches on client world unload, disconnect, and Minecraft loadWorld boundaries. No-op when JourneyMap is absent.";
-            case "gpom.multipartCompat.enabled":
-                return "Master switch for all GPOM ForgeMultipart compatibility bridges. When false, no multipart bridge classes are loaded.";
-            case "gpom.multipartCompat.ae2.enabled":
-                return "Enables the Applied Energistics 2 cable-bus bridge package after ForgeMultipart and AE2 are confirmed loaded.";
-            case "gpom.multipartCompat.ae2.registerPart":
-                return "Registers GPOM's AE2 cable-bus multipart type with ForgeMultipart. Required before placement or block conversion can do anything.";
-            case "gpom.multipartCompat.ae2.placementConverter.enabled":
-                return "Allows placing AE2 cable items as GPOM-hosted ForgeMultipart parts instead of AE2 full blocks.";
-            case "gpom.multipartCompat.ae2.sidePartPlacement.enabled":
-                return "Reserved switch for AE2 bus/terminal/anchor placement into an existing GPOM-hosted cable-bus multipart. Disabled until the mutating placement path is implemented.";
-            case "gpom.multipartCompat.ae2.blockConverter.enabled":
-                return "Allows ForgeMultipart to convert existing AE2 cable-bus blocks into GPOM-hosted multipart parts when another multipart is placed in the same block space.";
-            case "gpom.multipartCompat.ae2.debugLogs":
-                return "Logs AE2 multipart bridge registration, conversion, and fallback decisions.";
-            case "gpom.multipartCompat.ae2.disabledWarning.enabled":
-                return "Warns players on login when AE2 and ForgeMultipart are loaded but GPOM's AE2 multipart part registration is disabled. Existing GPOM-hosted AE2 cables need that registration to load safely.";
+            case "gpom.enderio.repairMissingTileEntityMappings":
+                return "After EnderIO load, re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. No-op when EnderIO is absent or mappings are already present.";
+            case "gpom.registry.ignoreMissingSoundEventNamespaces":
+                return "Comma-separated namespaces whose stale missing SoundEvent world mappings are ignored instead of opening Forge's missing-mapping confirmation gate.";
             case "gpom.railcraftLazyItemConditions":
                 return "Defers Railcraft item condition initialization until first use instead of during module setup.";
             case "gpom.railcraft.deferModuleIC2Containers":
@@ -1217,15 +1195,10 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
+        copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.enabled");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.enabled");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.registerPart");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.placementConverter.enabled");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.sidePartPlacement.enabled");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.blockConverter.enabled");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.debugLogs");
-        copySystemPropertyIfAbsent("gpom.multipartCompat.ae2.disabledWarning.enabled");
+        copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
+        copySystemPropertyIfAbsent("gpom.registry.ignoreMissingSoundEventNamespaces");
     }
 
     private static void copySystemPropertyIfAbsent(String key) {
@@ -1470,40 +1443,20 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.betterPortals.fixGuavaAddCallback");
     }
 
+    public static boolean betterPortalsCleanupClientWorldsEnabled() {
+        return booleanValue("gpom.betterPortals.cleanupClientWorlds");
+    }
+
     public static boolean journeyMapCleanupLeaksEnabled() {
         return booleanValue("gpom.journeymap.cleanupLeaks");
     }
 
-    public static boolean multipartCompatEnabled() {
-        return booleanValue("gpom.multipartCompat.enabled");
+    public static boolean enderIOMissingTileEntityMappingRepairEnabled() {
+        return booleanValue("gpom.enderio.repairMissingTileEntityMappings");
     }
 
-    public static boolean multipartCompatAe2Enabled() {
-        return multipartCompatEnabled() && booleanValue("gpom.multipartCompat.ae2.enabled");
-    }
-
-    public static boolean multipartCompatAe2RegisterPartEnabled() {
-        return multipartCompatAe2Enabled() && booleanValue("gpom.multipartCompat.ae2.registerPart");
-    }
-
-    public static boolean multipartCompatAe2PlacementConverterEnabled() {
-        return multipartCompatAe2RegisterPartEnabled() && booleanValue("gpom.multipartCompat.ae2.placementConverter.enabled");
-    }
-
-    public static boolean multipartCompatAe2SidePartPlacementEnabled() {
-        return multipartCompatAe2PlacementConverterEnabled() && booleanValue("gpom.multipartCompat.ae2.sidePartPlacement.enabled");
-    }
-
-    public static boolean multipartCompatAe2BlockConverterEnabled() {
-        return multipartCompatAe2RegisterPartEnabled() && booleanValue("gpom.multipartCompat.ae2.blockConverter.enabled");
-    }
-
-    public static boolean multipartCompatAe2DebugLogsEnabled() {
-        return gpomLoggingEnabled() && booleanValue("gpom.multipartCompat.ae2.debugLogs");
-    }
-
-    public static boolean multipartCompatAe2DisabledWarningEnabled() {
-        return booleanValue("gpom.multipartCompat.ae2.disabledWarning.enabled");
+    public static Set<String> registryIgnoredMissingSoundEventNamespaces() {
+        return setValue("gpom.registry.ignoreMissingSoundEventNamespaces");
     }
 
     public static boolean preInitClassPrewarmEnabled() {

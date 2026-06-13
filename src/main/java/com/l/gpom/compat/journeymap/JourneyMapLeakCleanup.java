@@ -2,15 +2,18 @@ package com.l.gpom.compat.journeymap;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import net.minecraft.client.Minecraft;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class JourneyMapLeakCleanup {
     private static final Set<String> FAILURE_LOG_KEYS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final AtomicBoolean CLIENT_CLEANUP_SCHEDULED = new AtomicBoolean();
     private static volatile Boolean journeyMapPresent;
 
     private JourneyMapLeakCleanup() {
@@ -18,6 +21,10 @@ public final class JourneyMapLeakCleanup {
 
     public static void cleanup(String reason) {
         if (!GpomEarlyConfig.journeyMapCleanupLeaksEnabled() || !isJourneyMapPresent()) {
+            return;
+        }
+        if (!isClientThread()) {
+            scheduleCleanupOnClientThread(reason);
             return;
         }
 
@@ -39,6 +46,38 @@ public final class JourneyMapLeakCleanup {
             if (actions > 0 && GpomEarlyConfig.optimizationInfoLogsEnabled()) {
                 GPOM.LOGGER.info("[JourneyMapLeakCleanup] Cleared {} JourneyMap lifecycle states after {}", actions, reason);
             }
+        }
+    }
+
+    private static boolean isClientThread() {
+        try {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            return minecraft != null && minecraft.isCallingFromMinecraftThread();
+        } catch (Throwable ignored) {
+            return "Client thread".equals(Thread.currentThread().getName());
+        }
+    }
+
+    private static void scheduleCleanupOnClientThread(final String reason) {
+        if (!CLIENT_CLEANUP_SCHEDULED.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            Minecraft minecraft = Minecraft.getMinecraft();
+            if (minecraft == null) {
+                CLIENT_CLEANUP_SCHEDULED.set(false);
+                return;
+            }
+            minecraft.addScheduledTask(new Runnable() {
+                @Override
+                public void run() {
+                    CLIENT_CLEANUP_SCHEDULED.set(false);
+                    cleanup(reason + " deferred to client thread");
+                }
+            });
+        } catch (Throwable throwable) {
+            CLIENT_CLEANUP_SCHEDULED.set(false);
+            logFailure("scheduleClientCleanup", "JourneyMap cleanup client-thread scheduling during " + reason, throwable);
         }
     }
 
