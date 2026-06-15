@@ -27,6 +27,7 @@
     "client.MixinGuiScreenWorkingWorldLoading",
     "client.MixinGuiMainMenuStartupOverlay",
     "astralsorcery.MixinAstralSorceryClientConnectionEventHandler",
+    "betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup",
     "client.render.MixinEntityRendererWorldLoadingScreen",
     "client.resources.MixinMinecraftResourceStartupProfiler",
     "client.resources.MixinSimpleReloadableResourceManagerStartupProfiler",

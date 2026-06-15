@@ -24,6 +24,9 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "appeng/client/gui/AEBaseGui.class",
             "yalter/mousetweaks/api/IMTModGuiContainer2.class"
     };
+    private static final String[] BETTER_PORTALS_CLIENT_WORLD_TARGETS = {
+            "de/johni0702/minecraft/view/impl/client/ClientWorldsManagerImpl.class"
+    };
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -50,6 +53,15 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             boolean present = enabled && allResourcesPresent(MOUSE_TWEAKS_AE2_TARGETS);
             if (LOGGED.add(mixinClassName)) {
                 GPOM.LOGGER.info("[GPOM AE2 MouseTweaks] mixin={} enabled={} targetsPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup")) {
+            boolean enabled = GpomEarlyConfig.betterPortalsCleanupClientWorldsEnabled();
+            boolean present = enabled && allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM BetterPortals Cleanup] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
             return present;
