@@ -5,6 +5,7 @@ import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.SynchronizedHashMap;
 import com.l.gpom.util.SynchronizedHashSet;
 import net.minecraft.launchwrapper.IClassTransformer;
+import net.minecraft.launchwrapper.Launch;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -38,7 +39,7 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
 
         String className = transformedName != null ? transformedName : name;
         if (CLASS_HIERARCHY_MANAGER.equals(className)) {
-            return replaceCacheAllocation(basicClass, HASH_MAP, SYNC_HASH_MAP, "ChickenASM hierarchy map");
+            return patchHierarchyManager(basicClass);
         }
         if (SUPER_CACHE.equals(className)) {
             return replaceCacheAllocation(basicClass, HASH_SET, SYNC_HASH_SET, "ChickenASM parent set");
@@ -59,7 +60,7 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             }
             runtimeCachesHardened = true;
             try {
-                Class<?> manager = Class.forName(CLASS_HIERARCHY_MANAGER, true, ChickenAsmConcurrencyTransformer.class.getClassLoader());
+                Class<?> manager = Class.forName(CLASS_HIERARCHY_MANAGER, true, chickenAsmClassLoader());
                 Field superclassesField = manager.getDeclaredField("superclasses");
                 superclassesField.setAccessible(true);
                 Object current = superclassesField.get(null);
@@ -92,7 +93,7 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
                 return;
             }
             try {
-                Class.forName(OBF_MAPPING, true, ChickenAsmConcurrencyTransformer.class.getClassLoader());
+                Class.forName(OBF_MAPPING, true, chickenAsmClassLoader());
                 obfMappingPreloaded = true;
                 if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
                     GPOM.LOGGER.info("[FmlParallelLoading] Preloaded ChickenASM ObfMapping on the main thread");
@@ -145,6 +146,17 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
         return hardened;
     }
 
+    private static ClassLoader chickenAsmClassLoader() {
+        if (Launch.classLoader != null) {
+            return Launch.classLoader;
+        }
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        if (contextLoader != null) {
+            return contextLoader;
+        }
+        return ChickenAsmConcurrencyTransformer.class.getClassLoader();
+    }
+
     private static byte[] synchronizeMultipartRegistry(byte[] basicClass) {
         try {
             ClassNode node = new ClassNode();
@@ -179,6 +191,65 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             return true;
         }
         return "registerConverter".equals(method.name) || "registerPlacementConverter".equals(method.name);
+    }
+
+    private static byte[] patchHierarchyManager(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+
+            int cacheReplacements = 0;
+            int synchronizedMethods = 0;
+            for (MethodNode method : node.methods) {
+                if (isHierarchyCacheMethod(method) && (method.access & Opcodes.ACC_SYNCHRONIZED) == 0) {
+                    method.access |= Opcodes.ACC_SYNCHRONIZED;
+                    synchronizedMethods++;
+                }
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn.getOpcode() == Opcodes.NEW
+                            && insn instanceof TypeInsnNode
+                            && HASH_MAP.equals(((TypeInsnNode) insn).desc)) {
+                        ((TypeInsnNode) insn).desc = SYNC_HASH_MAP;
+                        cacheReplacements++;
+                    } else if (insn.getOpcode() == Opcodes.INVOKESPECIAL
+                            && insn instanceof MethodInsnNode
+                            && HASH_MAP.equals(((MethodInsnNode) insn).owner)
+                            && "<init>".equals(((MethodInsnNode) insn).name)
+                            && "()V".equals(((MethodInsnNode) insn).desc)) {
+                        ((MethodInsnNode) insn).owner = SYNC_HASH_MAP;
+                        cacheReplacements++;
+                    }
+                }
+            }
+
+            if (cacheReplacements == 0 && synchronizedMethods == 0) {
+                return basicClass;
+            }
+            GPOM.LOGGER.info(
+                    "[FmlParallelLoading] Patched ChickenASM hierarchy manager with {} synchronized method(s) and {} synchronized cache allocation opcode(s)",
+                    synchronizedMethods,
+                    cacheReplacements
+            );
+            ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[FmlParallelLoading] Failed to patch ChickenASM hierarchy manager; continuing with original hierarchy cache", throwable);
+            return basicClass;
+        }
+    }
+
+    private static boolean isHierarchyCacheMethod(MethodNode method) {
+        if (method == null || (method.access & Opcodes.ACC_STATIC) == 0) {
+            return false;
+        }
+        return "classExtends".equals(method.name)
+                || "declareClass".equals(method.name)
+                || "declareReflection".equals(method.name)
+                || "declareASM".equals(method.name)
+                || "declare".equals(method.name)
+                || "getOrCreateCache".equals(method.name)
+                || "getSuperClass".equals(method.name);
     }
 
     private static byte[] replaceCacheAllocation(byte[] basicClass, String originalType, String replacementType, String label) {

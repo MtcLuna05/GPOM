@@ -38,8 +38,23 @@ public final class GpomEarlyConfig {
                     + "enderioconduitsopencomputers,enderioconduitsrefinedstorage,"
                     + "enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,"
                     + "enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy";
+    private static final String CYCLOPS_CAPABILITY_INIT_DENYLIST =
+            "careerbees,commoncapabilities,cyclopscore,integratedderivative,"
+                    + "integrateddynamics,integrateddynamicscompat,integratednbt,"
+                    + "integratedtunnels,integratedtunnelscompat";
+    private static final String BINNIE_FLUID_PREINIT_DENYLIST =
+            "binniecore,binniedesign,genetics,botany,extrabees,extratrees,gendustry";
+    private static final String PROJECTRED_CLIENT_PREINIT_DENYLIST =
+            "projectred-core,projectred-illumination,projectred-compat,projectred-integration,"
+                    + "projectred-transmission,projectred-fabrication,projectred-expansion,"
+                    + "projectred-relocation,projectred-transportation,projectred-exploration";
+    private static final String CLIENT_PREINIT_THREAD_AFFINITY_DENYLIST =
+            "simplyjetpacks," + PROJECTRED_CLIENT_PREINIT_DENYLIST;
     private static final String DEFAULT_PREINIT_DENYLIST =
-            ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ",erebus,extracells,draconicevolution,aether_legacy";
+            ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST
+                    + ",erebus,extracells,draconicevolution,aether_legacy,"
+                    + BINNIE_FLUID_PREINIT_DENYLIST + ","
+                    + CLIENT_PREINIT_THREAD_AFFINITY_DENYLIST;
     private static final String DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST =
             "thaumcraft,aether_legacy";
     private static final String DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST =
@@ -66,7 +81,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.preInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.init.allowlist", "");
-        DEFAULTS.setProperty("fml.parallel.init.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST);
+        DEFAULTS.setProperty("fml.parallel.init.denylist", ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + "," + CYCLOPS_CAPABILITY_INIT_DENYLIST);
         DEFAULTS.setProperty("fml.parallel.init.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.init.dag.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
@@ -128,6 +143,10 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.maxFailures", "200");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "true");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "true");
+        DEFAULTS.setProperty("gpom.mouseTweaks.ae2Terminals.enabled", "true");
+        DEFAULTS.setProperty("gpom.jecalculation.pinnedCraftOverlay.enabled", "true");
+        DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
+        DEFAULTS.setProperty("gpom.journeymap.waypointDimensionDropup.enabled", "true");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.enabled", "false");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.visibleRows", "7");
@@ -576,6 +595,16 @@ public final class GpomEarlyConfig {
                 "gpom.ae2.patternDiagnostics.logMismatchedOutputs",
                 "gpom.ae2.patternDiagnostics.skipRecipeFunctions"
         );
+        writeSection(writer, "AE2 QoL", "Small client-side AE2 interaction fixes. These remain no-op unless the matching optional mod is installed.",
+                "gpom.mouseTweaks.ae2Terminals.enabled"
+        );
+        writeSection(writer, "JEC QoL", "Small client-side Just Enough Calculation interaction fixes. These remain no-op unless JEC is installed.",
+                "gpom.jecalculation.pinnedCraftOverlay.enabled",
+                "gpom.jecalculation.fuzzyVolatileItemNbt.enabled"
+        );
+        writeSection(writer, "JourneyMap QoL", "Small client-side JourneyMap interaction fixes. These remain no-op unless JourneyMap is installed.",
+                "gpom.journeymap.waypointDimensionDropup.enabled"
+        );
         writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
                 "gpom.loliasm.threadSafeStatefulRegistry",
                 "gpom.betterPortals.fixMissingNewTarget",
@@ -774,7 +803,7 @@ public final class GpomEarlyConfig {
             case "fml.parallel.registrySerialization.enabled":
                 return "Serializes Forge registry writes while lifecycle workers are active to avoid HashBiMap and ForgeRegistry concurrent mutation.";
             case "fml.parallel.clientLifecycleOpenGlScan.enabled":
-                return "Keeps Init/PostInit/LoadComplete handlers on the main thread when their mod jar references LWJGL/OpenGL bytecode. This preserves GL context thread affinity without editing denylists.";
+                return "Keeps PreInit/Init/PostInit/LoadComplete handlers on the main thread when their mod jar references LWJGL/OpenGL/Input bytecode. This preserves client thread affinity without editing denylists.";
             case "fml.parallel.autoQuarantineGlErrors.enabled":
                 return "Diagnostic helper that appends catchable OpenGL thread offenders to the relevant phase denylist for the next launch.";
             case "fml.parallel.autoQuarantineGlErrors.includeRelatedMods":
@@ -873,6 +902,12 @@ public final class GpomEarlyConfig {
                 return "Logs recipes whose canonical ingredient choice matches a different recipe or output before AE2 pattern validation.";
             case "gpom.ae2.patternDiagnostics.skipRecipeFunctions":
                 return "Skips CraftTweaker/RecipeStages recipes with recipe functions before AE2 PatternHelper validation, avoiding CT FATAL spam from synthetic diagnostic inventories.";
+            case "gpom.mouseTweaks.ae2Terminals.enabled":
+                return "Lets Mouse Tweaks' hold-left-click item movement operate in AE2 ME terminals by enabling AE2's own Mouse Tweaks API hook only for terminal storage slots and player inventory slots.";
+            case "gpom.jecalculation.pinnedCraftOverlay.enabled":
+                return "Adds a client-only pinned Just Enough Calculation craft overlay to normal container screens, with a GPOM pin toggle on JEC's craft screen. No-ops when JEC is absent.";
+            case "gpom.jecalculation.fuzzyVolatileItemNbt.enabled":
+                return "Lets JEC match saved recipe outputs with volatile item NBT or Forge capability payloads, fixing calculator misses for charged/capability-backed outputs such as jetpacks.";
             case "gpom.mainMenuStartupTime.enabled":
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
             case "gpom.baubles.sideSlots.enabled":
@@ -901,6 +936,8 @@ public final class GpomEarlyConfig {
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
             case "gpom.betterPortals.cleanupClientWorlds":
                 return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. No-op when BetterPortals is absent.";
+            case "gpom.journeymap.waypointDimensionDropup.enabled":
+                return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaks":
                 return "Reflectively clears JourneyMap client world/task/chunk/render caches on client world unload, disconnect, and Minecraft loadWorld boundaries. No-op when JourneyMap is absent.";
             case "gpom.enderio.repairMissingTileEntityMappings":
@@ -1183,6 +1220,9 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.maxFailures");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.logMismatchedOutputs");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
+        copySystemPropertyIfAbsent("gpom.mouseTweaks.ae2Terminals.enabled");
+        copySystemPropertyIfAbsent("gpom.jecalculation.pinnedCraftOverlay.enabled");
+        copySystemPropertyIfAbsent("gpom.jecalculation.fuzzyVolatileItemNbt.enabled");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.enabled");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.visibleRows");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.columns");
@@ -1196,6 +1236,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
         copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
+        copySystemPropertyIfAbsent("gpom.journeymap.waypointDimensionDropup.enabled");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingSoundEventNamespaces");
@@ -1391,6 +1432,18 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
     }
 
+    public static boolean mouseTweaksAe2TerminalsEnabled() {
+        return booleanValue("gpom.mouseTweaks.ae2Terminals.enabled");
+    }
+
+    public static boolean jecalculationPinnedCraftOverlayEnabled() {
+        return booleanValue("gpom.jecalculation.pinnedCraftOverlay.enabled");
+    }
+
+    public static boolean jecalculationFuzzyVolatileItemNbtEnabled() {
+        return booleanValue("gpom.jecalculation.fuzzyVolatileItemNbt.enabled");
+    }
+
     public static boolean mainMenuStartupTimeEnabled() {
         return booleanValue("gpom.mainMenuStartupTime.enabled");
     }
@@ -1449,6 +1502,10 @@ public final class GpomEarlyConfig {
 
     public static boolean journeyMapCleanupLeaksEnabled() {
         return booleanValue("gpom.journeymap.cleanupLeaks");
+    }
+
+    public static boolean journeyMapWaypointDimensionDropupEnabled() {
+        return booleanValue("gpom.journeymap.waypointDimensionDropup.enabled");
     }
 
     public static boolean enderIOMissingTileEntityMappingRepairEnabled() {

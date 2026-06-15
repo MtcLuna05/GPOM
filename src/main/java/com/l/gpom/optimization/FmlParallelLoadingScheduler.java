@@ -59,12 +59,24 @@ public final class FmlParallelLoadingScheduler {
     private static final int PROGRESS_LOG_INTERVAL = 25;
     private static final long MIB = 1048576L;
     private static final byte[][] OPENGL_THREAD_AFFINITY_PATTERNS = new byte[][] {
-            ascii("org/lwjgl/opengl/")
+            ascii("org/lwjgl/opengl/"),
+            ascii("org/lwjgl/input/")
     };
     private static final Map<String, Boolean> OPENGL_REFERENCE_CACHE = Collections.synchronizedMap(new HashMap<>());
     private static final Set<String> REPORTED_OPENGL_SERIAL_MODS = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> POST_INIT_DRAIN_BEFORE_SERIAL_MODS = fixedSet(
             "cyclopscore",
+            "integrateddynamics",
+            "integrateddynamicscompat",
+            "integratednbt",
+            "integratedtunnels",
+            "integratedtunnelscompat"
+    );
+    private static final Set<String> INIT_CAPABILITY_ATTACH_SERIAL_MODS = fixedSet(
+            "careerbees",
+            "commoncapabilities",
+            "cyclopscore",
+            "integratedderivative",
             "integrateddynamics",
             "integrateddynamicscompat",
             "integratednbt",
@@ -202,7 +214,7 @@ public final class FmlParallelLoadingScheduler {
                     continue;
                 }
 
-                if ((serialHandlersAreBarriers && inFlight.pending > 0)
+                if (((serialHandlersAreBarriers || shouldDrainWorkersBeforeSerial(event, mod)) && inFlight.pending > 0)
                         || hasOrderDependencyWithBatch(event, mod, inFlight.mods, "serialBatch")) {
                     drainInFlight(event, inFlight, modStates, progress, progressState, continueOnModError, true, "serialBarrier");
                 }
@@ -1236,9 +1248,16 @@ public final class FmlParallelLoadingScheduler {
         if (phaseDrainsWorkers) {
             return true;
         }
+        if (node != null && shouldDrainWorkersBeforeSerial(event, node.mod)) {
+            return true;
+        }
         return event instanceof FMLPostInitializationEvent
                 && node != null
                 && POST_INIT_DRAIN_BEFORE_SERIAL_MODS.contains(normalize(node.mod.getModId()));
+    }
+
+    private static boolean shouldDrainWorkersBeforeSerial(FMLEvent event, ModContainer mod) {
+        return isInitCapabilityAttachSerialMod(event, mod);
     }
 
     private static void maybeLogProgressSnapshot(ModContainer mod, ProgressState state) {
@@ -1611,7 +1630,14 @@ public final class FmlParallelLoadingScheduler {
 
     private static boolean isParallelAllowed(FMLEvent event, ModContainer mod, Set<String> parallelMods, Set<String> deniedMods) {
         return isParallelAllowed(mod, parallelMods, deniedMods)
+                && !isInitCapabilityAttachSerialMod(event, mod)
                 && !requiresMainThreadForClientLifecycle(event, mod);
+    }
+
+    private static boolean isInitCapabilityAttachSerialMod(FMLEvent event, ModContainer mod) {
+        return event instanceof FMLInitializationEvent
+                && mod != null
+                && INIT_CAPABILITY_ATTACH_SERIAL_MODS.contains(normalize(mod.getModId()));
     }
 
     private static boolean requiresMainThreadForClientLifecycle(FMLEvent event, ModContainer mod) {
@@ -1625,7 +1651,8 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static boolean isClientLifecycleThreadAffinityPhase(FMLEvent event) {
-        return event instanceof FMLInitializationEvent
+        return event instanceof FMLPreInitializationEvent
+                || event instanceof FMLInitializationEvent
                 || event instanceof FMLPostInitializationEvent
                 || event instanceof FMLLoadCompleteEvent;
     }
@@ -1876,22 +1903,30 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static Set<String> deniedMods(FMLEvent event) {
+        Set<String> configured;
         if (event instanceof FMLConstructionEvent) {
-            return GpomEarlyConfig.parallelConstructDenylist();
+            configured = GpomEarlyConfig.parallelConstructDenylist();
+        } else if (event instanceof FMLPreInitializationEvent) {
+            configured = GpomEarlyConfig.parallelPreInitDenylist();
+        } else if (event instanceof FMLPostInitializationEvent) {
+            configured = GpomEarlyConfig.parallelPostInitDenylist();
+        } else if (event instanceof FMLInitializationEvent) {
+            configured = GpomEarlyConfig.parallelInitDenylist();
+        } else if (event instanceof FMLLoadCompleteEvent) {
+            configured = GpomEarlyConfig.parallelLoadCompleteDenylist();
+        } else {
+            configured = new LinkedHashSet<>();
         }
-        if (event instanceof FMLPreInitializationEvent) {
-            return GpomEarlyConfig.parallelPreInitDenylist();
+        return withForcedDeniedMods(event, configured);
+    }
+
+    private static Set<String> withForcedDeniedMods(FMLEvent event, Set<String> configured) {
+        if (!(event instanceof FMLInitializationEvent)) {
+            return configured;
         }
-        if (event instanceof FMLPostInitializationEvent) {
-            return GpomEarlyConfig.parallelPostInitDenylist();
-        }
-        if (event instanceof FMLInitializationEvent) {
-            return GpomEarlyConfig.parallelInitDenylist();
-        }
-        if (event instanceof FMLLoadCompleteEvent) {
-            return GpomEarlyConfig.parallelLoadCompleteDenylist();
-        }
-        return new LinkedHashSet<>();
+        Set<String> merged = new LinkedHashSet<>(configured);
+        merged.addAll(INIT_CAPABILITY_ATTACH_SERIAL_MODS);
+        return merged;
     }
 
     private static boolean continueOnModError(FMLEvent event) {

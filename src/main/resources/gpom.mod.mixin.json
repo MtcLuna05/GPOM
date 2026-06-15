@@ -36,6 +36,7 @@
     "client.render.MixinRenderGlobalLifecycleCleanup",
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",
+    "ae2.MixinAEBaseGuiMouseTweaksTerminals",
     "baubles.MixinGuiInventoryBaublesSideSlots",
     "baubles.MixinGuiContainerBaublesQuickEquip"
   ],

@@ -1,7 +1,9 @@
 package com.l.gpom.proxy;
 
 import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
+import com.l.gpom.compat.jecalculation.JecPinnedCraftOverlay;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanupEvents;
+import com.l.gpom.compat.journeymap.JourneyMapWaypointDimensionDropupEvents;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 public final class ClientProxy extends CommonProxy {
@@ -10,6 +12,8 @@ public final class ClientProxy extends CommonProxy {
         super.preInit(event);
         BetterPortalsClientWorldCleanup.register();
         JourneyMapLeakCleanupEvents.register();
+        JourneyMapWaypointDimensionDropupEvents.register();
+        JecPinnedCraftOverlay.register();
     }
 
     @Override

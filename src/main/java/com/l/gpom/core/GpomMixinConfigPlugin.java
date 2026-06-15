@@ -20,6 +20,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "baubles/api/BaublesApi.class",
             "baubles/common/container/SlotBauble.class"
     };
+    private static final String[] MOUSE_TWEAKS_AE2_TARGETS = {
+            "appeng/client/gui/AEBaseGui.class",
+            "yalter/mousetweaks/api/IMTModGuiContainer2.class"
+    };
 
     @Override
     public void onLoad(String mixinPackage) {
@@ -37,6 +41,15 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             boolean present = enabled && allResourcesPresent(BAUBLES_TARGETS);
             if (LOGGED.add(mixinClassName)) {
                 GPOM.LOGGER.info("[GPOM Baubles] mixin={} enabled={} baublesPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.ae2.MixinAEBaseGuiMouseTweaksTerminals")) {
+            boolean enabled = GpomEarlyConfig.mouseTweaksAe2TerminalsEnabled();
+            boolean present = enabled && allResourcesPresent(MOUSE_TWEAKS_AE2_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM AE2 MouseTweaks] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
             return present;

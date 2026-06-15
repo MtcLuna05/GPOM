@@ -1,10 +1,7 @@
 package com.l.gpom.compat.betterportals;
 
 import com.l.gpom.config.GpomEarlyConfig;
-import net.minecraft.client.Minecraft;
-import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.network.FMLNetworkEvent;
@@ -41,22 +38,6 @@ public final class BetterPortalsClientWorldCleanup {
             Object manager = getWorldsManager();
             if (manager != null) {
                 resetWorldsManager(manager);
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    @SubscribeEvent(priority = EventPriority.LOWEST)
-    public void worldUnload(WorldEvent.Unload event) {
-        try {
-            World world = event.getWorld();
-            if (world == null) {
-                cleanup("client world unload");
-                return;
-            }
-            Minecraft minecraft = Minecraft.getMinecraft();
-            if (world.isRemote && world == minecraft.world) {
-                cleanup("client world unload");
             }
         } catch (Throwable ignored) {
         }

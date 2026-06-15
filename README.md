@@ -60,8 +60,9 @@ If neither is set, the build falls back to the common Flatpak PrismLauncher Meat
 - Creative players now stay on the real creative inventory path when opening Baubles through GPOM. Side-rail slots stay hidden unless the panel is open, and creative survival-tab mirrors are skipped so Baubles, Aether, and Cosmetic Armor slots no longer leak over the creative hotbar.
 - Added optional Aether Legacy and CosmeticArmorReworked slots to the same Baubles side rail. Aether's native accessory button and Cosmetic Armor's native armor-screen button are hidden while GPOM owns those rails.
 - Routed Cosmetic Armor side-rail clicks through a server packet and sync pass to avoid client-only duplicate stacks. Shift-left quick-equip only runs from normal inventory/hotbar slots; armor stacks prefer real armor first, then Cosmetic Armor if real armor is occupied, and shift-clicking equipped/cosmetic armor returns it to inventory.
+- Added optional Mouse Tweaks compatibility for AE2 ME terminals so hold-left-click item movement works on terminal storage slots and the bound player inventory/hotbar slots.
 - Added BetterPortals compatibility shims for newer Mixin `@At("NEW")` metadata, modern Guava `Futures.addCallback`, and BetterPortals' optional legacy-Aether bridge. GPOM no longer patches BetterPortals/AUSM see-through rendering; that belongs in AUSM or BetterPortals config.
-- Added `erebus`, `extracells`, `draconicevolution`, and `aether_legacy` to the default PreInit parallel denylist after MeatballCraft crashes in Erebus armor/registry setup, Extra Cells 2 client model loader registration, Draconic Evolution's CodeChickenLib OBJ model parser path, and Aether's client accessory button class initialization. Aether is also denied from construction parallelism and GPOM's generic construction proxy/subscriber shortcuts so it uses Forge's stock construction path. Parallel PreInit remains available; the fixes are scoped to the broken mods.
+- Added `erebus`, `extracells`, `draconicevolution`, `aether_legacy`, the Binnie/Gendustry fluid-registration cluster, Simply Jetpacks, and ProjectRed client modules to the default PreInit parallel denylist after MeatballCraft crashes in Erebus armor/registry setup, Extra Cells 2 client model loader registration, Draconic Evolution's CodeChickenLib OBJ model parser path, Aether's client accessory button class initialization, Binnie's Genetics fluid ID registration, LWJGL keybind setup, and ProjectRed client texture generation. Aether is also denied from construction parallelism and GPOM's generic construction proxy/subscriber shortcuts so it uses Forge's stock construction path. Parallel PreInit remains available; the fixes are scoped to the broken mods.
 - Validated `./gradlew build` and a dedicated-server smoke run with `./gradlew runServer --args nogui`; the server reached the normal EULA stop without client-side classloading crashes.
 
 ## Config File
@@ -263,6 +264,30 @@ When `gpom.baubles.sideSlots.aether.enabled=true` and Aether Legacy is loaded, G
 When `gpom.baubles.sideSlots.cosmeticArmor.enabled=true` and CosmeticArmorReworked is loaded, GPOM adds Cosmetic Armor's armor slots to the same side rail after the Baubles and Aether slots. The bridge validates items through vanilla armor validation, uses the native armor empty-slot icons, routes side-rail slot writes through the server to avoid client-only ghost stacks, hides Cosmetic Armor's native armor-screen button while the GPOM rail owns those slots, and remains disabled by default.
 
 If CosmeticArmorReworked is present, GPOM reflectively syncs its small per-bauble cosmetic visibility toggles with the side rail instead of letting them remain behind in the original expanded-screen positions. Buttons are hidden when the rail is closed. BringMeTheRings and other slot-expansion mods are supported through the real Baubles handler slots, but cosmetic toggles only appear for slots backed by CosmeticArmorReworked's own cosmetic inventory.
+
+## AE2 QoL
+
+```properties
+gpom.mouseTweaks.ae2Terminals.enabled=true
+```
+
+When AE2 UEL and Mouse Tweaks are both installed, GPOM enables AE2's existing Mouse Tweaks API hook only for ME terminal screens with `SlotME` storage slots. Mouse Tweaks can then use hold-left-click item movement across terminal storage slots and AE2's bound player inventory/hotbar slots. GPOM keeps Mouse Tweaks wheel handling and held-RMB drag placement disabled for AE2 so AE2's native terminal behavior remains authoritative and right-click still places one item per physical click.
+
+## Just Enough Calculation QoL
+
+```properties
+gpom.jecalculation.pinnedCraftOverlay.enabled=true
+```
+
+When Just Enough Calculation is installed, GPOM adds a client-only pinned craft overlay for normal container screens. The JEC craft screen gets a small textured pin button in the same slot modern JEC uses for its widget toggle; when enabled, GPOM renders JEC's crafting calculator in a compact modern-style mini window over other inventories, lets it be dragged by the small top grip, routes clicks/scroll/key input only while the pointer is inside the overlay, and no-ops if JEC is absent or changes incompatible internals.
+
+## JourneyMap QoL
+
+```properties
+gpom.journeymap.waypointDimensionDropup.enabled=true
+```
+
+When JourneyMap 5.7.x is installed, GPOM replaces the waypoint manager's dimension cycling button with a scrollable dropup selector. Selecting an entry writes JourneyMap's existing selected-dimension field and refreshes the waypoint manager through JourneyMap's own filtering path. The patch is reflection-only and no-ops when JourneyMap or the expected waypoint GUI classes are absent.
 
 ## BetterPortals Compatibility
 
