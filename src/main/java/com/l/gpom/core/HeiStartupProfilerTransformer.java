@@ -88,6 +88,9 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         if (supportedHeiClass && "mezz.jei.startup.StackHelper".equals(className)) {
             basicClass = patchSynchronizedMethods(basicClass, stackHelperSynchronizedMethods());
         }
+        if (supportedHeiClass && "mezz.jei.gui.GuiEventHandler".equals(className)) {
+            basicClass = patchGuiEventHandlerLayering(basicClass);
+        }
         if (supportedHeiClass && "mezz.jei.search.PrefixedSearchable".equals(className) && SKIP_SEARCH_PROGRESS) {
             basicClass = patchPrefixedSearchableSkipProgress(basicClass);
         }
@@ -427,6 +430,50 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         methods.add(new MethodKey("getRecipeTransferRegistry", "()Lmezz/jei/api/recipe/transfer/IRecipeTransferRegistry;"));
         methods.add(new MethodKey("createRecipeRegistry", "(Lmezz/jei/ingredients/IngredientRegistry;)Lmezz/jei/recipes/RecipeRegistry;"));
         return methods;
+    }
+
+    private static byte[] patchGuiEventHandlerLayering(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"onDrawScreenEventPost".equals(method.name)
+                        || !"(Lnet/minecraftforge/client/event/GuiScreenEvent$DrawScreenEvent$Post;)V".equals(method.desc)) {
+                    continue;
+                }
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn.getOpcode() != Opcodes.GETFIELD) {
+                        continue;
+                    }
+                    FieldInsnNode field = (FieldInsnNode) insn;
+                    if (!node.name.equals(field.owner) || !"drawnOnBackground".equals(field.name) || !"Z".equals(field.desc)) {
+                        continue;
+                    }
+
+                    InsnList patch = new InsnList();
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/compat/hei/HeiOverlayLayeringCompat",
+                            "refreshLayoutBeforePostTooltips",
+                            "(Ljava/lang/Object;Lnet/minecraft/client/gui/GuiScreen;)V",
+                            false
+                    ));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    patch.add(new InsnNode(Opcodes.ICONST_1));
+                    patch.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "drawnOnBackground", "Z"));
+                    method.instructions.insertBefore(insn, patch);
+                    changed = true;
+                    break;
+                }
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
     }
 
     private static Set<MethodKey> recipeTransferRegistrySynchronizedMethods() {
