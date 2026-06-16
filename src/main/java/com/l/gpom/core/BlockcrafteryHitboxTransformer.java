@@ -1,0 +1,335 @@
+package com.l.gpom.core;
+
+import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.OptionalModRuntime;
+import net.minecraft.launchwrapper.IClassTransformer;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FrameNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
+
+import java.util.Iterator;
+
+public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
+    private static final String CUBE = "epicsquid.blockcraftery.block.BlockEditableCube";
+    private static final String SLANT = "epicsquid.blockcraftery.block.BlockEditableSlant";
+    private static final String CORNER = "epicsquid.blockcraftery.block.BlockEditableCorner";
+    private static final String MODEL_EDITABLE = "epicsquid.blockcraftery.model.BakedModelEditable";
+    private static final String WORLD = "net.minecraft.world.World";
+    private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryHitboxCompat";
+    private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
+    private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
+    private static final String SELECTED_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
+    private static final String BOUNDING_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
+    private static final String SIDE_RENDER_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/EnumFacing;)Z";
+    private static final String GET_QUADS_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/util/EnumFacing;J)Ljava/util/List;";
+    private static final String RENDER_LAYER = "Lnet/minecraft/util/BlockRenderLayer;";
+    private static final String MAY_PLACE_DESC = "(Lnet/minecraft/block/Block;Lnet/minecraft/util/math/BlockPos;ZLnet/minecraft/util/EnumFacing;Lnet/minecraft/entity/Entity;)Z";
+
+    @Override
+    public byte[] transform(String name, String transformedName, byte[] basicClass) {
+        if (basicClass == null) {
+            return basicClass;
+        }
+
+        String className = transformedName != null ? transformedName : name;
+        if (className == null) {
+            return basicClass;
+        }
+
+        try {
+            boolean hitboxes = GpomEarlyConfig.blockcrafteryAccurateHitboxesEnabled();
+            boolean parentMaterialOcclusion = GpomEarlyConfig.blockcrafteryParentMaterialOcclusionEnabled();
+            boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled()
+                    && !OptionalModRuntime.ausmPresent();
+            if (!hitboxes && !modelLayerCompat) {
+                return basicClass;
+            }
+            if (hitboxes && CUBE.equals(className)) {
+                return patchCube(basicClass, parentMaterialOcclusion);
+            }
+            if (hitboxes && (SLANT.equals(className) || CORNER.equals(className))) {
+                return patchShapedBlock(basicClass);
+            }
+            if (hitboxes && WORLD.equals(className)) {
+                return patchWorld(basicClass);
+            }
+            if (modelLayerCompat && MODEL_EDITABLE.equals(className)) {
+                return patchEditableModel(basicClass);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchWorld(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        boolean changed = patchMayPlaceMethod(node, "mayPlace");
+        changed |= patchMayPlaceMethod(node, "func_190527_a");
+        return changed ? writeNode(node) : basicClass;
+    }
+
+    private static byte[] patchEditableModel(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        boolean changed = patchModelGetQuadsMethod(node, "func_188616_a");
+        changed |= patchModelGetQuadsMethod(node, "getQuads");
+        return changed ? writeNode(node) : basicClass;
+    }
+
+    private static byte[] patchShapedBlock(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        replaceMethod(node, shapedRayTraceMethod("func_180636_a"));
+        replaceMethod(node, shapedRayTraceMethod("collisionRayTrace"));
+        replaceMethod(node, shapedSelectedBoxMethod("func_180640_a"));
+        replaceMethod(node, shapedSelectedBoxMethod("getSelectedBoundingBox"));
+        return writeNode(node);
+    }
+
+    private static byte[] patchCube(byte[] basicClass, boolean parentMaterialOcclusion) {
+        ClassNode node = readNode(basicClass);
+        replaceMethod(node, cubeRayTraceMethod("func_180636_a"));
+        replaceMethod(node, cubeRayTraceMethod("collisionRayTrace"));
+        replaceMethod(node, cubeBoundingBoxMethod("func_185496_a"));
+        replaceMethod(node, cubeBoundingBoxMethod("getBoundingBox"));
+        replaceMethod(node, cubeSelectedBoxMethod("func_180640_a"));
+        replaceMethod(node, cubeSelectedBoxMethod("getSelectedBoundingBox"));
+        if (parentMaterialOcclusion) {
+            replaceMethod(node, cubeSideMethod("func_176225_a", "copiedShouldSideBeRendered"));
+            replaceMethod(node, cubeSideMethod("shouldSideBeRendered", "copiedShouldSideBeRendered"));
+            replaceMethod(node, cubeSideMethod("doesSideBlockRendering", "copiedDoesSideBlockRendering"));
+        }
+        return writeNode(node);
+    }
+
+    private static MethodNode shapedRayTraceMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, RAYTRACE_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 5);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                "rayTraceShape",
+                "(Lnet/minecraft/block/Block;" + RAYTRACE_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode shapedSelectedBoxMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, SELECTED_BOX_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 3);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                "selectedShapeBox",
+                "(Lnet/minecraft/block/Block;" + SELECTED_BOX_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode cubeRayTraceMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, RAYTRACE_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 5);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                "rayTraceCopiedBlock",
+                "(Lnet/minecraft/block/Block;" + RAYTRACE_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode cubeBoundingBoxMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, BOUNDING_BOX_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 3);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                "copiedBoundingBoxOrFull",
+                "(Lnet/minecraft/block/Block;" + BOUNDING_BOX_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode cubeSelectedBoxMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, SELECTED_BOX_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 3);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                "copiedSelectedBoxOrFull",
+                "(Lnet/minecraft/block/Block;" + SELECTED_BOX_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode cubeSideMethod(String name, String helperMethod) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, SIDE_RENDER_DESC, null, null);
+        InsnList instructions = method.instructions;
+        loadArgs(instructions, 4);
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HELPER,
+                helperMethod,
+                "(Lnet/minecraft/block/Block;" + SIDE_RENDER_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.IRETURN));
+        return method;
+    }
+
+    private static boolean patchMayPlaceMethod(ClassNode node, String name) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals(name) || !method.desc.equals(MAY_PLACE_DESC)) {
+                continue;
+            }
+
+            LabelNode originalCode = new LabelNode();
+            InsnList instructions = new InsnList();
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            instructions.add(new VarInsnNode(Opcodes.ILOAD, 3));
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, 4));
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, 5));
+            instructions.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    HELPER,
+                    "mayPlaceBlockcrafteryShape",
+                    "(Lnet/minecraft/world/World;Lnet/minecraft/block/Block;Lnet/minecraft/util/math/BlockPos;ZLnet/minecraft/util/EnumFacing;Lnet/minecraft/entity/Entity;)Ljava/lang/Boolean;",
+                    false
+            ));
+            instructions.add(new InsnNode(Opcodes.DUP));
+            instructions.add(new JumpInsnNode(Opcodes.IFNULL, originalCode));
+            instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false));
+            instructions.add(new InsnNode(Opcodes.IRETURN));
+            instructions.add(originalCode);
+            instructions.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] {"java/lang/Boolean"}));
+            instructions.add(new InsnNode(Opcodes.POP));
+            method.instructions.insert(instructions);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean patchModelGetQuadsMethod(ClassNode node, String name) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals(name) || !method.desc.equals(GET_QUADS_DESC)) {
+                continue;
+            }
+
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (!isMethod(instruction, "net/minecraftforge/client/MinecraftForgeClient", "getRenderLayer", "()" + RENDER_LAYER)) {
+                    continue;
+                }
+
+                AbstractInsnNode loadCopiedState = instruction.getNext();
+                AbstractInsnNode getCopiedBlock = loadCopiedState == null ? null : loadCopiedState.getNext();
+                AbstractInsnNode getCopiedLayer = getCopiedBlock == null ? null : getCopiedBlock.getNext();
+                AbstractInsnNode skipBranch = getCopiedLayer == null ? null : getCopiedLayer.getNext();
+                if (!(loadCopiedState instanceof VarInsnNode)
+                        || ((VarInsnNode) loadCopiedState).getOpcode() != Opcodes.ALOAD
+                        || ((VarInsnNode) loadCopiedState).var != 6
+                        || !isStateGetBlock(getCopiedBlock)
+                        || !isBlockGetRenderLayer(getCopiedLayer)
+                        || !(skipBranch instanceof JumpInsnNode)
+                        || skipBranch.getOpcode() != Opcodes.IF_ACMPNE) {
+                    continue;
+                }
+
+                JumpInsnNode originalSkip = (JumpInsnNode) skipBranch;
+                InsnList replacement = new InsnList();
+                replacement.add(new VarInsnNode(Opcodes.ALOAD, 6));
+                replacement.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        RENDER_HELPER,
+                        "shouldRenderCopiedBlockInCurrentLayer",
+                        "(Lnet/minecraft/block/state/IBlockState;)Z",
+                        false
+                ));
+                replacement.add(new JumpInsnNode(Opcodes.IFEQ, originalSkip.label));
+
+                method.instructions.insertBefore(instruction, replacement);
+                method.instructions.remove(instruction);
+                method.instructions.remove(loadCopiedState);
+                method.instructions.remove(getCopiedBlock);
+                method.instructions.remove(getCopiedLayer);
+                method.instructions.remove(skipBranch);
+                changed = true;
+                break;
+            }
+        }
+        return changed;
+    }
+
+    private static boolean isBlockGetRenderLayer(AbstractInsnNode instruction) {
+        return isMethod(instruction, "net/minecraft/block/Block", "func_180664_k", "()" + RENDER_LAYER)
+                || isMethod(instruction, "net/minecraft/block/Block", "getRenderLayer", "()" + RENDER_LAYER);
+    }
+
+    private static boolean isStateGetBlock(AbstractInsnNode instruction) {
+        return isMethod(instruction, "net/minecraft/block/state/IBlockState", "func_177230_c", "()Lnet/minecraft/block/Block;")
+                || isMethod(instruction, "net/minecraft/block/state/IBlockState", "getBlock", "()Lnet/minecraft/block/Block;");
+    }
+
+    private static boolean isMethod(AbstractInsnNode instruction, String owner, String name, String desc) {
+        if (!(instruction instanceof MethodInsnNode)) {
+            return false;
+        }
+        MethodInsnNode method = (MethodInsnNode) instruction;
+        return method.owner.equals(owner) && method.name.equals(name) && method.desc.equals(desc);
+    }
+
+    private static void loadArgs(InsnList instructions, int count) {
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        for (int index = 1; index <= count; index++) {
+            instructions.add(new VarInsnNode(Opcodes.ALOAD, index));
+        }
+    }
+
+    private static void replaceMethod(ClassNode node, MethodNode replacement) {
+        for (Iterator<MethodNode> iterator = node.methods.iterator(); iterator.hasNext(); ) {
+            MethodNode method = iterator.next();
+            if (method.name.equals(replacement.name) && method.desc.equals(replacement.desc)) {
+                iterator.remove();
+            }
+        }
+        node.methods.add(replacement);
+    }
+
+    private static ClassNode readNode(byte[] basicClass) {
+        ClassNode node = new ClassNode();
+        new ClassReader(basicClass).accept(node, 0);
+        return node;
+    }
+
+    private static byte[] writeNode(ClassNode node) {
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        node.accept(writer);
+        return writer.toByteArray();
+    }
+}

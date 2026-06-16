@@ -161,6 +161,12 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
         DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.fastShapeLighting", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
+        DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
+        DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "false");
+        DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.registry.ignoreMissingSoundEventNamespaces", "erebus");
@@ -218,6 +224,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback", "false");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.enabled", "false");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:items,minecraft:entities,ebwizardry:spells");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.recipes.enabled", "false");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.workers", "0");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.queuedCommit", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistry", "true");
@@ -612,6 +619,12 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
                 "gpom.betterPortals.fixGuavaAddCallback",
                 "gpom.betterPortals.cleanupClientWorlds",
+                "gpom.architecturecraft.fastShapeLighting",
+                "gpom.architecturecraft.accurateHitboxes",
+                "gpom.architecturecraft.parentMaterialOcclusion.enabled",
+                "gpom.blockcraftery.accurateHitboxes",
+                "gpom.blockcraftery.parentMaterialOcclusion.enabled",
+                "gpom.blockcraftery.modelRenderLayerCompat",
                 "gpom.journeymap.cleanupLeaks",
                 "gpom.enderio.repairMissingTileEntityMappings",
                 "gpom.registry.ignoreMissingSoundEventNamespaces"
@@ -657,6 +670,7 @@ public final class GpomEarlyConfig {
                 "gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback",
                 "gpom.registry.parallelRegisterEvents.enabled",
                 "gpom.registry.parallelRegisterEvents.registries",
+                "gpom.registry.parallelRegisterEvents.recipes.enabled",
                 "gpom.registry.parallelRegisterEvents.workers",
                 "gpom.registry.parallelRegisterEvents.queuedCommit",
                 "gpom.registry.parallelRegisterEvents.proxyEventRegistry",
@@ -936,6 +950,18 @@ public final class GpomEarlyConfig {
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
             case "gpom.betterPortals.cleanupClientWorlds":
                 return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. No-op when BetterPortals is absent.";
+            case "gpom.architecturecraft.fastShapeLighting":
+                return "Uses brightness lighting instead of ArchitectureCraft's per-vertex ambient occlusion for shape chunk rebuilds. This reduces rebuild cost for dense shape builds at the cost of flatter lighting. Automatically skipped when AUSM is installed.";
+            case "gpom.architecturecraft.accurateHitboxes":
+                return "Replaces ArchitectureCraft shape ray tracing with a GPOM-safe collision-box ray trace and preserves the selected sub-box for outlines. No-op when ArchitectureCraft is absent.";
+            case "gpom.architecturecraft.parentMaterialOcclusion.enabled":
+                return "Lets ArchitectureCraft shapes answer side-render checks as their base material. Experimental; disabled by default because it can over-darken ambient occlusion on partial framed geometry.";
+            case "gpom.blockcraftery.accurateHitboxes":
+                return "Adds optional Blockcraftery ray-hitbox fixes for editable slants, corners, and copied-block cubes. No-op when Blockcraftery is absent.";
+            case "gpom.blockcraftery.parentMaterialOcclusion.enabled":
+                return "Lets Blockcraftery copied-block cubes answer side-render and side-occlusion checks as their copied material. Experimental; disabled by default because it can make framed-block AO look too dark or uneven.";
+            case "gpom.blockcraftery.modelRenderLayerCompat":
+                return "Rewrites Blockcraftery copied-block model layer checks to use Forge canRenderInLayer. Automatically skipped when AUSM is installed, because AUSM owns shader render-layer routing.";
             case "gpom.journeymap.waypointDimensionDropup.enabled":
                 return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaks":
@@ -1051,7 +1077,9 @@ public final class GpomEarlyConfig {
             case "gpom.registry.parallelRegisterEvents.enabled":
                 return "Runs selected Forge RegistryEvent.Register listeners in worker threads during the post-PreInit registry transition.";
             case "gpom.registry.parallelRegisterEvents.registries":
-                return "Comma-separated registry names eligible for parallel listener dispatch; '*' allows every register event.";
+                return "Comma-separated registry names eligible for parallel listener dispatch; '*' allows every non-recipe register event unless recipe parallelism is explicitly enabled.";
+            case "gpom.registry.parallelRegisterEvents.recipes.enabled":
+                return "Allows minecraft:recipes RegistryEvent.Register listeners to run off-thread. Disabled by default because recipe registration is highly order- and visibility-sensitive.";
             case "gpom.registry.parallelRegisterEvents.workers":
                 return "Worker count for parallel registry listener dispatch. 0 lets GPOM choose a bounded automatic value.";
             case "gpom.registry.parallelRegisterEvents.queuedCommit":
@@ -1194,6 +1222,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.enabled");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.registries");
+        copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.recipes.enabled");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.workers");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.queuedCommit");
         copySystemPropertyIfAbsent("gpom.registry.parallelRegisterEvents.proxyEventRegistry");
@@ -1236,6 +1265,12 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
         copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.fastShapeLighting");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.accurateHitboxes");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.parentMaterialOcclusion.enabled");
+        copySystemPropertyIfAbsent("gpom.blockcraftery.accurateHitboxes");
+        copySystemPropertyIfAbsent("gpom.blockcraftery.parentMaterialOcclusion.enabled");
+        copySystemPropertyIfAbsent("gpom.blockcraftery.modelRenderLayerCompat");
         copySystemPropertyIfAbsent("gpom.journeymap.waypointDimensionDropup.enabled");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
@@ -1500,6 +1535,30 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.betterPortals.cleanupClientWorlds");
     }
 
+    public static boolean architectureCraftFastShapeLightingEnabled() {
+        return booleanValue("gpom.architecturecraft.fastShapeLighting");
+    }
+
+    public static boolean architectureCraftAccurateHitboxesEnabled() {
+        return booleanValue("gpom.architecturecraft.accurateHitboxes");
+    }
+
+    public static boolean architectureCraftParentMaterialOcclusionEnabled() {
+        return booleanValue("gpom.architecturecraft.parentMaterialOcclusion.enabled");
+    }
+
+    public static boolean blockcrafteryAccurateHitboxesEnabled() {
+        return booleanValue("gpom.blockcraftery.accurateHitboxes");
+    }
+
+    public static boolean blockcrafteryParentMaterialOcclusionEnabled() {
+        return booleanValue("gpom.blockcraftery.parentMaterialOcclusion.enabled");
+    }
+
+    public static boolean blockcrafteryModelRenderLayerCompatEnabled() {
+        return booleanValue("gpom.blockcraftery.modelRenderLayerCompat");
+    }
+
     public static boolean journeyMapCleanupLeaksEnabled() {
         return booleanValue("gpom.journeymap.cleanupLeaks");
     }
@@ -1642,6 +1701,10 @@ public final class GpomEarlyConfig {
 
     public static Set<String> registryParallelRegisterEventsRegistries() {
         return setValue("gpom.registry.parallelRegisterEvents.registries");
+    }
+
+    public static boolean registryParallelRegisterEventsRecipesEnabled() {
+        return booleanValue("gpom.registry.parallelRegisterEvents.recipes.enabled");
     }
 
     public static int registryParallelRegisterEventsWorkers() {

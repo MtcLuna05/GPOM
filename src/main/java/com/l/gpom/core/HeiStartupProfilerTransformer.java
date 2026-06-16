@@ -441,6 +441,7 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                         || !"(Lnet/minecraftforge/client/event/GuiScreenEvent$DrawScreenEvent$Post;)V".equals(method.desc)) {
                     continue;
                 }
+                AbstractInsnNode lastReturn = lastReturn(method);
                 for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
                     if (insn.getOpcode() != Opcodes.GETFIELD) {
                         continue;
@@ -460,12 +461,45 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                             "(Ljava/lang/Object;Lnet/minecraft/client/gui/GuiScreen;)V",
                             false
                     ));
-                    patch.add(new VarInsnNode(Opcodes.ALOAD, 0));
-                    patch.add(new InsnNode(Opcodes.ICONST_1));
-                    patch.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "drawnOnBackground", "Z"));
                     method.instructions.insertBefore(insn, patch);
                     changed = true;
                     break;
+                }
+                if (lastReturn != null) {
+                    InsnList patch = new InsnList();
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKEVIRTUAL,
+                            "net/minecraftforge/client/event/GuiScreenEvent$DrawScreenEvent$Post",
+                            "getGui",
+                            "()Lnet/minecraft/client/gui/GuiScreen;",
+                            false
+                    ));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKEVIRTUAL,
+                            "net/minecraftforge/client/event/GuiScreenEvent$DrawScreenEvent$Post",
+                            "getMouseX",
+                            "()I",
+                            false
+                    ));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKEVIRTUAL,
+                            "net/minecraftforge/client/event/GuiScreenEvent$DrawScreenEvent$Post",
+                            "getMouseY",
+                            "()I",
+                            false
+                    ));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/compat/hei/HeiOverlayLayeringCompat",
+                            "drawAfterHeiPostTooltips",
+                            "(Lnet/minecraft/client/gui/GuiScreen;II)V",
+                            false
+                    ));
+                    method.instructions.insertBefore(lastReturn, patch);
+                    changed = true;
                 }
             }
             if (changed) {
@@ -474,6 +508,16 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         } catch (Throwable ignored) {
         }
         return basicClass;
+    }
+
+    private static AbstractInsnNode lastReturn(MethodNode method) {
+        AbstractInsnNode lastReturn = null;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() == Opcodes.RETURN) {
+                lastReturn = insn;
+            }
+        }
+        return lastReturn;
     }
 
     private static Set<MethodKey> recipeTransferRegistrySynchronizedMethods() {

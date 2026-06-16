@@ -19,6 +19,7 @@ import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -49,6 +50,7 @@ public final class BaublesSideSlotsClient {
     private static final int SIDE_SLOT_U = 48;
     private static final int SIDE_SLOT_V = 0;
     private static final int HOVER_OVERLAY_COLOR = 0x40FFFFFF;
+    private static final float POST_HEI_TOOLTIP_Z = 1000.0F;
     private static final int CREATIVE_SURVIVAL_INVENTORY_TAB_INDEX = 11;
     private static final int PANEL_CORNER = 4;
     private static final int PANEL_TILE = 8;
@@ -120,7 +122,7 @@ public final class BaublesSideSlotsClient {
     private static Method cosmeticArmorSetSkinArmorMethod;
     private static Method cosmeticArmorNetworkSendToServerMethod;
     private static Method activePotionEffectsMethod;
-    private static Method drawHoveringTextMethod;
+    private static Method renderHoveredToolTipMethod;
 
     private BaublesSideSlotsClient() {
     }
@@ -444,23 +446,104 @@ public final class BaublesSideSlotsClient {
         if (tooltip == null || tooltip.isEmpty()) {
             return;
         }
-        drawHoveringText(gui, Collections.singletonList(tooltip), mouseX, mouseY);
+        drawSlotTypeTooltip(gui, tooltip, mouseX, mouseY);
     }
 
-    private static void drawHoveringText(GuiContainer gui, List<String> lines, int mouseX, int mouseY) {
-        if (gui == null || lines == null || lines.isEmpty()) {
+    public static boolean drawLateSideSlotTooltip(GuiContainer gui, int mouseX, int mouseY) {
+        if (!isSideRailOpen(gui) || !isSideRailGui(gui)) {
+            return false;
+        }
+
+        Slot slot = findSlotAt(inventorySlots(gui), guiLeft(gui), guiTop(gui), mouseX, mouseY);
+        if (slot == null
+                || !BaublesSideSlotsCommon.isSideRailSlot(slot)
+                || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
+            return false;
+        }
+
+        setHoveredSlot(gui, slot);
+        if (BaublesSideSlotsCommon.slotHasStack(slot)) {
+            drawHoveredSlotTooltip(gui, mouseX, mouseY);
+            return true;
+        }
+        drawEmptySlotTooltip(gui, mouseX, mouseY);
+        return true;
+    }
+
+    private static void drawSlotTypeTooltip(GuiContainer gui, String tooltip, int mouseX, int mouseY) {
+        FontRenderer font = ClientAccess.fontRenderer(ClientAccess.minecraft());
+        if (gui == null || font == null || tooltip == null || tooltip.isEmpty()) {
+            return;
+        }
+
+        int tooltipWidth = ClientAccess.stringWidth(font, tooltip);
+        int tooltipX = mouseX + 12;
+        int tooltipY = mouseY - 12;
+        int tooltipHeight = 8;
+        int screenWidth = intField(gui, "width", "field_146294_l");
+        int screenHeight = intField(gui, "height", "field_146295_m");
+        if (screenWidth > 0 && tooltipX + tooltipWidth + 6 > screenWidth) {
+            tooltipX = mouseX - 28 - tooltipWidth;
+        }
+        if (screenHeight > 0 && tooltipY + tooltipHeight + 6 > screenHeight) {
+            tooltipY = screenHeight - tooltipHeight - 6;
+        }
+        tooltipY = Math.max(4, tooltipY);
+
+        int background = 0xF0100010;
+        int border = 0x505000FF;
+        int borderEnd = 0x5028007F;
+        int right = tooltipX + tooltipWidth;
+        int bottom = tooltipY + tooltipHeight;
+
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushMatrix();
+        try {
+            GL11.glTranslatef(0.0F, 0.0F, POST_HEI_TOOLTIP_Z);
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+
+            ClientAccess.drawRect(tooltipX - 3, tooltipY - 4, right + 3, tooltipY - 3, background);
+            ClientAccess.drawRect(tooltipX - 3, bottom + 3, right + 3, bottom + 4, background);
+            ClientAccess.drawRect(tooltipX - 3, tooltipY - 3, right + 3, bottom + 3, background);
+            ClientAccess.drawRect(tooltipX - 4, tooltipY - 3, tooltipX - 3, bottom + 3, background);
+            ClientAccess.drawRect(right + 3, tooltipY - 3, right + 4, bottom + 3, background);
+            ClientAccess.drawRect(tooltipX - 3, tooltipY - 3, tooltipX - 2, bottom + 3, border);
+            ClientAccess.drawRect(right + 2, tooltipY - 3, right + 3, bottom + 3, borderEnd);
+            ClientAccess.drawRect(tooltipX - 3, tooltipY - 3, right + 3, tooltipY - 2, border);
+            ClientAccess.drawRect(tooltipX - 3, bottom + 2, right + 3, bottom + 3, borderEnd);
+            ClientAccess.drawStringWithShadow(font, tooltip, tooltipX, tooltipY, 0xFFFFFFFF);
+        } finally {
+            GL11.glPopMatrix();
+            GL11.glPopAttrib();
+            GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        }
+    }
+
+    private static void drawHoveredSlotTooltip(GuiContainer gui, int mouseX, int mouseY) {
+        if (gui == null) {
             return;
         }
         try {
-            Method method = drawHoveringTextMethod;
+            Method method = renderHoveredToolTipMethod;
             if (method == null) {
-                method = findMethod(gui.getClass(), new Class<?>[] {List.class, int.class, int.class},
-                        "func_146283_a",
-                        "drawHoveringText");
-                drawHoveringTextMethod = method;
+                method = findMethod(gui.getClass(), new Class<?>[] {int.class, int.class},
+                        "func_191948_b",
+                        "renderHoveredToolTip");
+                renderHoveredToolTipMethod = method;
             }
             if (method != null) {
-                method.invoke(gui, lines, mouseX, mouseY);
+                GL11.glPushMatrix();
+                try {
+                    GL11.glTranslatef(0.0F, 0.0F, POST_HEI_TOOLTIP_Z);
+                    method.invoke(gui, mouseX, mouseY);
+                } finally {
+                    GL11.glPopMatrix();
+                    GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+                }
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
         }

@@ -41,9 +41,11 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class RegistryEventParallelDispatcher {
+    private static final String RECIPE_REGISTRY = "minecraft:recipes";
     private static final boolean ENABLED = GpomEarlyConfig.registryParallelRegisterEventsEnabled();
     private static final boolean QUEUED_COMMIT = GpomEarlyConfig.registryParallelRegisterEventsQueuedCommitEnabled();
     private static final Set<String> REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsRegistries();
+    private static final boolean RECIPES_ENABLED = GpomEarlyConfig.registryParallelRegisterEventsRecipesEnabled();
     private static final Set<String> IMMEDIATE_COMMIT_REGISTRIES = GpomEarlyConfig.registryParallelRegisterEventsImmediateCommitRegistries();
     private static final boolean PROXY_EVENT_REGISTRY = GpomEarlyConfig.registryParallelRegisterEventsProxyEventRegistryEnabled();
     private static final Set<String> PROXY_EVENT_REGISTRY_DENYLIST = GpomEarlyConfig.registryParallelRegisterEventsProxyEventRegistryDenylist();
@@ -104,6 +106,9 @@ public final class RegistryEventParallelDispatcher {
         }
         ResourceLocation registryName = ((RegistryEvent.Register<?>) event).getName();
         String normalized = registryName == null ? "" : normalize(registryName.toString());
+        if (RECIPE_REGISTRY.equals(normalized) && !RECIPES_ENABLED) {
+            return false;
+        }
         return REGISTRIES.contains("*") || REGISTRIES.contains(normalized);
     }
 

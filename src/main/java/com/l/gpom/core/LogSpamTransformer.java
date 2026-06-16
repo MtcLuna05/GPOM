@@ -1,5 +1,6 @@
 package com.l.gpom.core;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -39,6 +40,10 @@ public final class LogSpamTransformer implements IClassTransformer {
     ));
     private static final boolean CTM_TEXTURE_METADATA_ERROR_SPAM = Boolean.parseBoolean(System.getProperty(
             "gpom.ctm.suppressTextureMetadataErrorSpam",
+            "true"
+    ));
+    private static final boolean EARLY_CLIENT_PACKET_NULL_PLAYER = Boolean.parseBoolean(System.getProperty(
+            "gpom.clientPackets.suppressNullPlayerEarlySync",
             "true"
     ));
 
@@ -89,8 +94,151 @@ public final class LogSpamTransformer implements IClassTransformer {
                 && TargetedModVersions.isConnectedTexturesModClass(className)) {
             return patchCtmTextureMetadataSpam(basicClass);
         }
+        if (EARLY_CLIENT_PACKET_NULL_PLAYER) {
+            byte[] patched = patchEarlyClientPacketNullPlayer(className, basicClass);
+            if (patched != basicClass) {
+                return patched;
+            }
+        }
 
         return basicClass;
+    }
+
+    public static boolean isClientPlayerReadyForEarlyPacket() {
+        try {
+            Minecraft mc = Minecraft.getMinecraft();
+            return mc != null && mc.player != null && mc.world != null;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static byte[] patchEarlyClientPacketNullPlayer(String className, byte[] basicClass) {
+        if ("net.ilexiconn.llibrary.server.network.PropertiesMessage".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "onClientReceived",
+                    "(Lnet/minecraft/client/Minecraft;Lnet/ilexiconn/llibrary/server/network/PropertiesMessage;Lnet/minecraft/entity/player/EntityPlayer;Lnet/minecraftforge/fml/common/network/simpleimpl/MessageContext;)V",
+                    false,
+                    3
+            );
+        }
+        if ("electroblob.wizardry.packet.PacketPlayerSync".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "onMessage",
+                    "(Lelectroblob/wizardry/packet/PacketPlayerSync$Message;Lnet/minecraftforge/fml/common/network/simpleimpl/MessageContext;)Lnet/minecraftforge/fml/common/network/simpleimpl/IMessage;",
+                    true,
+                    -1
+            );
+        }
+        if ("thaumcraft.common.lib.network.playerdata.PacketSyncKnowledge".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "onMessage",
+                    "(Lthaumcraft/common/lib/network/playerdata/PacketSyncKnowledge;Lnet/minecraftforge/fml/common/network/simpleimpl/MessageContext;)Lnet/minecraftforge/fml/common/network/simpleimpl/IMessage;",
+                    true,
+                    -1
+            );
+        }
+        if ("thaumcraft.common.lib.network.playerdata.PacketSyncWarp".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "onMessage",
+                    "(Lthaumcraft/common/lib/network/playerdata/PacketSyncWarp;Lnet/minecraftforge/fml/common/network/simpleimpl/MessageContext;)Lnet/minecraftforge/fml/common/network/simpleimpl/IMessage;",
+                    true,
+                    -1
+            );
+        }
+        if ("com.cazsius.solcarrot.communication.MessageFoodList$Handler".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "onMessage",
+                    "(Lcom/cazsius/solcarrot/communication/MessageFoodList;Lnet/minecraftforge/fml/common/network/simpleimpl/MessageContext;)Lnet/minecraftforge/fml/common/network/simpleimpl/IMessage;",
+                    true,
+                    -1
+            );
+        }
+        if ("forestry.core.network.PacketHandler".equals(className)) {
+            return patchEarlyClientPacketGuard(
+                    basicClass,
+                    "checkThreadAndEnqueue",
+                    "(Lforestry/core/network/IForestryPacketHandlerClient;Lforestry/core/network/PacketBufferForestry;Lnet/minecraft/util/IThreadListener;)V",
+                    false,
+                    -1
+            );
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchEarlyClientPacketGuard(
+            byte[] basicClass,
+            String methodName,
+            String methodDesc,
+            boolean returnsObject,
+            int nullablePlayerArg
+    ) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, ClassReader.EXPAND_FRAMES);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (methodName.equals(method.name) && methodDesc.equals(method.desc)) {
+                    insertEarlyClientPacketGuard(method, returnsObject, nullablePlayerArg);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                return basicClass;
+            }
+            ClassWriter writer = frameComputingWriter();
+            node.accept(writer);
+            return writer.toByteArray();
+        } catch (Throwable ignored) {
+            return basicClass;
+        }
+    }
+
+    private static void insertEarlyClientPacketGuard(MethodNode method, boolean returnsObject, int nullablePlayerArg) {
+        InsnList guard = new InsnList();
+        if (nullablePlayerArg >= 0) {
+            LabelNode playerPresent = new LabelNode();
+            guard.add(new VarInsnNode(Opcodes.ALOAD, nullablePlayerArg));
+            guard.add(new JumpInsnNode(Opcodes.IFNONNULL, playerPresent));
+            addEarlyPacketReturn(guard, returnsObject);
+            guard.add(playerPresent);
+        }
+
+        LabelNode ready = new LabelNode();
+        guard.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/core/LogSpamTransformer",
+                "isClientPlayerReadyForEarlyPacket",
+                "()Z",
+                false
+        ));
+        guard.add(new JumpInsnNode(Opcodes.IFNE, ready));
+        addEarlyPacketReturn(guard, returnsObject);
+        guard.add(ready);
+        method.instructions.insert(guard);
+    }
+
+    private static void addEarlyPacketReturn(InsnList instructions, boolean returnsObject) {
+        if (returnsObject) {
+            instructions.add(new InsnNode(Opcodes.ACONST_NULL));
+            instructions.add(new InsnNode(Opcodes.ARETURN));
+        } else {
+            instructions.add(new InsnNode(Opcodes.RETURN));
+        }
+    }
+
+    private static ClassWriter frameComputingWriter() {
+        return new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS) {
+            @Override
+            protected String getCommonSuperClass(String type1, String type2) {
+                return "java/lang/Object";
+            }
+        };
     }
 
     private static byte[] patchCtmUnknownRenderLayer(byte[] basicClass) {
