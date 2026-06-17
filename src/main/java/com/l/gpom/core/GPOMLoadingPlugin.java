@@ -62,6 +62,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.LibVulpesCompatibilityTransformer",
                 "com.l.gpom.core.LoliAsmCompatibilityTransformer",
                 "com.l.gpom.core.BetterPortalsCompatibilityTransformer",
+                "com.l.gpom.core.JourneyMapBetterPortalsTeleportTransformer",
                 "com.l.gpom.core.ArchitectureCraftCompatibilityTransformer",
                 "com.l.gpom.core.BlockcrafteryHitboxTransformer",
                 "com.l.gpom.core.JecVolatileNbtTransformer",

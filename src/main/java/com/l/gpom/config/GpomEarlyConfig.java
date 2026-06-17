@@ -163,6 +163,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
         DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "false");
+        DEFAULTS.setProperty("gpom.betterPortals.journeymapWaypointTeleportTransition", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.fastShapeLighting", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
@@ -635,6 +636,7 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
                 "gpom.betterPortals.fixGuavaAddCallback",
                 "gpom.betterPortals.cleanupClientWorlds",
+                "gpom.betterPortals.journeymapWaypointTeleportTransition",
                 "gpom.architecturecraft.fastShapeLighting",
                 "gpom.architecturecraft.accurateHitboxes",
                 "gpom.architecturecraft.parentMaterialOcclusion.enabled",
@@ -972,6 +974,8 @@ public final class GpomEarlyConfig {
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
             case "gpom.betterPortals.cleanupClientWorlds":
                 return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. Experimental; keep false unless debugging retained BetterPortals client worlds.";
+            case "gpom.betterPortals.journeymapWaypointTeleportTransition":
+                return "Routes JourneyMap cross-dimensional waypoint teleports through BetterPortals' dimension-transition handler so the configured transition animation plays. Falls back to JourneyMap's original teleport when BetterPortals is absent or declines the transfer.";
             case "gpom.architecturecraft.fastShapeLighting":
                 return "Uses brightness lighting instead of ArchitectureCraft's per-vertex ambient occlusion for shape chunk rebuilds. This reduces rebuild cost for dense shape builds at the cost of flatter lighting. Automatically skipped when AUSM is installed.";
             case "gpom.architecturecraft.accurateHitboxes":
@@ -1293,6 +1297,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
         copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
+        copySystemPropertyIfAbsent("gpom.betterPortals.journeymapWaypointTeleportTransition");
         copySystemPropertyIfAbsent("gpom.architecturecraft.fastShapeLighting");
         copySystemPropertyIfAbsent("gpom.architecturecraft.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.architecturecraft.parentMaterialOcclusion.enabled");
@@ -1563,6 +1568,10 @@ public final class GpomEarlyConfig {
 
     public static boolean betterPortalsCleanupClientWorldsEnabled() {
         return booleanValue("gpom.betterPortals.cleanupClientWorlds");
+    }
+
+    public static boolean betterPortalsJourneyMapWaypointTeleportTransitionEnabled() {
+        return booleanValue("gpom.betterPortals.journeymapWaypointTeleportTransition");
     }
 
     public static boolean architectureCraftFastShapeLightingEnabled() {
