@@ -56,7 +56,7 @@ public final class GpomEarlyConfig {
                     + BINNIE_FLUID_PREINIT_DENYLIST + ","
                     + CLIENT_PREINIT_THREAD_AFFINITY_DENYLIST;
     private static final String DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST =
-            "thaumcraft,aether_legacy";
+            "thaumcraft,aether_legacy,architecturecraft";
     private static final String DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST =
             "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy";
 
@@ -146,6 +146,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.mouseTweaks.ae2Terminals.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.pinnedCraftOverlay.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.extendedCraftingLowerTierTransfer.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.draconicFusionTransfer.enabled", "true");
         DEFAULTS.setProperty("gpom.journeymap.waypointDimensionDropup.enabled", "true");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.enabled", "false");
@@ -160,7 +162,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
-        DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "false");
         DEFAULTS.setProperty("gpom.architecturecraft.fastShapeLighting", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
@@ -414,6 +416,14 @@ public final class GpomEarlyConfig {
         return booleanValue("fml.parallel.loadComplete.dag.enabled");
     }
 
+    public static boolean heiExtendedCraftingLowerTierTransferEnabled() {
+        return booleanValue("gpom.hei.extendedCraftingLowerTierTransfer.enabled");
+    }
+
+    public static boolean heiDraconicFusionTransferEnabled() {
+        return booleanValue("gpom.hei.draconicFusionTransfer.enabled");
+    }
+
     private static void load() {
         File file = configFile();
         ensureDefaultFile(file);
@@ -538,6 +548,10 @@ public final class GpomEarlyConfig {
         writeSection(writer, "Construction Shortcuts", "Fine-grained controls for GPOM's Forge construction shortcuts. Denied mods fall back to Forge's original behavior for the named shortcut only.",
                 "gpom.construction.genericSidedProxies.denylist",
                 "gpom.construction.genericAutomaticSubscribers.denylist"
+        );
+        writeSection(writer, "HEI QoL", "Client-side Had Enough Items integration tweaks. These only register when the relevant target mod is loaded.",
+                "gpom.hei.extendedCraftingLowerTierTransfer.enabled",
+                "gpom.hei.draconicFusionTransfer.enabled"
         );
         writeSection(writer, "GPOM Logging", "Controls GPOM's own logger and high-volume categories. Keep the root logger enabled when diagnostics such as world lifecycle snapshots are needed.",
                 "gpom.logging.enabled",
@@ -922,6 +936,10 @@ public final class GpomEarlyConfig {
                 return "Adds a client-only pinned Just Enough Calculation craft overlay to normal container screens, with a GPOM pin toggle on JEC's craft screen. No-ops when JEC is absent.";
             case "gpom.jecalculation.fuzzyVolatileItemNbt.enabled":
                 return "Lets JEC match saved recipe outputs with volatile item NBT or Forge capability payloads, fixing calculator misses for charged/capability-backed outputs such as jetpacks.";
+            case "gpom.hei.extendedCraftingLowerTierTransfer.enabled":
+                return "Adds HEI transfer buttons for lower-tier ExtendedCrafting table recipes in higher-tier table GUIs, mapping the lower recipe into the centered sub-grid.";
+            case "gpom.hei.draconicFusionTransfer.enabled":
+                return "Adds a HEI transfer button for Draconic Evolution Fusion Crafting that stages catalyst and injector ingredients through a server-validated packet.";
             case "gpom.mainMenuStartupTime.enabled":
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
             case "gpom.baubles.sideSlots.enabled":
@@ -949,7 +967,7 @@ public final class GpomEarlyConfig {
             case "gpom.betterPortals.fixGuavaAddCallback":
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
             case "gpom.betterPortals.cleanupClientWorlds":
-                return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. No-op when BetterPortals is absent.";
+                return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. Experimental; keep false unless debugging retained BetterPortals client worlds.";
             case "gpom.architecturecraft.fastShapeLighting":
                 return "Uses brightness lighting instead of ArchitectureCraft's per-vertex ambient occlusion for shape chunk rebuilds. This reduces rebuild cost for dense shape builds at the cost of flatter lighting. Automatically skipped when AUSM is installed.";
             case "gpom.architecturecraft.accurateHitboxes":
@@ -1163,6 +1181,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.vintageFix.skipUcwDefinitionEarlyModelLoad");
         copySystemPropertyIfAbsent("gpom.ctm.tolerateUnknownRenderLayer");
         copySystemPropertyIfAbsent("gpom.ctm.suppressTextureMetadataErrorSpam");
+        copySystemPropertyIfAbsent("gpom.hei.extendedCraftingLowerTierTransfer.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.draconicFusionTransfer.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.logs.constructCriticalPath.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
         copySystemPropertyIfAbsent("gpom.startupProfiler.probeHighVolumeEventBusPosts");

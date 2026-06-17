@@ -76,6 +76,7 @@ public final class HeiOptimizations {
     private static final int HEI_ITEM_STACK_CACHE_MAGIC = 0x47504849;
     private static final int JER_VILLAGER_TRADE_CACHE_VERSION = 1;
     private static final int JER_VILLAGER_TRADE_CACHE_MAGIC = 0x47504A56;
+    private static final String GPOM_HEI_QOL_PLUGIN = "com.l.gpom.compat.hei.GpomHeiQoLPlugin";
     private static final int FORESTRY_BOTTLER_RECIPE_CACHE_VERSION = 1;
     private static final int FORESTRY_BOTTLER_RECIPE_CACHE_MAGIC = 0x47504642;
     private static final int EXTRATREES_LUMBERMILL_RECIPE_CACHE_VERSION = 1;
@@ -210,6 +211,9 @@ public final class HeiOptimizations {
                 } finally {
                     instantiateNanos += System.nanoTime() - instantiateStarted;
                 }
+            }
+            if (ensureGpomHeiQoLPlugin(plugins, loader)) {
+                GPOM.LOGGER.info("[HEI Optimizations] Added GPOM HEI QoL plugin to HEI plugin list");
             }
 
             if (FAST_PREINIT_PLUGIN_DISCOVERY_DEEP_PROBES) {
@@ -3772,6 +3776,28 @@ public final class HeiOptimizations {
             return new JeiPluginClassLoadResult(className, type, null, System.nanoTime() - startedAt);
         } catch (Throwable throwable) {
             return new JeiPluginClassLoadResult(className, null, throwable, System.nanoTime() - startedAt);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static boolean ensureGpomHeiQoLPlugin(List plugins, ClassLoader loader) {
+        if (plugins == null) {
+            return false;
+        }
+        for (Object plugin : plugins) {
+            if (plugin != null && GPOM_HEI_QOL_PLUGIN.equals(plugin.getClass().getName())) {
+                return false;
+            }
+        }
+
+        try {
+            ClassLoader effectiveLoader = loader == null ? HeiOptimizations.class.getClassLoader() : loader;
+            Class<?> pluginClass = Class.forName(GPOM_HEI_QOL_PLUGIN, false, effectiveLoader);
+            plugins.add(pluginClass.newInstance());
+            return true;
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[HEI Optimizations] Failed to add GPOM HEI QoL plugin", throwable);
+            return false;
         }
     }
 
