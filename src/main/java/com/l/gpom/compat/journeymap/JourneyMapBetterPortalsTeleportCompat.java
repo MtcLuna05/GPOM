@@ -26,6 +26,10 @@ public final class JourneyMapBetterPortalsTeleportCompat {
     private static volatile Method getYMethod;
     private static volatile Method getZMethod;
     private static volatile Method getDimMethod;
+    private static volatile Field worldProviderField;
+    private static volatile Method providerDimensionMethod;
+    private static volatile Field entityPitchField;
+    private static volatile Method setLocationAndAnglesMethod;
     private static volatile Boolean betterPortalsTransitionPresent;
 
     private JourneyMapBetterPortalsTeleportCompat() {
@@ -45,12 +49,13 @@ public final class JourneyMapBetterPortalsTeleportCompat {
             return false;
         }
         EntityPlayerMP player = (EntityPlayerMP) entity;
-        World startWorld = player.world;
-        if (startWorld == null || startWorld == destinationWorld || !player.isEntityAlive()) {
-            return false;
-        }
 
         try {
+            World startWorld = player.getEntityWorld();
+            if (startWorld == null || startWorld == destinationWorld || !player.isEntityAlive()) {
+                return false;
+            }
+
             Object handler = transitionHandler();
             if (handler == null || !betterPortalsTransitionEnabled(handler)) {
                 return false;
@@ -60,12 +65,12 @@ public final class JourneyMapBetterPortalsTeleportCompat {
             double x = doubleLocation(location, "getX") + 0.5D;
             double y = doubleLocation(location, "getY");
             double z = doubleLocation(location, "getZ") + 0.5D;
-            if (dimension != ((WorldServer) destinationWorld).provider.getDimension()) {
+            if (dimension != worldDimension(destinationWorld)) {
                 return false;
             }
 
             player.dismountRidingEntity();
-            WaypointTeleporter teleporter = new WaypointTeleporter(x, y, z, yaw, player.rotationPitch);
+            WaypointTeleporter teleporter = new WaypointTeleporter(x, y, z, yaw, entityPitch(player));
             Object result = transferPlayerToDimension(handler).invoke(handler, player, Integer.valueOf(dimension), teleporter);
             boolean handled = result instanceof Boolean && ((Boolean) result).booleanValue();
             if (handled && GpomEarlyConfig.optimizationInfoLogsEnabled()) {
@@ -188,6 +193,74 @@ public final class JourneyMapBetterPortalsTeleportCompat {
         return method;
     }
 
+    private static int worldDimension(World world) throws ReflectiveOperationException {
+        Field field = worldProviderField;
+        if (field == null) {
+            field = findField(world.getClass(), "provider", "field_73011_w");
+            worldProviderField = field;
+        }
+        Object provider = field.get(world);
+        if (provider == null) {
+            throw new IllegalStateException("World provider is null");
+        }
+        Method method = providerDimensionMethod;
+        if (method == null) {
+            method = provider.getClass().getMethod("getDimension");
+            method.setAccessible(true);
+            providerDimensionMethod = method;
+        }
+        Object result = method.invoke(provider);
+        if (!(result instanceof Number)) {
+            throw new IllegalStateException("WorldProvider.getDimension returned " + result);
+        }
+        return ((Number) result).intValue();
+    }
+
+    private static float entityPitch(Entity entity) throws ReflectiveOperationException {
+        Field field = entityPitchField;
+        if (field == null) {
+            field = findField(entity.getClass(), "rotationPitch", "field_70125_A");
+            entityPitchField = field;
+        }
+        Object result = field.get(entity);
+        if (!(result instanceof Number)) {
+            throw new IllegalStateException("Entity rotation pitch field returned " + result);
+        }
+        return ((Number) result).floatValue();
+    }
+
+    private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
+        Class<?> current = type;
+        while (current != null) {
+            for (String name : names) {
+                try {
+                    Field field = current.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        throw new NoSuchFieldException(type.getName() + " " + java.util.Arrays.toString(names));
+    }
+
+    private static Method findMethod(Class<?> type, Class<?>[] parameterTypes, String... names) throws NoSuchMethodException {
+        Class<?> current = type;
+        while (current != null) {
+            for (String name : names) {
+                try {
+                    Method method = current.getDeclaredMethod(name, parameterTypes);
+                    method.setAccessible(true);
+                    return method;
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        throw new NoSuchMethodException(type.getName() + " " + java.util.Arrays.toString(names));
+    }
+
     private static void logFailure(String key, Throwable throwable) {
         if (!FAILURE_LOG_KEYS.add(key)) {
             return;
@@ -212,10 +285,35 @@ public final class JourneyMapBetterPortalsTeleportCompat {
 
         @Override
         public void placeEntity(World world, Entity entity, float yaw) {
-            if (world instanceof WorldServer) {
-                ((WorldServer) world).getChunkProvider().loadChunk(MathHelper.floor(this.x) >> 4, MathHelper.floor(this.z) >> 4);
+            tryLoadChunk(world, this.x, this.z);
+            try {
+                Method method = setLocationAndAnglesMethod;
+                if (method == null) {
+                    method = findMethod(
+                            entity.getClass(),
+                            new Class<?>[]{double.class, double.class, double.class, float.class, float.class},
+                            "setLocationAndAngles",
+                            "func_70012_b"
+                    );
+                    setLocationAndAnglesMethod = method;
+                }
+                method.invoke(entity, Double.valueOf(this.x), Double.valueOf(this.y), Double.valueOf(this.z), Float.valueOf(this.yaw), Float.valueOf(this.pitch));
+            } catch (Throwable throwable) {
+                throw new IllegalStateException("Failed to place JourneyMap BetterPortals transition entity", throwable);
             }
-            entity.setLocationAndAngles(this.x, this.y, this.z, this.yaw, this.pitch);
+        }
+
+        private static void tryLoadChunk(World world, double x, double z) {
+            if (!(world instanceof WorldServer)) {
+                return;
+            }
+            try {
+                Method providerMethod = findMethod(world.getClass(), new Class<?>[0], "getChunkProvider", "func_72863_F");
+                Object provider = providerMethod.invoke(world);
+                Method loadChunk = findMethod(provider.getClass(), new Class<?>[]{int.class, int.class}, "loadChunk", "func_186028_c");
+                loadChunk.invoke(provider, Integer.valueOf(MathHelper.floor(x) >> 4), Integer.valueOf(MathHelper.floor(z) >> 4));
+            } catch (Throwable ignored) {
+            }
         }
     }
 }
