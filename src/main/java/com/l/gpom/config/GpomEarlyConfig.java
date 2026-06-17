@@ -165,7 +165,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
         DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
-        DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "false");
+        DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
@@ -959,7 +959,7 @@ public final class GpomEarlyConfig {
             case "gpom.blockcraftery.accurateHitboxes":
                 return "Adds optional Blockcraftery ray-hitbox fixes for editable slants, corners, and copied-block cubes. No-op when Blockcraftery is absent.";
             case "gpom.blockcraftery.parentMaterialOcclusion.enabled":
-                return "Lets Blockcraftery copied-block cubes answer side-render and side-occlusion checks as their copied material. Experimental; disabled by default because it can make framed-block AO look too dark or uneven.";
+                return "Lets Blockcraftery copied-block cubes answer side-render and side-occlusion checks as their copied material, matching adjacent copied translucent/solid block culling. Disable only if a copied block has broken side-render logic.";
             case "gpom.blockcraftery.modelRenderLayerCompat":
                 return "Rewrites Blockcraftery copied-block model layer checks to use Forge canRenderInLayer. Automatically skipped when AUSM is installed, because AUSM owns shader render-layer routing.";
             case "gpom.journeymap.waypointDimensionDropup.enabled":

@@ -211,6 +211,7 @@ public final class BlockcrafteryHitboxCompat {
             BlockPos pos,
             EnumFacing side
     ) {
+        boolean fallback = copiedShouldSideBeRendered(hostBlock, hostState, world, pos, side);
         return copiedBlockBoolean(
                 hostBlock,
                 world,
@@ -218,7 +219,7 @@ public final class BlockcrafteryHitboxCompat {
                 DOES_SIDE_BLOCK_RENDERING_METHODS,
                 "doesSideBlockRendering",
                 "doesSideBlockRendering",
-                true,
+                fallback,
                 side
         );
     }

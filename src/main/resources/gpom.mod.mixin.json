@@ -27,6 +27,7 @@
     "client.MixinGuiScreenWorkingWorldLoading",
     "client.MixinGuiMainMenuStartupOverlay",
     "client.MixinMinecraftMouseFocus",
+    "client.MixinMouseHelperFocusDelta",
     "astralsorcery.MixinAstralSorceryClientConnectionEventHandler",
     "betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup",
     "client.render.MixinEntityRendererWorldLoadingScreen",
