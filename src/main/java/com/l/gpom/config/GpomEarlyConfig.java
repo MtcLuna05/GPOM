@@ -170,6 +170,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
+        DEFAULTS.setProperty("gpom.journeymap.cleanupLeaksOnDimensionHandoff", "false");
+        DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.registry.ignoreMissingSoundEventNamespaces", "erebus");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
@@ -640,6 +642,8 @@ public final class GpomEarlyConfig {
                 "gpom.blockcraftery.parentMaterialOcclusion.enabled",
                 "gpom.blockcraftery.modelRenderLayerCompat",
                 "gpom.journeymap.cleanupLeaks",
+                "gpom.journeymap.cleanupLeaksOnDimensionHandoff",
+                "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
                 "gpom.enderio.repairMissingTileEntityMappings",
                 "gpom.registry.ignoreMissingSoundEventNamespaces"
         );
@@ -984,6 +988,10 @@ public final class GpomEarlyConfig {
                 return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaks":
                 return "Reflectively clears JourneyMap client world/task/chunk/render caches on client world unload, disconnect, and Minecraft loadWorld boundaries. No-op when JourneyMap is absent.";
+            case "gpom.journeymap.cleanupLeaksOnDimensionHandoff":
+                return "Also runs JourneyMap's full reflective leak cleanup during ordinary client dimension handoffs. Disabled by default because the purge is synchronous and can stall death/respawn dimension switches.";
+            case "gpom.scannable.skipRedundantConfigOreCacheRebuilds":
+                return "Skips Scannable's expensive ore lookup rebuild when the server sends settings identical to the client settings already applied.";
             case "gpom.enderio.repairMissingTileEntityMappings":
                 return "After EnderIO load, re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. No-op when EnderIO is absent or mappings are already present.";
             case "gpom.registry.ignoreMissingSoundEventNamespaces":
@@ -1293,6 +1301,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.blockcraftery.modelRenderLayerCompat");
         copySystemPropertyIfAbsent("gpom.journeymap.waypointDimensionDropup.enabled");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
+        copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaksOnDimensionHandoff");
+        copySystemPropertyIfAbsent("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingSoundEventNamespaces");
     }
@@ -1581,6 +1591,14 @@ public final class GpomEarlyConfig {
 
     public static boolean journeyMapCleanupLeaksEnabled() {
         return booleanValue("gpom.journeymap.cleanupLeaks");
+    }
+
+    public static boolean journeyMapCleanupLeaksOnDimensionHandoffEnabled() {
+        return booleanValue("gpom.journeymap.cleanupLeaksOnDimensionHandoff");
+    }
+
+    public static boolean scannableSkipRedundantConfigOreCacheRebuildsEnabled() {
+        return booleanValue("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
     }
 
     public static boolean journeyMapWaypointDimensionDropupEnabled() {

@@ -14,7 +14,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class JourneyMapLeakCleanup {
     private static final Set<String> FAILURE_LOG_KEYS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final AtomicBoolean CLIENT_CLEANUP_SCHEDULED = new AtomicBoolean();
+    private static final long CLIENT_WORLD_UNLOAD_SUPPRESSION_MILLIS = 15_000L;
     private static volatile Boolean journeyMapPresent;
+    private static volatile long suppressClientWorldUnloadCleanupUntilMillis;
 
     private JourneyMapLeakCleanup() {
     }
@@ -47,6 +49,20 @@ public final class JourneyMapLeakCleanup {
                 GPOM.LOGGER.info("[JourneyMapLeakCleanup] Cleared {} JourneyMap lifecycle states after {}", actions, reason);
             }
         }
+    }
+
+    public static void suppressClientWorldUnloadCleanup(String reason) {
+        suppressClientWorldUnloadCleanupUntilMillis = Math.max(
+                suppressClientWorldUnloadCleanupUntilMillis,
+                System.currentTimeMillis() + CLIENT_WORLD_UNLOAD_SUPPRESSION_MILLIS
+        );
+        if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+            GPOM.LOGGER.info("[JourneyMapLeakCleanup] Suppressed client world unload cleanup after {}", reason);
+        }
+    }
+
+    public static boolean isClientWorldUnloadCleanupSuppressed() {
+        return System.currentTimeMillis() < suppressClientWorldUnloadCleanupUntilMillis;
     }
 
     private static boolean isClientThread() {

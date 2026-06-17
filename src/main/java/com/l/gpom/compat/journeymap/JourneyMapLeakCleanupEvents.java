@@ -27,6 +27,9 @@ public final class JourneyMapLeakCleanupEvents {
     public void worldUnload(WorldEvent.Unload event) {
         World world = event.getWorld();
         if (world instanceof WorldClient) {
+            if (JourneyMapLeakCleanup.isClientWorldUnloadCleanupSuppressed()) {
+                return;
+            }
             JourneyMapLeakCleanup.cleanup("client world unload");
         }
     }
