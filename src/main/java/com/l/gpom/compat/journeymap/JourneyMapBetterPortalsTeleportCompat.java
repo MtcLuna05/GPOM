@@ -12,16 +12,24 @@ import net.minecraftforge.common.util.ITeleporter;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class JourneyMapBetterPortalsTeleportCompat {
     private static final String TRANSITION_HANDLER = "de.johni0702.minecraft.betterportals.impl.transition.server.DimensionTransitionHandler";
+    private static final String SERVER_WORLDS_MANAGER_KT = "de.johni0702.minecraft.view.server.ServerWorldsManagerKt";
+    private static final boolean SRG_RUNTIME = detectSrgRuntime();
     private static final Set<String> FAILURE_LOG_KEYS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final Set<String> SKIP_LOG_KEYS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static volatile Object transitionHandlerInstance;
     private static volatile Method getEnabledMethod;
     private static volatile Method transferPlayerToDimensionMethod;
+    private static volatile Method serverWorldsManagerMethod;
+    private static volatile Method managerViewsMethod;
+    private static volatile Method transitionViewsMethod;
     private static volatile Method getXMethod;
     private static volatile Method getYMethod;
     private static volatile Method getZMethod;
@@ -29,6 +37,10 @@ public final class JourneyMapBetterPortalsTeleportCompat {
     private static volatile Field worldProviderField;
     private static volatile Method providerDimensionMethod;
     private static volatile Field entityPitchField;
+    private static volatile Method entityWorldMethod;
+    private static volatile Method entityAliveMethod;
+    private static volatile Method entityDismountMethod;
+    private static volatile Method entityNameMethod;
     private static volatile Method setLocationAndAnglesMethod;
     private static volatile Boolean betterPortalsTransitionPresent;
 
@@ -51,13 +63,17 @@ public final class JourneyMapBetterPortalsTeleportCompat {
         EntityPlayerMP player = (EntityPlayerMP) entity;
 
         try {
-            World startWorld = player.getEntityWorld();
-            if (startWorld == null || startWorld == destinationWorld || !player.isEntityAlive()) {
+            World startWorld = entityWorld(player);
+            if (startWorld == null || startWorld == destinationWorld || !entityAlive(player)) {
                 return false;
             }
 
             Object handler = transitionHandler();
             if (handler == null || !betterPortalsTransitionEnabled(handler)) {
+                return false;
+            }
+
+            if (!betterPortalsWaypointStateSafe(handler, player, startWorld)) {
                 return false;
             }
 
@@ -69,14 +85,14 @@ public final class JourneyMapBetterPortalsTeleportCompat {
                 return false;
             }
 
-            player.dismountRidingEntity();
+            dismountEntity(player);
             WaypointTeleporter teleporter = new WaypointTeleporter(x, y, z, yaw, entityPitch(player));
             Object result = transferPlayerToDimension(handler).invoke(handler, player, Integer.valueOf(dimension), teleporter);
             boolean handled = result instanceof Boolean && ((Boolean) result).booleanValue();
             if (handled && GpomEarlyConfig.optimizationInfoLogsEnabled()) {
                 GPOM.LOGGER.info(
                         "[JourneyMapBetterPortals] Routed waypoint teleport for {} to dim {} through BetterPortals transition",
-                        player.getName(),
+                        entityName(player),
                         Integer.valueOf(dimension)
                 );
             }
@@ -121,6 +137,67 @@ public final class JourneyMapBetterPortalsTeleportCompat {
         }
         Object result = method.invoke(handler);
         return result instanceof Boolean && ((Boolean) result).booleanValue();
+    }
+
+    private static boolean betterPortalsWaypointStateSafe(Object handler, EntityPlayerMP player, World startWorld) throws ReflectiveOperationException {
+        Object manager = serverWorldsManager(player);
+        if (manager == null) {
+            logSkip("no-manager", "BetterPortals has no server worlds manager for the player");
+            return false;
+        }
+        if (hasPendingTransitionView(handler, manager)) {
+            logSkip("pending-transition", "BetterPortals already has a pending dimension-transition view");
+            return false;
+        }
+        if (!GpomEarlyConfig.betterPortalsJourneyMapWaypointTeleportRequireActiveViewEnabled()) {
+            return true;
+        }
+        if (!hasActiveViewForWorld(manager, startWorld)) {
+            logSkip("no-active-view", "BetterPortals has no active non-main view for the source world");
+            return false;
+        }
+        return true;
+    }
+
+    private static Object serverWorldsManager(EntityPlayerMP player) throws ReflectiveOperationException {
+        Method method = serverWorldsManagerMethod;
+        if (method == null) {
+            Class<?> clazz = Class.forName(SERVER_WORLDS_MANAGER_KT, false, JourneyMapBetterPortalsTeleportCompat.class.getClassLoader());
+            method = clazz.getDeclaredMethod("getWorldsManager", EntityPlayerMP.class);
+            method.setAccessible(true);
+            serverWorldsManagerMethod = method;
+        }
+        return method.invoke(null, player);
+    }
+
+    private static boolean hasPendingTransitionView(Object handler, Object manager) throws ReflectiveOperationException {
+        Method method = transitionViewsMethod;
+        if (method == null) {
+            method = handler.getClass().getDeclaredMethod("getViews");
+            method.setAccessible(true);
+            transitionViewsMethod = method;
+        }
+        Object views = method.invoke(handler);
+        if (!(views instanceof Map)) {
+            return false;
+        }
+        Object playerViews = ((Map<?, ?>) views).get(manager);
+        return playerViews instanceof Map && !((Map<?, ?>) playerViews).isEmpty();
+    }
+
+    private static boolean hasActiveViewForWorld(Object manager, World startWorld) throws ReflectiveOperationException {
+        Method method = managerViewsMethod;
+        if (method == null) {
+            method = manager.getClass().getMethod("getViews");
+            method.setAccessible(true);
+            managerViewsMethod = method;
+        }
+        Object views = method.invoke(manager);
+        if (!(views instanceof Map)) {
+            return false;
+        }
+        Object sourceWorldViews = ((Map<?, ?>) views).get(startWorld);
+        return sourceWorldViews instanceof List && !((List<?>) sourceWorldViews).isEmpty();
     }
 
     private static Method transferPlayerToDimension(Object handler) throws ReflectiveOperationException {
@@ -229,10 +306,50 @@ public final class JourneyMapBetterPortalsTeleportCompat {
         return ((Number) result).floatValue();
     }
 
+    private static World entityWorld(Entity entity) throws ReflectiveOperationException {
+        Method method = entityWorldMethod;
+        if (method == null) {
+            method = findMethod(entity.getClass(), new Class<?>[0], "func_130014_f_", "getEntityWorld");
+            entityWorldMethod = method;
+        }
+        Object result = method.invoke(entity);
+        return result instanceof World ? (World) result : null;
+    }
+
+    private static boolean entityAlive(Entity entity) throws ReflectiveOperationException {
+        Method method = entityAliveMethod;
+        if (method == null) {
+            method = findMethod(entity.getClass(), new Class<?>[0], "func_70089_S", "isEntityAlive");
+            entityAliveMethod = method;
+        }
+        Object result = method.invoke(entity);
+        return result instanceof Boolean && ((Boolean) result).booleanValue();
+    }
+
+    private static void dismountEntity(Entity entity) throws ReflectiveOperationException {
+        Method method = entityDismountMethod;
+        if (method == null) {
+            method = findMethod(entity.getClass(), new Class<?>[0], "func_184210_p", "dismountRidingEntity");
+            entityDismountMethod = method;
+        }
+        method.invoke(entity);
+    }
+
+    private static String entityName(Entity entity) throws ReflectiveOperationException {
+        Method method = entityNameMethod;
+        if (method == null) {
+            method = findMethod(entity.getClass(), new Class<?>[0], "func_70005_c_", "getName");
+            entityNameMethod = method;
+        }
+        Object result = method.invoke(entity);
+        return result instanceof String ? (String) result : String.valueOf(entity);
+    }
+
     private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
         Class<?> current = type;
+        String[] orderedNames = orderedNames(names);
         while (current != null) {
-            for (String name : names) {
+            for (String name : orderedNames) {
                 try {
                     Field field = current.getDeclaredField(name);
                     field.setAccessible(true);
@@ -247,8 +364,9 @@ public final class JourneyMapBetterPortalsTeleportCompat {
 
     private static Method findMethod(Class<?> type, Class<?>[] parameterTypes, String... names) throws NoSuchMethodException {
         Class<?> current = type;
+        String[] orderedNames = orderedNames(names);
         while (current != null) {
-            for (String name : names) {
+            for (String name : orderedNames) {
                 try {
                     Method method = current.getDeclaredMethod(name, parameterTypes);
                     method.setAccessible(true);
@@ -261,11 +379,55 @@ public final class JourneyMapBetterPortalsTeleportCompat {
         throw new NoSuchMethodException(type.getName() + " " + java.util.Arrays.toString(names));
     }
 
+    private static String[] orderedNames(String... names) {
+        if (names.length < 2) {
+            return names;
+        }
+        String[] ordered = new String[names.length];
+        int index = 0;
+        for (String name : names) {
+            if (isSrgName(name) == SRG_RUNTIME) {
+                ordered[index++] = name;
+            }
+        }
+        for (String name : names) {
+            if (isSrgName(name) != SRG_RUNTIME) {
+                ordered[index++] = name;
+            }
+        }
+        return ordered;
+    }
+
+    private static boolean isSrgName(String name) {
+        return name.startsWith("func_") || name.startsWith("field_");
+    }
+
+    private static boolean detectSrgRuntime() {
+        try {
+            Class<?> stateClass = Class.forName(
+                    "net.minecraft.block.state.IBlockState",
+                    false,
+                    JourneyMapBetterPortalsTeleportCompat.class.getClassLoader()
+            );
+            stateClass.getMethod("func_177230_c");
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     private static void logFailure(String key, Throwable throwable) {
         if (!FAILURE_LOG_KEYS.add(key)) {
             return;
         }
         GPOM.LOGGER.warn("[JourneyMapBetterPortals] {} failed; falling back to JourneyMap teleport: {}", key, throwable.toString());
+    }
+
+    private static void logSkip(String key, String reason) {
+        if (!GpomEarlyConfig.optimizationInfoLogsEnabled() || !SKIP_LOG_KEYS.add(key)) {
+            return;
+        }
+        GPOM.LOGGER.info("[JourneyMapBetterPortals] Skipped BetterPortals waypoint transition: {}; falling back to JourneyMap teleport", reason);
     }
 
     private static final class WaypointTeleporter implements ITeleporter {

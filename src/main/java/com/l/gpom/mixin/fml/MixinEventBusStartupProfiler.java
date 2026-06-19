@@ -2,6 +2,7 @@ package com.l.gpom.mixin.fml;
 
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.EventBusRegistrationOptimizations;
+import com.l.gpom.profiling.RuntimeSinkProfiler;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.eventhandler.Event;
@@ -25,6 +26,9 @@ public abstract class MixinEventBusStartupProfiler {
 
     @Unique
     private static final ThreadLocal<Deque<String>> gpom$postNames = ThreadLocal.withInitial(ArrayDeque::new);
+
+    @Unique
+    private static final ThreadLocal<Deque<Long>> gpom$runtimePostStarts = ThreadLocal.withInitial(ArrayDeque::new);
 
     @Inject(method = "register(Ljava/lang/Object;)V", at = @At("HEAD"), cancellable = true)
     private void gpom$tryLazyStaticRegistration(Object target, CallbackInfo ci) {
@@ -54,6 +58,7 @@ public abstract class MixinEventBusStartupProfiler {
     @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("HEAD"))
     private void gpom$beginPost(Event event, CallbackInfoReturnable<Boolean> cir) {
         EventBusRegistrationOptimizations.sanitizePostedEventListeners((EventBus) (Object) this, event);
+        gpom$runtimePostStarts.get().push(RuntimeSinkProfiler.shouldProfileForgeEvent(event) ? RuntimeSinkProfiler.begin() : 0L);
         StartupProfiler.postPreInitProgressStage(gpom$postPreInitProgressStage(event));
         if (!StartupProfiler.isPostPreInitTransitionActive()) {
             gpom$postStarts.get().push(0L);
@@ -71,6 +76,9 @@ public abstract class MixinEventBusStartupProfiler {
 
     @Inject(method = "post(Lnet/minecraftforge/fml/common/eventhandler/Event;)Z", at = @At("RETURN"))
     private void gpom$endPost(Event event, CallbackInfoReturnable<Boolean> cir) {
+        Deque<Long> runtimeStarts = gpom$runtimePostStarts.get();
+        long runtimeStartedAt = runtimeStarts.isEmpty() ? 0L : runtimeStarts.pop();
+        RuntimeSinkProfiler.recordEventPost(event, runtimeStartedAt);
         Deque<Long> starts = gpom$postStarts.get();
         Deque<String> names = gpom$postNames.get();
         long startedAt = starts.isEmpty() ? 0L : starts.pop();

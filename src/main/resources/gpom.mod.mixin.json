@@ -16,7 +16,9 @@
     "fml.MixinGameRegistryRegistryParallel",
     "fml.MixinForgeModContainerConstructionProfiler",
     "fml.MixinLoadControllerStartupProfiler",
-    "baubles.MixinContainerPlayerSideSlots"
+    "agricraft.MixinWorldAgriCraftChannelBulkPlacement",
+    "baubles.MixinContainerPlayerSideSlots",
+    "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
@@ -30,6 +32,7 @@
     "client.MixinMouseHelperFocusDelta",
     "astralsorcery.MixinAstralSorceryClientConnectionEventHandler",
     "betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup",
+    "betterportals.MixinClientWorldsManagerImplDestroyMainViewGuard",
     "client.render.MixinEntityRendererWorldLoadingScreen",
     "client.resources.MixinMinecraftResourceStartupProfiler",
     "client.resources.MixinSimpleReloadableResourceManagerStartupProfiler",
@@ -39,7 +42,6 @@
     "client.render.MixinRenderGlobalLifecycleCleanup",
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",
-    "ae2.MixinAEBaseGuiMouseTweaksTerminals",
     "baubles.MixinGuiInventoryBaublesSideSlots",
     "baubles.MixinGuiContainerBaublesQuickEquip"
   ],

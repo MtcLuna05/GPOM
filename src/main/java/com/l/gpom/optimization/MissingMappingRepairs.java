@@ -60,6 +60,8 @@ public final class MissingMappingRepairs {
     ));
     private static final Set<String> IGNORED_MISSING_SOUND_NAMESPACES =
             GpomEarlyConfig.registryIgnoredMissingSoundEventNamespaces();
+    private static final Set<String> FAIL_MISSING_BLOCK_ITEM_NAMESPACES =
+            GpomEarlyConfig.registryFailMissingBlockItemNamespaces();
 
     private MissingMappingRepairs() {
     }
@@ -68,10 +70,20 @@ public final class MissingMappingRepairs {
     public static void onMissingBlockMappings(RegistryEvent.MissingMappings<Block> event) {
         for (RegistryEvent.MissingMappings.Mapping<Block> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
-            if (isMysticalLibAoAGrass(key)) {
+            if (isAdvancedRocketryWirelessTransciever(key)) {
+                remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("advancedrocketry", "wirelesstransceiver"), "block");
+            } else if (GpomEarlyConfig.registryRepairThaumicWondersMissingMappingsEnabled() && isThaumicWondersSameKeyBlock(key)) {
+                remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
+            } else if (GpomEarlyConfig.registryRepairThaumicWondersMissingMappingsEnabled() && isThaumicWondersPrimordialAccelerator(key)) {
+                remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("thaumicwonders", "primordial_siphon"), "block");
+            } else if (isModularMachineryFactoryController(key)) {
+                remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("modularmachinery", "blockfactorycontroller"), "block");
+            } else if (isMysticalLibAoAGrass(key)) {
                 remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("aoa3", path(key)), "block");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
+            } else if (shouldFailMissingBlockItemMapping(key)) {
+                failMissing(mapping, "block");
             }
         }
     }
@@ -80,10 +92,22 @@ public final class MissingMappingRepairs {
     public static void onMissingItemMappings(RegistryEvent.MissingMappings<Item> event) {
         for (RegistryEvent.MissingMappings.Mapping<Item> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
-            if (isMysticalLibAoAGrass(key)) {
+            if (isAdvancedRocketryWirelessTransciever(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("advancedrocketry", "wirelesstransceiver"), "item");
+            } else if (GpomEarlyConfig.registryRepairThaumicWondersMissingMappingsEnabled() && isThaumicWondersSameKeyItem(key)) {
+                remapSameKey(mapping, ForgeRegistries.ITEMS, "item");
+            } else if (GpomEarlyConfig.registryRepairThaumicWondersMissingMappingsEnabled() && isThaumicWondersCropItem(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, thaumicWondersCropReplacement(key), "item");
+            } else if (GpomEarlyConfig.registryRepairThaumicWondersMissingMappingsEnabled() && isThaumicWondersPrimordialAccelerator(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("thaumicwonders", "primordial_siphon"), "item");
+            } else if (isModularMachineryFactoryController(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("modularmachinery", "blockfactorycontroller"), "item");
+            } else if (isMysticalLibAoAGrass(key)) {
                 remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("aoa3", path(key)), "item");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.ITEMS, "item");
+            } else if (shouldFailMissingBlockItemMapping(key)) {
+                failMissing(mapping, "item");
             }
         }
     }
@@ -114,8 +138,7 @@ public final class MissingMappingRepairs {
 
     @SubscribeEvent
     public static void onMissingSoundMappings(RegistryEvent.MissingMappings<SoundEvent> event) {
-        int ignoredNamespaceMappings = 0;
-        StringBuilder ignoredExamples = new StringBuilder();
+        IgnoreSummary ignored = new IgnoreSummary("sound event", IGNORED_MISSING_SOUND_NAMESPACES);
         for (RegistryEvent.MissingMappings.Mapping<SoundEvent> mapping : event.getAllMappings()) {
             if (isAromaCritSound(mapping.key)) {
                 if (!remapSameKey(mapping, ForgeRegistries.SOUND_EVENTS, "sound")) {
@@ -124,22 +147,10 @@ public final class MissingMappingRepairs {
                 }
             } else if (isIgnoredMissingSoundNamespace(mapping.key)) {
                 mapping.ignore();
-                ignoredNamespaceMappings++;
-                if (ignoredExamples.length() < 160) {
-                    if (ignoredExamples.length() > 0) {
-                        ignoredExamples.append(", ");
-                    }
-                    ignoredExamples.append(mapping.key);
-                }
+                ignored.add(mapping.key);
             }
         }
-        if (ignoredNamespaceMappings > 0) {
-            GPOM.LOGGER.warn(
-                    "[MissingMappingRepairs] Ignored {} stale missing sound event mapping(s) from configured namespace(s) {}; examples: {}",
-                    ignoredNamespaceMappings,
-                    IGNORED_MISSING_SOUND_NAMESPACES,
-                    ignoredExamples);
-        }
+        ignored.log();
     }
 
     private static boolean isAoAGrass(ResourceLocation key) {
@@ -152,6 +163,73 @@ public final class MissingMappingRepairs {
 
     private static boolean isBlockcrafteryEditableBlock(ResourceLocation key) {
         return key != null && "blockcraftery".equals(namespace(key)) && BLOCKCRAFTERY_EDITABLE_BLOCKS.contains(path(key));
+    }
+
+    private static boolean isAdvancedRocketryWirelessTransciever(ResourceLocation key) {
+        return key != null
+                && "advancedrocketry".equals(namespace(key))
+                && "wirelesstransciever".equals(path(key));
+    }
+
+    private static boolean isModularMachineryFactoryController(ResourceLocation key) {
+        return key != null
+                && "modularmachinery".equals(namespace(key))
+                && path(key).endsWith("_factory_controller");
+    }
+
+    private static boolean isThaumicWondersSameKeyBlock(ResourceLocation key) {
+        if (key == null || !"thaumicwonders".equals(namespace(key))) {
+            return false;
+        }
+        String path = path(key);
+        return "placeholder_adv_alch_construct".equals(path)
+                || "placeholder_thaumium_block".equals(path)
+                || "placeholder_void_metal_block".equals(path)
+                || "cinderpearl_crop".equals(path)
+                || "shimmerleaf_crop".equals(path)
+                || "vishroom_crop".equals(path);
+    }
+
+    private static boolean isThaumicWondersSameKeyItem(ResourceLocation key) {
+        if (key == null || !"thaumicwonders".equals(namespace(key))) {
+            return false;
+        }
+        String path = path(key);
+        return "placeholder_adv_alch_construct".equals(path)
+                || "placeholder_thaumium_block".equals(path)
+                || "placeholder_void_metal_block".equals(path);
+    }
+
+    private static boolean isThaumicWondersCropItem(ResourceLocation key) {
+        if (key == null || !"thaumicwonders".equals(namespace(key))) {
+            return false;
+        }
+        String path = path(key);
+        return "cinderpearl_crop".equals(path)
+                || "shimmerleaf_crop".equals(path)
+                || "vishroom_crop".equals(path);
+    }
+
+    private static ResourceLocation thaumicWondersCropReplacement(ResourceLocation key) {
+        String path = path(key);
+        if ("cinderpearl_crop".equals(path)) {
+            return new ResourceLocation("thaumicwonders", "cinderpearl_seed");
+        }
+        if ("shimmerleaf_crop".equals(path)) {
+            return new ResourceLocation("thaumicwonders", "shimmerleaf_seed");
+        }
+        return new ResourceLocation("thaumicwonders", "vishroom_spore");
+    }
+
+    private static boolean isThaumicWondersPrimordialAccelerator(ResourceLocation key) {
+        if (key == null || !"thaumicwonders".equals(namespace(key))) {
+            return false;
+        }
+        String path = path(key);
+        return "primordial_accelerator".equals(path)
+                || "primordial_accelerator_tunnel".equals(path)
+                || "primordial_accelerator_terminus".equals(path)
+                || "primordial_accretion_chamber".equals(path);
     }
 
     private static boolean isCoFHCore(ResourceLocation key) {
@@ -168,6 +246,10 @@ public final class MissingMappingRepairs {
 
     private static boolean isIgnoredMissingSoundNamespace(ResourceLocation key) {
         return key != null && IGNORED_MISSING_SOUND_NAMESPACES.contains(namespace(key));
+    }
+
+    private static boolean shouldFailMissingBlockItemMapping(ResourceLocation key) {
+        return key != null && FAIL_MISSING_BLOCK_ITEM_NAMESPACES.contains(namespace(key));
     }
 
     private static String namespace(ResourceLocation key) {
@@ -208,5 +290,52 @@ public final class MissingMappingRepairs {
             GPOM.LOGGER.warn("[MissingMappingRepairs] Remapped missing {} {} to {}", typeName, mapping.key, targetKey);
         }
         return true;
+    }
+
+    private static <T extends IForgeRegistryEntry<T>> void failMissing(RegistryEvent.MissingMappings.Mapping<T> mapping,
+                                                                       String typeName) {
+        mapping.fail();
+        GPOM.LOGGER.error(
+                "[MissingMappingRepairs] Failing world load because missing {} mapping {} belongs to protected namespace(s) {}",
+                typeName,
+                mapping.key,
+                FAIL_MISSING_BLOCK_ITEM_NAMESPACES
+        );
+    }
+
+    private static final class IgnoreSummary {
+        private final String typeName;
+        private final Set<String> namespaces;
+        private final StringBuilder examples = new StringBuilder();
+        private int count;
+
+        private IgnoreSummary(String typeName, Set<String> namespaces) {
+            this.typeName = typeName;
+            this.namespaces = namespaces;
+        }
+
+        private void add(ResourceLocation key) {
+            count++;
+            if (key == null || examples.length() >= 160) {
+                return;
+            }
+            if (examples.length() > 0) {
+                examples.append(", ");
+            }
+            examples.append(key);
+        }
+
+        private void log() {
+            if (count <= 0) {
+                return;
+            }
+            GPOM.LOGGER.warn(
+                    "[MissingMappingRepairs] Ignored {} stale missing {} mapping(s) from configured namespace(s) {}; examples: {}",
+                    count,
+                    typeName,
+                    namespaces,
+                    examples
+            );
+        }
     }
 }

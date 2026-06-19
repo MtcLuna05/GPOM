@@ -30,6 +30,7 @@ public final class WorldLoadingProgress {
     private static volatile long waitingForFirstWorldRenderAt;
     private static volatile boolean firstFrameLogged;
     private static volatile boolean disabledAfterFailure;
+    private static volatile boolean suspendedForBlockingScreen;
     private static volatile Field fontRendererField;
     private static volatile Method guiDrawRectMethod;
     private static volatile Method guiTexturedRectMethod;
@@ -72,6 +73,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
@@ -97,6 +99,7 @@ public final class WorldLoadingProgress {
                 return;
             }
             active = true;
+            suspendedForBlockingScreen = false;
             suppressTerrainStartUntilScreenClears = false;
             waitingForFirstWorldRender = false;
             waitingForFirstWorldRenderAt = 0L;
@@ -114,6 +117,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
@@ -132,6 +136,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
@@ -189,10 +194,45 @@ public final class WorldLoadingProgress {
         detail = "Handing control to the client";
         progress = 100;
         active = false;
+        suspendedForBlockingScreen = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
         suppressTerrainStartUntilScreenClears = true;
         GPOM.LOGGER.info("[WorldLoadingScreen] World loading finished after {} ms ({})", elapsedMs, reason == null ? "unknown" : reason);
+    }
+
+    public static void suspendForBlockingScreen(String reason) {
+        if (!active) {
+            return;
+        }
+        long elapsedMs = startedAt == 0L ? 0L : (System.nanoTime() - startedAt) / 1_000_000L;
+        active = false;
+        suspendedForBlockingScreen = true;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        suppressTerrainStartUntilScreenClears = false;
+        GPOM.LOGGER.info(
+                "[WorldLoadingScreen] Suspended GPOM world loading overlay after {} ms ({})",
+                elapsedMs,
+                reason == null ? "blocking GUI displayed" : reason
+        );
+    }
+
+    public static boolean isSuspendedForBlockingScreen() {
+        return enabled() && suspendedForBlockingScreen;
+    }
+
+    public static void resumeAfterBlockingScreen(String newStage, String newDetail, int newProgress) {
+        if (!enabled() || !suspendedForBlockingScreen) {
+            return;
+        }
+        active = true;
+        suspendedForBlockingScreen = false;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        update(newStage, newDetail, newProgress);
+        GPOM.LOGGER.info("[WorldLoadingScreen] Resumed GPOM world loading overlay after Forge blocking screen closed");
     }
 
     public static void markWaitingForFirstWorldRender() {
@@ -672,7 +712,34 @@ public final class WorldLoadingProgress {
             return false;
         }
         GuiScreen screen = currentScreen(minecraft);
+        if (isBlockingForgeScreen(screen)) {
+            return false;
+        }
         return active || screen == null || screen instanceof GuiScreenWorking || screen instanceof GuiDownloadTerrain;
+    }
+
+    public static boolean isBlockingForgeScreen(GuiScreen screen) {
+        if (screen == null) {
+            return false;
+        }
+        String className = screen.getClass().getName();
+        if ("net.minecraftforge.fml.client.GuiNotification".equals(className)
+                || "net.minecraftforge.fml.client.GuiConfirmation".equals(className)
+                || "net.minecraftforge.fml.client.GuiOldSaveLoadConfirm".equals(className)
+                || "net.minecraftforge.fml.client.GuiBackupFailed".equals(className)) {
+            return true;
+        }
+        return className.startsWith("net.minecraftforge.fml.client.Gui")
+                && (className.contains("Missing")
+                || className.contains("Error")
+                || className.contains("Confirmation")
+                || className.contains("Notification")
+                || className.contains("OldSave")
+                || className.contains("Backup")
+                || className.contains("Dupes")
+                || className.contains("Sorting")
+                || className.contains("WrongMinecraft")
+                || className.contains("AccessDenied"));
     }
 
     private static GuiScreen currentScreen(Minecraft minecraft) {

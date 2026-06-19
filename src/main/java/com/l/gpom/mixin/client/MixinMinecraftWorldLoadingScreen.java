@@ -5,6 +5,7 @@ import com.l.gpom.client.ClientDimensionHandoffCleanup;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanup;
+import com.l.gpom.profiling.RuntimeSinkProfiler;
 import com.l.gpom.profiling.WorldLifecycleProfiler;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
@@ -30,6 +31,36 @@ public abstract class MixinMinecraftWorldLoadingScreen {
     private static Field gpom$currentScreenField;
     private static Method gpom$displaySavingStringMethod;
     private static Method gpom$displayLoadingStringMethod;
+    private long gpom$loadWorldStartedAt;
+    private long gpom$loadRenderersStartedAt;
+    private long gpom$createPlayerStartedAt;
+    private long gpom$runTickStartedAt;
+    private long gpom$runGameLoopStartedAt;
+
+    @Inject(
+            method = {
+                    "runGameLoop()V",
+                    "func_71411_J()V"
+            },
+            at = @At("HEAD"),
+            require = 0
+    )
+    private void gpom$beginRunGameLoopProbe(CallbackInfo ci) {
+        gpom$runGameLoopStartedAt = RuntimeSinkProfiler.begin();
+    }
+
+    @Inject(
+            method = {
+                    "runGameLoop()V",
+                    "func_71411_J()V"
+            },
+            at = @At("RETURN"),
+            require = 0
+    )
+    private void gpom$endRunGameLoopProbe(CallbackInfo ci) {
+        RuntimeSinkProfiler.end("minecraft", "runGameLoop frame", gpom$runGameLoopStartedAt);
+        gpom$runGameLoopStartedAt = 0L;
+    }
 
     @Inject(
             method = {
@@ -77,6 +108,7 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadWorldStarted(WorldClient worldClient, String message, CallbackInfo ci) {
+        gpom$loadWorldStartedAt = RuntimeSinkProfiler.begin();
         WorldClient previousWorld = gpom$getWorld();
         WorldLifecycleProfiler.beginLoadWorld((Minecraft) (Object) this, previousWorld, worldClient, message);
         if (previousWorld != null && previousWorld != worldClient) {
@@ -118,9 +150,23 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadRenderers(WorldClient worldClient, String message, CallbackInfo ci) {
+        gpom$loadRenderersStartedAt = RuntimeSinkProfiler.begin();
         if (worldClient != null) {
             gpom$drawImmediate("Loading renderers", "Preparing chunk render state", 78);
         }
+    }
+
+    @Inject(
+            method = {
+                    "loadWorld(Lnet/minecraft/client/multiplayer/WorldClient;Ljava/lang/String;)V",
+                    "func_71353_a(Lnet/minecraft/client/multiplayer/WorldClient;Ljava/lang/String;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/RenderGlobal;setWorldAndLoadRenderers(Lnet/minecraft/client/multiplayer/WorldClient;)V", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$loadedRenderers(WorldClient worldClient, String message, CallbackInfo ci) {
+        RuntimeSinkProfiler.end("worldLoad", "RenderGlobal.setWorldAndLoadRenderers", gpom$loadRenderersStartedAt);
+        gpom$loadRenderersStartedAt = 0L;
     }
 
     @Inject(
@@ -132,7 +178,21 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$createClientPlayer(WorldClient worldClient, String message, CallbackInfo ci) {
+        gpom$createPlayerStartedAt = RuntimeSinkProfiler.begin();
         gpom$drawImmediate("Creating player", "Applying capabilities and client state", 84);
+    }
+
+    @Inject(
+            method = {
+                    "loadWorld(Lnet/minecraft/client/multiplayer/WorldClient;Ljava/lang/String;)V",
+                    "func_71353_a(Lnet/minecraft/client/multiplayer/WorldClient;Ljava/lang/String;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/PlayerControllerMP;createPlayer(Lnet/minecraft/world/World;Lnet/minecraft/stats/StatisticsManager;Lnet/minecraft/stats/RecipeBook;)Lnet/minecraft/client/entity/EntityPlayerSP;", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$createdClientPlayer(WorldClient worldClient, String message, CallbackInfo ci) {
+        RuntimeSinkProfiler.end("worldLoad", "PlayerControllerMP.createPlayer", gpom$createPlayerStartedAt);
+        gpom$createPlayerStartedAt = 0L;
     }
 
     @Inject(
@@ -144,6 +204,8 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$loadWorldFinished(WorldClient worldClient, String message, CallbackInfo ci) {
+        RuntimeSinkProfiler.end("worldLoad", "Minecraft.loadWorld " + gpom$worldLoadLabel(worldClient, message), gpom$loadWorldStartedAt);
+        gpom$loadWorldStartedAt = 0L;
         WorldLifecycleProfiler.endLoadWorld((Minecraft) (Object) this, gpom$getWorld(), gpom$getPlayer(), gpom$getCurrentScreen());
         if (worldClient != null) {
             gpom$drawImmediate("Entering world", "Waiting for first client frame", 96);
@@ -160,6 +222,16 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$observeWorldLoadingScreenChange(GuiScreen screen, CallbackInfo ci) {
+        if (screen == null && WorldLoadingProgress.isSuspendedForBlockingScreen()) {
+            WorldLoadingProgress.resumeAfterBlockingScreen("Loading world", "Continuing after Forge confirmation", 42);
+            return;
+        }
+
+        if (WorldLoadingProgress.isActive() && WorldLoadingProgress.isBlockingForgeScreen(screen)) {
+            WorldLoadingProgress.suspendForBlockingScreen("Forge blocking screen displayed: " + screen.getClass().getName());
+            return;
+        }
+
         if (gpom$isMainMenuScreen(screen) && WorldLoadingProgress.isActive()) {
             gpom$drawImmediate("Returning to menu", "Main menu ready", 100);
             WorldLoadingProgress.finish("main menu displayed");
@@ -179,6 +251,32 @@ public abstract class MixinMinecraftWorldLoadingScreen {
 
     @Inject(
             method = {
+                    "displayGuiScreen(Lnet/minecraft/client/gui/GuiScreen;)V",
+                    "func_147108_a(Lnet/minecraft/client/gui/GuiScreen;)V"
+            },
+            at = @At("RETURN"),
+            require = 0
+    )
+    private void gpom$renderResumedWorldLoadingScreen(GuiScreen screen, CallbackInfo ci) {
+        if (screen == null && WorldLoadingProgress.isActive() && gpom$getWorld() == null) {
+            gpom$drawImmediate("Loading world", "Continuing after Forge confirmation", 42);
+        }
+    }
+
+    @Inject(
+            method = {
+                    "runTick()V",
+                    "func_71407_l()V"
+            },
+            at = @At("HEAD"),
+            require = 0
+    )
+    private void gpom$beginRunTickProbe(CallbackInfo ci) {
+        gpom$runTickStartedAt = RuntimeSinkProfiler.begin();
+    }
+
+    @Inject(
+            method = {
                     "runTick()V",
                     "func_71407_l()V"
             },
@@ -186,6 +284,8 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$finishWorldLoadingAfterClientTick(CallbackInfo ci) {
+        RuntimeSinkProfiler.end("minecraft", "runTick client", gpom$runTickStartedAt);
+        gpom$runTickStartedAt = 0L;
         WorldLifecycleProfiler.clientTick((Minecraft) (Object) this);
         if (WorldLoadingProgress.isActive()
                 && gpom$getWorld() != null
@@ -210,9 +310,10 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         }
         WorldLoadingProgress.update(stage, detail, progress);
         LoadingScreenRenderer renderer = gpom$getLoadingScreen();
-        if (renderer == null || !gpom$callLoadingScreen(renderer, stage, detail)) {
-            WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
+        if (renderer != null) {
+            gpom$callLoadingScreen(renderer, stage, detail);
         }
+        WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
     }
 
     private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {
@@ -311,6 +412,17 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         } catch (Throwable ignored) {
             return world.getClass().getSimpleName();
         }
+    }
+
+    private String gpom$worldLoadLabel(WorldClient world, String message) {
+        if (world == null) {
+            return message == null || message.isEmpty() ? "unload" : "unload message=\"" + message + "\"";
+        }
+        String label = gpom$worldLabel(world);
+        if (message == null || message.isEmpty()) {
+            return label;
+        }
+        return label + " message=\"" + message + "\"";
     }
 
     private static Field gpom$findMinecraftField(String... names) throws NoSuchFieldException {

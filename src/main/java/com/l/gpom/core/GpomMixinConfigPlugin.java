@@ -20,12 +20,23 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "baubles/api/BaublesApi.class",
             "baubles/common/container/SlotBauble.class"
     };
-    private static final String[] MOUSE_TWEAKS_AE2_TARGETS = {
-            "appeng/client/gui/AEBaseGui.class",
-            "yalter/mousetweaks/api/IMTModGuiContainer2.class"
-    };
     private static final String[] BETTER_PORTALS_CLIENT_WORLD_TARGETS = {
             "de/johni0702/minecraft/view/impl/client/ClientWorldsManagerImpl.class"
+    };
+    private static final String[] BETTER_PORTALS_SERVER_WORLD_TARGETS = {
+            "de/johni0702/minecraft/view/impl/ViewAPIImplKt.class",
+            "de/johni0702/minecraft/view/impl/mixin/MixinPlayerChunkMap.class"
+    };
+    private static final String[] AGRICRAFT_CHANNEL_TARGETS = {
+            "com/infinityraider/agricraft/blocks/irrigation/AbstractBlockWaterChannel.class",
+            "com/infinityraider/agricraft/api/v1/misc/IAgriConnectable.class"
+    };
+    private static final String[] SFM_SEARCH_TARGETS = {
+            "vswe/superfactory/util/SearchUtil.class"
+    };
+    private static final String[] SFM_LOGIN_TARGETS = {
+            "vswe/superfactory/client/IndexItemsOnLogin.class",
+            "vswe/superfactory/util/SearchUtil.class"
     };
 
     @Override
@@ -48,20 +59,53 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             return present;
         }
-        if (mixinClassName.equals("com.l.gpom.mixin.ae2.MixinAEBaseGuiMouseTweaksTerminals")) {
-            boolean enabled = GpomEarlyConfig.mouseTweaksAe2TerminalsEnabled();
-            boolean present = enabled && allResourcesPresent(MOUSE_TWEAKS_AE2_TARGETS);
+        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup")) {
+            boolean present = allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
             if (LOGGED.add(mixinClassName)) {
-                GPOM.LOGGER.info("[GPOM AE2 MouseTweaks] mixin={} enabled={} targetsPresent={}",
+                GPOM.LOGGER.info("[GPOM BetterPortals Handoff Cleanup] mixin={} targetsPresent={} aggressiveClientWorldCleanup={}",
+                        mixinClassName, present, GpomEarlyConfig.betterPortalsCleanupClientWorldsEnabled());
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDestroyMainViewGuard")) {
+            boolean present = allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM BetterPortals Guard] mixin={} targetsPresent={}",
+                        mixinClassName, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinPlayerChunkMapMissingWorldManagerGuard")) {
+            boolean present = allResourcesPresent(BETTER_PORTALS_SERVER_WORLD_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM BetterPortals Guard] mixin={} targetsPresent={}",
+                        mixinClassName, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.agricraft.MixinWorldAgriCraftChannelBulkPlacement")) {
+            boolean enabled = GpomEarlyConfig.agriCraftRefreshChannelsAfterBulkPlacementEnabled();
+            boolean present = enabled && allResourcesPresent(AGRICRAFT_CHANNEL_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM AgriCraft Channels] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
             return present;
         }
-        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup")) {
-            boolean enabled = GpomEarlyConfig.betterPortalsCleanupClientWorldsEnabled();
-            boolean present = enabled && allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
+        if (mixinClassName.equals("com.l.gpom.mixin.sfm.MixinSearchUtilLightweightCache")) {
+            boolean enabled = GpomEarlyConfig.sfmLightweightSearchCacheEnabled();
+            boolean present = enabled && allResourcesPresent(SFM_SEARCH_TARGETS);
             if (LOGGED.add(mixinClassName)) {
-                GPOM.LOGGER.info("[GPOM BetterPortals Cleanup] mixin={} enabled={} targetsPresent={}",
+                GPOM.LOGGER.info("[GPOM SFM] mixin={} enabled={} targetsPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.sfm.MixinIndexItemsOnLoginLightweightCache")) {
+            boolean enabled = GpomEarlyConfig.sfmLightweightSearchCacheEnabled();
+            boolean present = enabled && allResourcesPresent(SFM_LOGIN_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM SFM] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
             return present;

@@ -119,7 +119,7 @@ Construction annotation shortcuts can be disabled per mod when a mod requires st
 
 ```properties
 gpom.construction.genericSidedProxies.denylist=thaumcraft,aether_legacy
-gpom.construction.genericAutomaticSubscribers.denylist=thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy
+gpom.construction.genericAutomaticSubscribers.denylist=thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy,superfactorymanager
 ```
 
 The automatic-subscriber denylist also disables GPOM's lazy static `EventBus.register(Class)` shortcut for those mods. Keep Chisel, CTM, and Unlimited Chisel Works on the stock Forge path because their model, bake, and texture handlers are ordering-sensitive.
@@ -264,14 +264,6 @@ When `gpom.baubles.sideSlots.aether.enabled=true` and Aether Legacy is loaded, G
 When `gpom.baubles.sideSlots.cosmeticArmor.enabled=true` and CosmeticArmorReworked is loaded, GPOM adds Cosmetic Armor's armor slots to the same side rail after the Baubles and Aether slots. The bridge validates items through vanilla armor validation, uses the native armor empty-slot icons, routes side-rail slot writes through the server to avoid client-only ghost stacks, hides Cosmetic Armor's native armor-screen button while the GPOM rail owns those slots, and remains disabled by default.
 
 If CosmeticArmorReworked is present, GPOM reflectively syncs its small per-bauble cosmetic visibility toggles with the side rail instead of letting them remain behind in the original expanded-screen positions. Buttons are hidden when the rail is closed. BringMeTheRings and other slot-expansion mods are supported through the real Baubles handler slots, but cosmetic toggles only appear for slots backed by CosmeticArmorReworked's own cosmetic inventory.
-
-## AE2 QoL
-
-```properties
-gpom.mouseTweaks.ae2Terminals.enabled=true
-```
-
-When AE2 UEL and Mouse Tweaks are both installed, GPOM enables AE2's existing Mouse Tweaks API hook only for ME terminal screens with `SlotME` storage slots. Mouse Tweaks can then use hold-left-click item movement across terminal storage slots and AE2's bound player inventory/hotbar slots. GPOM keeps Mouse Tweaks wheel handling and held-RMB drag placement disabled for AE2 so AE2's native terminal behavior remains authoritative and right-click still places one item per physical click.
 
 ## Just Enough Calculation QoL
 

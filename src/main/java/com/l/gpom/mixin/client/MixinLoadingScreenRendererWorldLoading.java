@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.client;
 
 import com.l.gpom.client.WorldLoadingProgress;
+import com.l.gpom.profiling.RuntimeSinkProfiler;
 import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
@@ -20,6 +21,8 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
     private static Method gpom$getScaledWidthMethod;
     @Unique
     private static Method gpom$getScaledHeightMethod;
+    @Unique
+    private long gpom$setLoadingProgressStartedAt;
 
     @Inject(
             method = {
@@ -66,10 +69,27 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$drawWorldLoadingScreen(int progress, CallbackInfo ci) {
+        gpom$setLoadingProgressStartedAt = RuntimeSinkProfiler.begin();
         if (!WorldLoadingProgress.isActive()) {
             return;
         }
         WorldLoadingProgress.updateFromVanilla(null, null, progress);
+    }
+
+    @Inject(
+            method = {
+                    "setLoadingProgress(I)V",
+                    "func_73718_a(I)V"
+            },
+            at = @At("RETURN"),
+            require = 0
+    )
+    private void gpom$finishSetLoadingProgressProbe(int progress, CallbackInfo ci) {
+        if (gpom$setLoadingProgressStartedAt == 0L) {
+            return;
+        }
+        RuntimeSinkProfiler.end("worldLoad", "LoadingScreenRenderer.setLoadingProgress", gpom$setLoadingProgressStartedAt);
+        gpom$setLoadingProgressStartedAt = 0L;
     }
 
     @Inject(

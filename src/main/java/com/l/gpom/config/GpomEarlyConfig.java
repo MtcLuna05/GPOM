@@ -58,7 +58,7 @@ public final class GpomEarlyConfig {
     private static final String DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST =
             "thaumcraft,aether_legacy,architecturecraft";
     private static final String DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST =
-            "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy";
+            "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy,superfactorymanager";
 
     static {
         DEFAULTS.setProperty("fml.parallel.preInit.enabled", "false");
@@ -139,11 +139,17 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.enabled", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", "8");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.enabled", "false");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.summaryIntervalSeconds", "10");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.topCount", "12");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.slowThresholdMillis", "50");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled", "true");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.enabled", "true");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.profileAll", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.enabled", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.maxFailures", "200");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "true");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "true");
-        DEFAULTS.setProperty("gpom.mouseTweaks.ae2Terminals.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.pinnedCraftOverlay.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.extendedCraftingLowerTierTransfer.enabled", "true");
@@ -164,6 +170,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
         DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "false");
         DEFAULTS.setProperty("gpom.betterPortals.journeymapWaypointTeleportTransition", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.journeymapWaypointTeleportRequireActiveView", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.fastShapeLighting", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
@@ -174,7 +181,12 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaksOnDimensionHandoff", "false");
         DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
+        DEFAULTS.setProperty("gpom.registry.repairThaumicWondersMissingMappings", "false");
         DEFAULTS.setProperty("gpom.registry.ignoreMissingSoundEventNamespaces", "erebus");
+        DEFAULTS.setProperty("gpom.registry.failMissingBlockItemNamespaces", "");
+        DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.enabled", "true");
+        DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.useHeiIngredients", "true");
+        DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.workers", "0");
         DEFAULTS.setProperty("gpom.railcraftLazyItemConditions", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleIC2Containers", "false");
         DEFAULTS.setProperty("gpom.railcraft.deferModuleContainers", "false");
@@ -185,6 +197,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.agricraft.fastJsonIo", "true");
         DEFAULTS.setProperty("gpom.agricraft.fastResourceScan", "true");
         DEFAULTS.setProperty("gpom.agricraft.skipJsonWriteback", "true");
+        DEFAULTS.setProperty("gpom.agricraft.refreshChannelsAfterBulkPlacement", "true");
         DEFAULTS.setProperty("gpom.openComputersSettingsCache", "true");
         DEFAULTS.setProperty("gpom.openComputers.fastLuaSelection", "true");
         DEFAULTS.setProperty("gpom.openComputersCallProfiler", "false");
@@ -613,14 +626,20 @@ public final class GpomEarlyConfig {
                 "gpom.worldLifecycleProfiler.deepAttribution.enabled",
                 "gpom.worldLifecycleProfiler.deepAttribution.maxEntries"
         );
+        writeSection(writer, "Runtime Sink Profiling", "Low-overhead aggregate timing probes for world load, frame/tick, render, and selected Forge event-handler sinks.",
+                "gpom.runtimeSinkProfiler.enabled",
+                "gpom.runtimeSinkProfiler.summaryIntervalSeconds",
+                "gpom.runtimeSinkProfiler.topCount",
+                "gpom.runtimeSinkProfiler.slowThresholdMillis",
+                "gpom.runtimeSinkProfiler.immediateSlowLogs.enabled",
+                "gpom.runtimeSinkProfiler.forgeEvents.enabled",
+                "gpom.runtimeSinkProfiler.forgeEvents.profileAll"
+        );
         writeSection(writer, "AE2 Pattern Diagnostics", "Temporary one-shot world-load scanner that builds canonical AE2 crafting patterns for registered recipes and logs recipes that AE2 cannot validate.",
                 "gpom.ae2.patternDiagnostics.enabled",
                 "gpom.ae2.patternDiagnostics.maxFailures",
                 "gpom.ae2.patternDiagnostics.logMismatchedOutputs",
                 "gpom.ae2.patternDiagnostics.skipRecipeFunctions"
-        );
-        writeSection(writer, "AE2 QoL", "Small client-side AE2 interaction fixes. These remain no-op unless the matching optional mod is installed.",
-                "gpom.mouseTweaks.ae2Terminals.enabled"
         );
         writeSection(writer, "JEC QoL", "Small client-side Just Enough Calculation interaction fixes. These remain no-op unless JEC is installed.",
                 "gpom.jecalculation.pinnedCraftOverlay.enabled",
@@ -637,6 +656,8 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.fixGuavaAddCallback",
                 "gpom.betterPortals.cleanupClientWorlds",
                 "gpom.betterPortals.journeymapWaypointTeleportTransition",
+                "gpom.betterPortals.journeymapWaypointTeleportRequireActiveView",
+                "gpom.agricraft.refreshChannelsAfterBulkPlacement",
                 "gpom.architecturecraft.fastShapeLighting",
                 "gpom.architecturecraft.accurateHitboxes",
                 "gpom.architecturecraft.parentMaterialOcclusion.enabled",
@@ -647,7 +668,12 @@ public final class GpomEarlyConfig {
                 "gpom.journeymap.cleanupLeaksOnDimensionHandoff",
                 "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
                 "gpom.enderio.repairMissingTileEntityMappings",
-                "gpom.registry.ignoreMissingSoundEventNamespaces"
+                "gpom.registry.repairThaumicWondersMissingMappings",
+                "gpom.registry.ignoreMissingSoundEventNamespaces",
+                "gpom.registry.failMissingBlockItemNamespaces",
+                "gpom.sfm.lightweightSearchCache.enabled",
+                "gpom.sfm.lightweightSearchCache.useHeiIngredients",
+                "gpom.sfm.lightweightSearchCache.workers"
         );
         writeSection(writer, "Railcraft Deferrals", "Exact-version startup deferrals for Railcraft 12.1.0-beta-8 module/container initialization.",
                 "gpom.railcraftLazyItemConditions",
@@ -928,6 +954,20 @@ public final class GpomEarlyConfig {
                 return "Logs detailed texture, resource-manager, and renderer ownership summaries for world memory leak attribution.";
             case "gpom.worldLifecycleProfiler.deepAttribution.maxEntries":
                 return "Maximum entries shown in each WorldLifecycleDeep top-list; higher values increase log volume.";
+            case "gpom.runtimeSinkProfiler.enabled":
+                return "Enables aggregate runtime probes for world loading, gameplay ticks, frame rendering, and selected Forge event handlers.";
+            case "gpom.runtimeSinkProfiler.summaryIntervalSeconds":
+                return "Seconds between [RuntimeSinkSummary] top-total timing summaries.";
+            case "gpom.runtimeSinkProfiler.topCount":
+                return "Maximum sink entries included in each [RuntimeSinkSummary] line.";
+            case "gpom.runtimeSinkProfiler.slowThresholdMillis":
+                return "Elapsed-time threshold for immediate [RuntimeSink] slow lines.";
+            case "gpom.runtimeSinkProfiler.immediateSlowLogs.enabled":
+                return "Logs individual slow runtime sinks immediately, in addition to periodic aggregate summaries.";
+            case "gpom.runtimeSinkProfiler.forgeEvents.enabled":
+                return "Profiles selected high-value Forge event posts and handlers while runtime sink profiling is enabled.";
+            case "gpom.runtimeSinkProfiler.forgeEvents.profileAll":
+                return "Profiles every Forge event post and handler instead of only tick, world, chunk, render, and GUI events. High volume.";
             case "gpom.ae2.patternDiagnostics.enabled":
                 return "Runs a temporary one-shot AE2 crafting-pattern validation scan on server overworld load. Keep false except while debugging pattern terminal failures.";
             case "gpom.ae2.patternDiagnostics.maxFailures":
@@ -936,8 +976,6 @@ public final class GpomEarlyConfig {
                 return "Logs recipes whose canonical ingredient choice matches a different recipe or output before AE2 pattern validation.";
             case "gpom.ae2.patternDiagnostics.skipRecipeFunctions":
                 return "Skips CraftTweaker/RecipeStages recipes with recipe functions before AE2 PatternHelper validation, avoiding CT FATAL spam from synthetic diagnostic inventories.";
-            case "gpom.mouseTweaks.ae2Terminals.enabled":
-                return "Lets Mouse Tweaks' hold-left-click item movement operate in AE2 ME terminals by enabling AE2's own Mouse Tweaks API hook only for terminal storage slots and player inventory slots.";
             case "gpom.jecalculation.pinnedCraftOverlay.enabled":
                 return "Adds a client-only pinned Just Enough Calculation craft overlay to normal container screens, with a GPOM pin toggle on JEC's craft screen. No-ops when JEC is absent.";
             case "gpom.jecalculation.fuzzyVolatileItemNbt.enabled":
@@ -976,6 +1014,8 @@ public final class GpomEarlyConfig {
                 return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. Experimental; keep false unless debugging retained BetterPortals client worlds.";
             case "gpom.betterPortals.journeymapWaypointTeleportTransition":
                 return "Routes JourneyMap cross-dimensional waypoint teleports through BetterPortals' dimension-transition handler so the configured transition animation plays. Falls back to JourneyMap's original teleport when BetterPortals is absent or declines the transfer.";
+            case "gpom.betterPortals.journeymapWaypointTeleportRequireActiveView":
+                return "Requires BetterPortals to already have an active non-main view for the source world before GPOM routes a JourneyMap waypoint teleport through BetterPortals. Keep true to avoid BetterPortals main-view teardown crashes on normal waypoint dimension jumps.";
             case "gpom.architecturecraft.fastShapeLighting":
                 return "Uses brightness lighting instead of ArchitectureCraft's per-vertex ambient occlusion for shape chunk rebuilds. This reduces rebuild cost for dense shape builds at the cost of flatter lighting. Automatically skipped when AUSM is installed.";
             case "gpom.architecturecraft.accurateHitboxes":
@@ -998,8 +1038,18 @@ public final class GpomEarlyConfig {
                 return "Skips Scannable's expensive ore lookup rebuild when the server sends settings identical to the client settings already applied.";
             case "gpom.enderio.repairMissingTileEntityMappings":
                 return "After EnderIO load, re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. No-op when EnderIO is absent or mappings are already present.";
+            case "gpom.registry.repairThaumicWondersMissingMappings":
+                return "Remaps selected legacy Thaumic Wonders missing block/item mappings to currently registered replacements. Disabled by default because saved Thaumcraft/Thaumic Wonders research and progression can depend on the old ids remaining unresolved for manual review.";
             case "gpom.registry.ignoreMissingSoundEventNamespaces":
                 return "Comma-separated namespaces whose stale missing SoundEvent world mappings are ignored instead of opening Forge's missing-mapping confirmation gate.";
+            case "gpom.registry.failMissingBlockItemNamespaces":
+                return "Comma-separated namespaces whose missing Block or Item mappings must hard-fail world load instead of allowing Forge to continue and risk saving stripped chunks.";
+            case "gpom.sfm.lightweightSearchCache.enabled":
+                return "Replaces SFM's login-time advanced-tooltip search index with a faster name/id/ore dictionary index for item filter search.";
+            case "gpom.sfm.lightweightSearchCache.useHeiIngredients":
+                return "Uses HEI's full ItemStack ingredient list as the SFM search source so item variants are preserved; false falls back to creative-tab entries.";
+            case "gpom.sfm.lightweightSearchCache.workers":
+                return "Worker count for GPOM's SFM search index builder. 0 chooses a conservative bounded value.";
             case "gpom.railcraftLazyItemConditions":
                 return "Defers Railcraft item condition initialization until first use instead of during module setup.";
             case "gpom.railcraft.deferModuleIC2Containers":
@@ -1020,6 +1070,8 @@ public final class GpomEarlyConfig {
                 return "Avoids redundant AgriCraft resource scans when the same candidate set has already been resolved.";
             case "gpom.agricraft.skipJsonWriteback":
                 return "Skips AgriCraft's startup rewrite of unchanged/default JSON files.";
+            case "gpom.agricraft.refreshChannelsAfterBulkPlacement":
+                return "Refreshes AgriCraft irrigation channel connections after bulk block placement by builder wands.";
             case "gpom.openComputersSettingsCache":
                 return "Caches OpenComputers settings construction and invalidates on bundled/user config byte changes.";
             case "gpom.openComputers.fastLuaSelection":
@@ -1210,6 +1262,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.agricraft.fastJsonIo");
         copySystemPropertyIfAbsent("gpom.agricraft.fastResourceScan");
         copySystemPropertyIfAbsent("gpom.agricraft.skipJsonWriteback");
+        copySystemPropertyIfAbsent("gpom.agricraft.refreshChannelsAfterBulkPlacement");
         copySystemPropertyIfAbsent("gpom.openComputersSettingsCache");
         copySystemPropertyIfAbsent("gpom.openComputers.fastLuaSelection");
         copySystemPropertyIfAbsent("gpom.openComputersCallProfiler");
@@ -1277,11 +1330,17 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.deepAttribution.maxEntries");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.enabled");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.summaryIntervalSeconds");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.topCount");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.slowThresholdMillis");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.enabled");
+        copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.profileAll");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.enabled");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.maxFailures");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.logMismatchedOutputs");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
-        copySystemPropertyIfAbsent("gpom.mouseTweaks.ae2Terminals.enabled");
         copySystemPropertyIfAbsent("gpom.jecalculation.pinnedCraftOverlay.enabled");
         copySystemPropertyIfAbsent("gpom.jecalculation.fuzzyVolatileItemNbt.enabled");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.enabled");
@@ -1298,6 +1357,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
         copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
         copySystemPropertyIfAbsent("gpom.betterPortals.journeymapWaypointTeleportTransition");
+        copySystemPropertyIfAbsent("gpom.betterPortals.journeymapWaypointTeleportRequireActiveView");
         copySystemPropertyIfAbsent("gpom.architecturecraft.fastShapeLighting");
         copySystemPropertyIfAbsent("gpom.architecturecraft.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.architecturecraft.parentMaterialOcclusion.enabled");
@@ -1309,7 +1369,12 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaksOnDimensionHandoff");
         copySystemPropertyIfAbsent("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
+        copySystemPropertyIfAbsent("gpom.registry.repairThaumicWondersMissingMappings");
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingSoundEventNamespaces");
+        copySystemPropertyIfAbsent("gpom.registry.failMissingBlockItemNamespaces");
+        copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.enabled");
+        copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.useHeiIngredients");
+        copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.workers");
     }
 
     private static void copySystemPropertyIfAbsent(String key) {
@@ -1486,6 +1551,46 @@ public final class GpomEarlyConfig {
         return intValue("gpom.worldLifecycleProfiler.deepAttribution.maxEntries", 8);
     }
 
+    public static boolean runtimeSinkProfilerEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.runtimeSinkProfiler.enabled");
+    }
+
+    public static int runtimeSinkProfilerSummaryIntervalSeconds() {
+        return Math.max(1, intValue("gpom.runtimeSinkProfiler.summaryIntervalSeconds", 10));
+    }
+
+    public static int runtimeSinkProfilerTopCount() {
+        return Math.max(1, intValue("gpom.runtimeSinkProfiler.topCount", 12));
+    }
+
+    public static int runtimeSinkProfilerSlowThresholdMillis() {
+        return Math.max(1, intValue("gpom.runtimeSinkProfiler.slowThresholdMillis", 50));
+    }
+
+    public static boolean runtimeSinkProfilerImmediateSlowLogsEnabled() {
+        return booleanValue("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled");
+    }
+
+    public static boolean runtimeSinkProfilerForgeEventsEnabled() {
+        return booleanValue("gpom.runtimeSinkProfiler.forgeEvents.enabled");
+    }
+
+    public static boolean runtimeSinkProfilerAllForgeEventsEnabled() {
+        return booleanValue("gpom.runtimeSinkProfiler.forgeEvents.profileAll");
+    }
+
+    public static boolean sfmLightweightSearchCacheEnabled() {
+        return booleanValue("gpom.sfm.lightweightSearchCache.enabled");
+    }
+
+    public static boolean sfmLightweightSearchCacheUseHeiIngredientsEnabled() {
+        return booleanValue("gpom.sfm.lightweightSearchCache.useHeiIngredients");
+    }
+
+    public static int sfmLightweightSearchCacheWorkers() {
+        return Math.max(0, intValue("gpom.sfm.lightweightSearchCache.workers", 0));
+    }
+
     public static boolean ae2PatternDiagnosticsEnabled() {
         return booleanValue("gpom.ae2.patternDiagnostics.enabled");
     }
@@ -1500,10 +1605,6 @@ public final class GpomEarlyConfig {
 
     public static boolean ae2PatternDiagnosticsSkipRecipeFunctions() {
         return booleanValue("gpom.ae2.patternDiagnostics.skipRecipeFunctions");
-    }
-
-    public static boolean mouseTweaksAe2TerminalsEnabled() {
-        return booleanValue("gpom.mouseTweaks.ae2Terminals.enabled");
     }
 
     public static boolean jecalculationPinnedCraftOverlayEnabled() {
@@ -1574,6 +1675,14 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.betterPortals.journeymapWaypointTeleportTransition");
     }
 
+    public static boolean betterPortalsJourneyMapWaypointTeleportRequireActiveViewEnabled() {
+        return booleanValue("gpom.betterPortals.journeymapWaypointTeleportRequireActiveView");
+    }
+
+    public static boolean agriCraftRefreshChannelsAfterBulkPlacementEnabled() {
+        return booleanValue("gpom.agricraft.refreshChannelsAfterBulkPlacement");
+    }
+
     public static boolean architectureCraftFastShapeLightingEnabled() {
         return booleanValue("gpom.architecturecraft.fastShapeLighting");
     }
@@ -1618,8 +1727,16 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.enderio.repairMissingTileEntityMappings");
     }
 
+    public static boolean registryRepairThaumicWondersMissingMappingsEnabled() {
+        return booleanValue("gpom.registry.repairThaumicWondersMissingMappings");
+    }
+
     public static Set<String> registryIgnoredMissingSoundEventNamespaces() {
         return setValue("gpom.registry.ignoreMissingSoundEventNamespaces");
+    }
+
+    public static Set<String> registryFailMissingBlockItemNamespaces() {
+        return setValue("gpom.registry.failMissingBlockItemNamespaces");
     }
 
     public static boolean preInitClassPrewarmEnabled() {

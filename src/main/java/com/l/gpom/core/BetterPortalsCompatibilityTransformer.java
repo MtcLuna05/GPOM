@@ -42,6 +42,7 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
     private static final String AETHER_HAS_AETHER = "de.johni0702.minecraft.betterportals.impl.aether.common.ExtensionsKt$hasAether$2";
     private static final String AETHER_BLOCK_REGISTER = "de.johni0702.minecraft.betterportals.impl.aether.common.ExtensionsKt$initAether$2";
     private static final String AETHER_PORTAL_BLOCK = "de.johni0702.minecraft.betterportals.impl.aether.common.blocks.BlockBetterAetherPortal";
+    private static final String PLAYER_CHUNK_MAP_MIXIN = "de.johni0702.minecraft.view.impl.mixin.MixinPlayerChunkMap";
     private static final String AETHER_SKYROOT_BUCKET = "com.gildedgames.the_aether.items.tools.ItemSkyrootBucket";
     private static final String AETHER_SKYROOT_BUCKET_INTERNAL = "com/gildedgames/the_aether/items/tools/ItemSkyrootBucket";
     private static final String THIS_INTERNAL = "com/l/gpom/core/BetterPortalsCompatibilityTransformer";
@@ -61,6 +62,7 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
     private static final String OLD_ADD_CALLBACK_DESC = "(Lcom/google/common/util/concurrent/ListenableFuture;Lcom/google/common/util/concurrent/FutureCallback;)V";
     private static final String NEW_ADD_CALLBACK_DESC = "(Lcom/google/common/util/concurrent/ListenableFuture;Lcom/google/common/util/concurrent/FutureCallback;Ljava/util/concurrent/Executor;)V";
     private static final String SKYROOT_TRY_PLACE_LIQUID_DESC = "(Lnet/minecraft/entity/player/EntityPlayer;Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;Lnet/minecraft/util/math/BlockPos;)Z";
+    private static final String SERVER_WORLD_MANAGER_INTERNAL = "de/johni0702/minecraft/view/impl/server/ServerWorldManager";
     private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
     private static final String AT = "Lorg/spongepowered/asm/mixin/injection/At;";
     private static final String FRUSTUM_TARGET = "net.minecraft.client.renderer.culling.Frustum";
@@ -89,16 +91,17 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
         boolean patchAetherSkyrootBucketWaterPlacement = GpomEarlyConfig.betterPortalsRemapLegacyAetherBridgeEnabled()
                 && AETHER_SKYROOT_BUCKET.equals(className)
                 && classResourceExists(CURRENT_AETHER_PORTAL);
+        boolean patchPlayerChunkMapMissingWorldManager = PLAYER_CHUNK_MAP_MIXIN.equals(className);
         if (!patchEntityRenderer && !patchLegacyAether && !patchGuavaAddCallback && !remapLegacyAether
                 && !patchAetherPortalAssignment && !patchAetherPortalWaterActivation
-                && !patchAetherSkyrootBucketWaterPlacement) {
+                && !patchAetherSkyrootBucketWaterPlacement && !patchPlayerChunkMapMissingWorldManager) {
             return basicClass;
         }
 
         try {
             boolean changed = false;
             byte[] transformed = basicClass;
-            if (patchEntityRenderer || patchLegacyAether || patchGuavaAddCallback) {
+            if (patchEntityRenderer || patchLegacyAether || patchGuavaAddCallback || patchPlayerChunkMapMissingWorldManager) {
                 ClassNode node = new ClassNode();
                 new ClassReader(transformed).accept(node, 0);
                 if (patchEntityRenderer) {
@@ -114,6 +117,11 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
                 if (patchGuavaAddCallback) {
                     for (MethodNode method : node.methods) {
                         changed |= patchGuavaAddCallback(method);
+                    }
+                }
+                if (patchPlayerChunkMapMissingWorldManager) {
+                    for (MethodNode method : node.methods) {
+                        changed |= patchPlayerChunkMapMissingWorldManager(method);
                     }
                 }
                 if (changed) {
@@ -256,6 +264,19 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
             return result instanceof Boolean && (Boolean) result;
         } catch (Throwable throwable) {
             logAetherPortalProbe("skyroot bucket fallback failed: " + describeThrowableForProbe(throwable));
+            return false;
+        }
+    }
+
+    public static boolean safeBetterPortalsServerWorldManagerNeedsUpdate(Object worldManager) {
+        if (worldManager == null) {
+            return false;
+        }
+        try {
+            Method method = findMethod(worldManager.getClass(), "getNeedsUpdate");
+            Object result = method == null ? null : method.invoke(worldManager);
+            return result instanceof Boolean && (Boolean) result;
+        } catch (Throwable ignored) {
             return false;
         }
     }
@@ -1402,6 +1423,41 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
             return true;
         }
         return false;
+    }
+
+    private static boolean patchPlayerChunkMapMissingWorldManager(MethodNode method) {
+        if (method == null
+                || !"updateMovingPlayerWithViews".equals(method.name)
+                || !"(Lnet/minecraft/entity/player/EntityPlayerMP;Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;)V".equals(method.desc)) {
+            return false;
+        }
+
+        boolean changed = false;
+        for (AbstractInsnNode instruction = method.instructions.getFirst();
+             instruction != null;
+             instruction = instruction.getNext()) {
+            if (!(instruction instanceof MethodInsnNode)) {
+                continue;
+            }
+
+            MethodInsnNode call = (MethodInsnNode) instruction;
+            if (call.getOpcode() != Opcodes.INVOKEVIRTUAL
+                    || !SERVER_WORLD_MANAGER_INTERNAL.equals(call.owner)
+                    || !"getNeedsUpdate".equals(call.name)
+                    || !"()Z".equals(call.desc)) {
+                continue;
+            }
+
+            method.instructions.set(call, new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    THIS_INTERNAL,
+                    "safeBetterPortalsServerWorldManagerNeedsUpdate",
+                    "(Ljava/lang/Object;)Z",
+                    false
+            ));
+            changed = true;
+        }
+        return changed;
     }
 
     private static boolean isNewInjectionPoint(AnnotationNode annotation) {

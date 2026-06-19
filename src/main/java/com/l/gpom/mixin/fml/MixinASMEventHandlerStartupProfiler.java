@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.fml;
 
 import com.l.gpom.profiling.StartupProfiler;
+import com.l.gpom.profiling.RuntimeSinkProfiler;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.eventhandler.ASMEventHandler;
@@ -29,8 +30,16 @@ public abstract class MixinASMEventHandlerStartupProfiler {
     @Unique
     private String gpom$invokeEventName;
 
+    @Unique
+    private long gpom$runtimeInvokeStartedAt;
+
     @Inject(method = "invoke", at = @At("HEAD"))
     private void gpom$beginInvoke(Event event, CallbackInfo ci) {
+        if (RuntimeSinkProfiler.shouldProfileForgeEvent(event)) {
+            gpom$runtimeInvokeStartedAt = RuntimeSinkProfiler.begin();
+        } else {
+            gpom$runtimeInvokeStartedAt = 0L;
+        }
         if (!StartupProfiler.isPostPreInitTransitionActive()) {
             gpom$invokeStartedAt = 0L;
             gpom$invokeEventName = null;
@@ -43,6 +52,11 @@ public abstract class MixinASMEventHandlerStartupProfiler {
 
     @Inject(method = "invoke", at = @At("RETURN"))
     private void gpom$endInvoke(Event event, CallbackInfo ci) {
+        long runtimeStartedAt = gpom$runtimeInvokeStartedAt;
+        if (runtimeStartedAt != 0L) {
+            RuntimeSinkProfiler.recordEventHandler(event, gpom$ownerName(), gpom$readableName(), runtimeStartedAt);
+            gpom$runtimeInvokeStartedAt = 0L;
+        }
         long startedAt = gpom$invokeStartedAt;
         if (startedAt == 0L) {
             return;

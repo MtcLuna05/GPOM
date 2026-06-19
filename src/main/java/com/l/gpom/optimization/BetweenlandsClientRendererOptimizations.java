@@ -213,6 +213,14 @@ public final class BetweenlandsClientRendererOptimizations {
             }
             ClassLoader loader = BetweenlandsClientRendererOptimizations.class.getClassLoader();
             Class<?> tileClass = Class.forName(tileClassName, false, loader);
+            TileEntitySpecialRenderer<?> renderer = createEagerTileRendererIfModelBakeDependent(rendererClassName, loader);
+            if (renderer != null) {
+                ClientRegistry.bindTileEntitySpecialRenderer(
+                        (Class<? extends TileEntity>) tileClass,
+                        (TileEntitySpecialRenderer) renderer
+                );
+                return;
+            }
             ClientRegistry.bindTileEntitySpecialRenderer(
                     (Class<? extends TileEntity>) tileClass,
                     new LazyTileEntitySpecialRenderer(rendererClassName, loader)
@@ -222,6 +230,24 @@ public final class BetweenlandsClientRendererOptimizations {
             throw new RuntimeException("Failed to register Betweenlands lazy tile renderer " + rendererClassName, throwable);
         } finally {
             StartupProfiler.endProbeAlways("BL ClientProxy.preInit lazy tile renderer registration calls", startedAt);
+        }
+    }
+
+    private static TileEntitySpecialRenderer<?> createEagerTileRendererIfModelBakeDependent(String rendererClassName, ClassLoader loader) {
+        try {
+            Class<?> rendererClass = Class.forName(rendererClassName, false, loader);
+            Class<?> bakedModelsInterface = Class.forName("thebetweenlands.client.render.model.loader.IFastTESRBakedModels", false, loader);
+            if (!bakedModelsInterface.isAssignableFrom(rendererClass)) {
+                return null;
+            }
+            Constructor<?> constructor = rendererClass.asSubclass(TileEntitySpecialRenderer.class).getConstructor();
+            constructor.setAccessible(true);
+            GPOM.LOGGER.debug("[StartupProfiler] Binding bake-dependent Betweenlands tile renderer eagerly: {}", rendererClassName);
+            return (TileEntitySpecialRenderer<?>) constructor.newInstance();
+        } catch (ClassNotFoundException exception) {
+            return null;
+        } catch (Throwable throwable) {
+            throw new RuntimeException("Failed to create bake-dependent Betweenlands tile renderer " + rendererClassName, throwable);
         }
     }
 
