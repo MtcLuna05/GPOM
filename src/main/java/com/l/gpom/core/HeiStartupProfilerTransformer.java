@@ -91,6 +91,7 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
             basicClass = patchRecipeRegistryBulkVisibleCache(basicClass);
             basicClass = patchRecipeRegistryHandlerCache(basicClass);
             basicClass = patchRecipeRegistryKnownRuntimeRecipes(basicClass);
+            basicClass = patchRecipeRegistryNullUnhideGuard(basicClass);
         }
         if (supportedHeiClass && "mezz.jei.recipes.RecipeMap".equals(className)) {
             basicClass = patchRecipeMapIngredientHelperCaches(basicClass);
@@ -184,6 +185,9 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                 && ("li.cil.oc.integration.jei.ManualUsageHandler$".equals(className)
                 || "li.cil.oc.integration.jei.CallbackDocHandler$".equals(className))) {
             basicClass = patchOpenComputersDocRecipesFastPath(basicClass);
+        }
+        if ("com.blakebr0.mysticalagradditions.compat.jei.CompatJEI".equals(className)) {
+            basicClass = patchMysticalAgradditionsCompatJei(basicClass);
         }
 
         Set<MethodKey> methods = TARGETS.get(name);
@@ -582,6 +586,37 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                 patch.add(new JumpInsnNode(Opcodes.IFEQ, stockPath));
                 patch.add(new InsnNode(Opcodes.RETURN));
                 patch.add(stockPath);
+                patch.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(patch);
+                changed = true;
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchRecipeRegistryNullUnhideGuard(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"unhideRecipe".equals(method.name)
+                        || !method.desc.endsWith(")V")
+                        || !method.desc.startsWith("(L")) {
+                    continue;
+                }
+
+                boolean isStatic = (method.access & Opcodes.ACC_STATIC) != 0;
+                int recipeArg = isStatic ? 0 : 1;
+                LabelNode recipePresent = new LabelNode();
+                InsnList patch = new InsnList();
+                patch.add(new VarInsnNode(Opcodes.ALOAD, recipeArg));
+                patch.add(new JumpInsnNode(Opcodes.IFNONNULL, recipePresent));
+                patch.add(new InsnNode(Opcodes.RETURN));
+                patch.add(recipePresent);
                 patch.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
                 method.instructions.insert(patch);
                 changed = true;
@@ -1793,6 +1828,42 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
             }
             if (changed) {
                 return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchMysticalAgradditionsCompatJei(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            for (MethodNode method : node.methods) {
+                if (!"register".equals(method.name) || !"(Lmezz/jei/api/IModRegistry;)V".equals(method.desc)) {
+                    continue;
+                }
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn.getOpcode() != Opcodes.INVOKESTATIC) {
+                        continue;
+                    }
+                    MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                    if (!"com/blakebr0/mysticalagradditions/compat/jei/Tier6CropRecipeMaker".equals(methodInsn.owner)
+                            || !"getRecipes".equals(methodInsn.name)
+                            || !"()Ljava/util/List;".equals(methodInsn.desc)) {
+                        continue;
+                    }
+
+                    InsnList instructions = new InsnList();
+                    instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                    instructions.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "fixMysticalAgradditionsTier6Recipes",
+                            "(Ljava/util/List;Ljava/lang/Object;)Ljava/util/List;",
+                            false
+                    ));
+                    method.instructions.insert(insn, instructions);
+                    return writeNode(node);
+                }
             }
         } catch (Throwable ignored) {
         }

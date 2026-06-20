@@ -274,7 +274,8 @@ public final class GpomEarlyConfig {
                 "gpom.hei.parallelPluginRegistration.denylist",
                 "mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,"
                         + "com.l.gpom.compat.hei.GpomHeiQoLPlugin,"
-                        + "lumien.randomthings.handler.compability.jei.RandomThingsPlugin"
+                        + "lumien.randomthings.handler.compability.jei.RandomThingsPlugin,"
+                        + "com.blakebr0.mysticalagradditions.compat.jei.CompatJEI"
         );
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.samples", "32");

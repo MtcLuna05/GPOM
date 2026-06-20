@@ -4,11 +4,17 @@ import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.GuiMainMenu;
+import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Field;
 
 public final class MainMenuStartupOverlay {
     private MainMenuStartupOverlay() {
+    }
+
+    public static boolean isSupportedMainMenu(Object screen) {
+        return screen instanceof GuiMainMenu;
     }
 
     public static void renderFromScreen(Object screen, String screenName) {
@@ -42,9 +48,46 @@ public final class MainMenuStartupOverlay {
             int textWidth = ClientAccess.stringWidth(font, text);
             int x = Math.max(4, width - textWidth - 6);
             int y = 4;
+            renderIsolated(font, text, x, y, textWidth);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void renderIsolated(FontRenderer font, String text, int x, int y, int textWidth) {
+        int previousMatrixMode = GL11.GL_MODELVIEW;
+        boolean pushedAttrib = false;
+        boolean pushedProjection = false;
+        boolean pushedModelView = false;
+        try {
+            previousMatrixMode = GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            pushedAttrib = true;
+            GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            pushedProjection = true;
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            pushedModelView = true;
+
             ClientAccess.drawRect(x - 3, y - 3, x + textWidth + 4, y + 11, 0x88000000);
             ClientAccess.drawStringWithShadow(font, text, x, y, 0xD8D8D8);
         } catch (Throwable ignored) {
+        } finally {
+            try {
+                if (pushedModelView) {
+                    GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                    GL11.glPopMatrix();
+                }
+                if (pushedProjection) {
+                    GL11.glMatrixMode(GL11.GL_PROJECTION);
+                    GL11.glPopMatrix();
+                }
+                GL11.glMatrixMode(previousMatrixMode);
+                if (pushedAttrib) {
+                    GL11.glPopAttrib();
+                }
+            } catch (Throwable ignored) {
+            }
         }
     }
 

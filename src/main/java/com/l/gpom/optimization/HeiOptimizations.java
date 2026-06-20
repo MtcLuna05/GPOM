@@ -179,6 +179,7 @@ public final class HeiOptimizations {
     private static final Set<String> OC_MANUAL_PATH_MISSES = ConcurrentHashMap.newKeySet();
     private static final ConcurrentMap<String, Set<?>> OC_ENVIRONMENTS_CACHE = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, scala.collection.mutable.Map> OC_CALLBACKS_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> MYSTICAL_AGR_TIER6_SET_HELPER_METHODS = new ConcurrentHashMap<>();
     private static Method ocManualPathFor;
     private static Method ocDriverEnvironmentsFor;
     private static Method ocCallbacksFromClass;
@@ -2901,6 +2902,67 @@ public final class HeiOptimizations {
 
     private static String pluginName(Object plugin) {
         return plugin == null ? "null" : plugin.getClass().getName();
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static List fixMysticalAgradditionsTier6Recipes(List recipes, Object helper) {
+        if (recipes == null || recipes.isEmpty() || helper == null) {
+            return recipes;
+        }
+        int fixed = 0;
+        for (Object recipe : recipes) {
+            if (recipe == null) {
+                continue;
+            }
+            try {
+                Method method = mysticalAgradditionsTier6SetHelperMethod(recipe.getClass(), helper);
+                if (method == null) {
+                    continue;
+                }
+                method.invoke(recipe, helper);
+                fixed++;
+            } catch (Throwable ignored) {
+            }
+        }
+        if (fixed > 0) {
+            GPOM.LOGGER.info("[HEI Optimizations] Patched {} Mystical Agradditions tier-6 crop wrapper(s) with JEI helper", fixed);
+        }
+        return recipes;
+    }
+
+    private static Method mysticalAgradditionsTier6SetHelperMethod(Class<?> recipeClass, Object helper) {
+        Method cached = MYSTICAL_AGR_TIER6_SET_HELPER_METHODS.get(recipeClass);
+        if (cached != null) {
+            return cached;
+        }
+
+        Method found = null;
+        Class<?> current = recipeClass;
+        while (current != null && found == null) {
+            Method[] methods;
+            try {
+                methods = current.getDeclaredMethods();
+            } catch (Throwable ignored) {
+                methods = new Method[0];
+            }
+            for (Method method : methods) {
+                Class<?>[] parameterTypes = method.getParameterTypes();
+                if (!"setHelper".equals(method.getName())
+                        || parameterTypes.length != 1
+                        || !parameterTypes[0].isInstance(helper)) {
+                    continue;
+                }
+                method.setAccessible(true);
+                found = method;
+                break;
+            }
+            current = current.getSuperclass();
+        }
+        if (found != null) {
+            Method previous = MYSTICAL_AGR_TIER6_SET_HELPER_METHODS.putIfAbsent(recipeClass, found);
+            return previous != null ? previous : found;
+        }
+        return null;
     }
 
     private static List<String> pluginNames(List<?> plugins) {

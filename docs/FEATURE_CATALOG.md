@@ -5,11 +5,12 @@ This catalog tracks GPOM features, not only startup optimizations. It is intende
 Current live context, 2026-06-20:
 
 - Target pack: MeatballCraft, Dimensional Ascension on Minecraft 1.12.2 Cleanroom/Forge.
-- GPOM jar in the tested Prism instance was rebuilt and installed after the HEI search-race fix with SHA-256 `213b59d613147d6b1593cb4c7a75f837ce0bac737ced29175866ae5b11ee80d0`.
+- GPOM jar in the tested Prism instance was rebuilt and installed after the CMM overlay cleanup, HEI null-unhide guard, and Mystical Agradditions HEI helper patch with SHA-256 `6f56f477c69d1225512187ea4a773d0baf192e884f9851805d0b2cf6a5448611`.
 - Probe, deep HEI profiler, runtime sink profiler, and coarse startup-summary output are disabled in the live config for speed. The main-menu startup timer remains enabled.
-- `docs/gpom-early.properties` and the live MeatballCraft instance config are aligned to the same fast no-probe profile as of 2026-06-20.
+- `docs/gpom-early.properties` and the live MeatballCraft instance config are aligned except for active triage toggles noted in `docs/FEATURE_LOG.md`.
 - The baseline from the earlier Celeritas-switch status was `263.251 s` average (`242.169 s`, `290.494 s`, `257.090 s`), so the current average saving is about `77.501 s` or `29.4%`.
 - HEI search tree concurrency is intentionally conservative now: `gpom.hei.searchWorkers=1`, `gpom.hei.deferSearchBlock=false` by default, and `gpom.hei.parallelSearchBuild=false` by default. This avoids the HEI `ObjectOpenHashSet`/`StringUtil.intern` race seen on 2026-06-20.
+- Active recipe-missing triage disabled `gpom.hei.parallelPluginRegistration.enabled` in the live instance config; the `6318` runtime ingredient removal still occurred, so the current evidence points at staged/progression filtering rather than HEI plugin parallel registration.
 
 ## Configuration Model
 
@@ -213,7 +214,7 @@ gpom.hei.parallelPluginRegistration.enabled=true
 gpom.hei.parallelPluginRegistration.workers=6
 gpom.hei.parallelPluginRegistration.overlapSerial=true
 gpom.hei.parallelPluginRegistration.allowlist=*
-gpom.hei.parallelPluginRegistration.denylist=mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,com.l.gpom.compat.hei.GpomHeiQoLPlugin,lumien.randomthings.handler.compability.jei.RandomThingsPlugin
+gpom.hei.parallelPluginRegistration.denylist=mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,com.l.gpom.compat.hei.GpomHeiQoLPlugin,lumien.randomthings.handler.compability.jei.RandomThingsPlugin,com.blakebr0.mysticalagradditions.compat.jei.CompatJEI
 ```
 
 Performance capabilities:
@@ -415,6 +416,7 @@ Capabilities:
 Live MeatballCraft posture:
 
 - Main-menu startup timer is enabled.
+- `gpom.worldLoadingScreen.enabled=true` is the documented default/profile value, but the unstable custom world-loading mixins are currently not registered in `gpom.mod.mixin.json` after restoring the upstream mixin posture. Re-enable the mixins only with a targeted fix and validation pass.
 - Non-HEI probes are disabled.
 - Forge's startup screen must not be disabled.
 
