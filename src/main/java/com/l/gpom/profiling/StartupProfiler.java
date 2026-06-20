@@ -45,6 +45,7 @@ public final class StartupProfiler {
     private static final int STACK_SAMPLER_MAX_FRAMES = intProperty("gpom.startupProfiler.stackSamplerFrames", 32);
     private static final Set<String> STACK_SAMPLER_MODS = setProperty("gpom.startupProfiler.stackSamplerMods", "aoa3,abyssalcraft,agricraft,appliedenergistics2,astralsorcery,botania,brandonscore,citnbt,codechickenlib,concheckrmd,contenttweaker,crafttweaker,cyclicmagic,draconicevolution,ebwizardry,enderio,extrautils2,forestry,forgelin,ftbutilities,hammercore,integrateddynamics,itemblacklist,opencomputers,railcraft,redcore,smoothfont,techreborn,tconstruct,thaumadditions,thaumcraft,thaumicaugmentation,thaumictinkerer,thaumicwonders,thebetweenlands,thermalexpansion,thermalfoundation,xreliquary");
     private static final boolean PROGRESS_BARS_ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.progressBars", "false"));
+    private static final Set<String> PROBE_PREFIX_ALLOWLIST = setProperty("gpom.startupProfiler.probePrefixAllowlist", "");
     private static final boolean GENERAL_PROBE_RECORDING_ENABLED = PROBE_LOGS_ENABLED
             || PROBE_SUMMARY_LOGS_ENABLED
             || WALL_DIAGNOSTICS_LOGS_ENABLED
@@ -366,6 +367,9 @@ public final class StartupProfiler {
         if (!ENABLED || !PROBE_RECORDING_ENABLED || startedAt == 0L || probeName == null) {
             return;
         }
+        if (!probePrefixAllowed(probeName)) {
+            return;
+        }
 
         long elapsed = System.nanoTime() - startedAt;
         synchronized (LOCK) {
@@ -385,6 +389,18 @@ public final class StartupProfiler {
                     formatMillis(elapsed)
             );
         }
+    }
+
+    private static boolean probePrefixAllowed(String probeName) {
+        if (PROBE_PREFIX_ALLOWLIST.isEmpty()) {
+            return true;
+        }
+        for (String prefix : PROBE_PREFIX_ALLOWLIST) {
+            if ("*".equals(prefix) || probeName.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static long namedProbeThreshold(String probeName) {

@@ -3,6 +3,9 @@ package com.l.gpom.optimization;
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.GpomCaches;
+import mezz.jei.api.ingredients.IIngredientHelper;
+import mezz.jei.api.recipe.IRecipeHandler;
+import mezz.jei.api.recipe.IRecipeWrapper;
 import net.minecraft.block.Block;
 import net.minecraft.enchantment.Enchantment;
 import net.minecraft.enchantment.EnchantmentHelper;
@@ -45,6 +48,7 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -66,6 +70,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -84,12 +89,18 @@ public final class HeiOptimizations {
     private static final int THERMAL_TRANSPOSER_CONTAINER_CACHE_VERSION = 1;
     private static final int THERMAL_TRANSPOSER_CONTAINER_CACHE_MAGIC = 0x47505454;
     private static final boolean HEI_ITEM_STACK_CACHE = Boolean.parseBoolean(System.getProperty("gpom.hei.itemStackListCache", "true"));
+    private static final boolean FAST_KNOWN_RUNTIME_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastKnownRuntimeRecipes", "true"));
+    private static final boolean DEFER_HEI_SEARCH_BLOCK = Boolean.parseBoolean(System.getProperty("gpom.hei.deferSearchBlock", "false"));
     private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false"));
     private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY_DEEP_PROBES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false"));
+    private static final boolean SKIP_UNSUPPORTED_RUNTIME_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.hei.skipUnsupportedRuntimeRecipes.enabled", "true"));
     private static final int FAST_PREINIT_PLUGIN_DISCOVERY_WORKERS = intProperty("gpom.hei.fastPreInitPluginDiscovery.workers", 0);
     private static final int SEARCH_WORKERS = computeSearchWorkerCount();
+    private static final Set<String> UNSUPPORTED_RUNTIME_RECIPE_CLASSES = unsupportedRuntimeRecipeClasses();
     private static final ThreadLocal<RecipeProgress> RECIPE_PROGRESS = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> RECIPE_REGISTRY_BULK = new ThreadLocal<>();
+    private static final ThreadLocal<Boolean> FORCE_HEI_SEARCH_BLOCK = new ThreadLocal<>();
+    private static final Set<Object> DEFERRED_HEI_SEARCH_BLOCKS = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
     private static Method jerEnchantmentWrapperCreate;
     private static Method itemStackIsEmpty;
     private static Method itemStackGetItem;
@@ -137,13 +148,40 @@ public final class HeiOptimizations {
     private static Constructor<?> extraTreesLumbermillRecipeWrapperConstructor;
     private static Constructor<?> enderIOTankSimpleWrapperConstructor;
     private static Constructor<?> enderIOTankRecipeWrapperConstructor;
+    private static Constructor<?> agricraftProduceRecipeWrapperConstructor;
+    private static Constructor<?> agricraftMutationRecipeWrapperConstructor;
+    private static Method heiRecipeRegistryAddWrapperMethod;
+    private static Method extraUtilsJeiMachineCreateWrapperMethod;
+    private static Method extraUtilsJeiMachineGetStringMethod;
+    private static Field extraUtilsJeiMachineRecipeMachineField;
     private static volatile List<Fluid> forestryBottlerFluidSnapshot;
     private static volatile boolean thermalTransposerContainerCacheLoaded;
     private static volatile boolean thermalTransposerContainerCacheDirty;
     private static final Map<Object, List<?>> HEI_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Object, List<?>> HEI_FILLABLE_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Object, List<?>> HEI_DRAINABLE_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Object, List<?>> HEI_RECIPE_MAP_EXPANDED_SUBTYPES = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Object, String> HEI_RECIPE_MAP_UNIQUE_IDS = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Object NULL_HEI_RECIPE_HANDLER = new Object();
+    private static final Map<Object, Map<HeiRecipeHandlerKey, Object>> HEI_RECIPE_HANDLER_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final ConcurrentMap<Class<?>, HeiRecipeHandlerFields> HEI_RECIPE_HANDLER_FIELDS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> HEI_RECIPE_HANDLER_CLASS_METHODS = new ConcurrentHashMap<>();
+    private static final AtomicInteger HEI_RECIPE_HANDLER_CACHE_HITS = new AtomicInteger();
+    private static final AtomicInteger HEI_RECIPE_HANDLER_CACHE_MISSES = new AtomicInteger();
+    private static final AtomicInteger HEI_RECIPE_HANDLER_CACHE_NULLS = new AtomicInteger();
+    private static final AtomicLong HEI_RECIPE_HANDLER_LOOKUP_NANOS = new AtomicLong();
+    private static final AtomicInteger HEI_KNOWN_RUNTIME_RECIPES = new AtomicInteger();
+    private static final AtomicInteger HEI_SKIPPED_UNSUPPORTED_RUNTIME_RECIPES = new AtomicInteger();
+    private static final Map<Object, List<?>> ENVTECH_VOIDMINER_RECIPE_CACHE = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Map<Object, CompressedForestryBottlerIngredients> FORESTRY_BOTTLER_COMPRESSED_INGREDIENTS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<Object, CompressedEnderIOTankIngredients> ENDERIO_TANK_COMPRESSED_INGREDIENTS = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final ConcurrentMap<String, String> OC_MANUAL_PATH_CACHE = new ConcurrentHashMap<>();
+    private static final Set<String> OC_MANUAL_PATH_MISSES = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentMap<String, Set<?>> OC_ENVIRONMENTS_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, scala.collection.mutable.Map> OC_CALLBACKS_CACHE = new ConcurrentHashMap<>();
+    private static Method ocManualPathFor;
+    private static Method ocDriverEnvironmentsFor;
+    private static Method ocCallbacksFromClass;
     private static volatile boolean jerVillagerTradeCacheLoaded;
     private static volatile boolean jerVillagerTradeCacheDirty;
     private static volatile int jerVillagerTradeCacheHits;
@@ -239,6 +277,58 @@ public final class HeiOptimizations {
 
     public static int searchWorkerCount() {
         return SEARCH_WORKERS;
+    }
+
+    public static ExecutorService newHeiSearchExecutor() {
+        return Executors.newFixedThreadPool(SEARCH_WORKERS, new HeiSearchThreadFactory());
+    }
+
+    public static boolean deferElementSearchBlock(Object elementSearch) {
+        if (!DEFER_HEI_SEARCH_BLOCK || elementSearch == null || Boolean.TRUE.equals(FORCE_HEI_SEARCH_BLOCK.get())) {
+            return false;
+        }
+
+        synchronized (DEFERRED_HEI_SEARCH_BLOCKS) {
+            if (!DEFERRED_HEI_SEARCH_BLOCKS.add(elementSearch)) {
+                return true;
+            }
+        }
+
+        Thread thread = new Thread(() -> forceElementSearchBlock(elementSearch), "GPOM HEI Search Finalizer");
+        thread.setDaemon(true);
+        thread.start();
+        GPOM.LOGGER.info("[HEI Optimizations] Deferred HEI search-tree finalization out of loadComplete");
+        return true;
+    }
+
+    public static void forceElementSearchBlock(Object elementSearch) {
+        if (elementSearch == null || Boolean.TRUE.equals(FORCE_HEI_SEARCH_BLOCK.get())) {
+            return;
+        }
+
+        synchronized (elementSearch) {
+            synchronized (DEFERRED_HEI_SEARCH_BLOCKS) {
+                if (!DEFERRED_HEI_SEARCH_BLOCKS.contains(elementSearch)) {
+                    return;
+                }
+            }
+
+            long started = System.nanoTime();
+            FORCE_HEI_SEARCH_BLOCK.set(Boolean.TRUE);
+            try {
+                Method block = elementSearch.getClass().getMethod("block");
+                block.invoke(elementSearch);
+                long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+                GPOM.LOGGER.info("[HEI Optimizations] Finalized deferred HEI search trees in {} ms", elapsedMs);
+            } catch (Throwable throwable) {
+                GPOM.LOGGER.warn("[HEI Optimizations] Failed to finalize deferred HEI search trees", throwable);
+            } finally {
+                FORCE_HEI_SEARCH_BLOCK.remove();
+                synchronized (DEFERRED_HEI_SEARCH_BLOCKS) {
+                    DEFERRED_HEI_SEARCH_BLOCKS.remove(elementSearch);
+                }
+            }
+        }
     }
 
     public static Iterator<?> emptyIterator() {
@@ -487,6 +577,9 @@ public final class HeiOptimizations {
             List<ForestryBottlerRecipeRecord> records = cacheSignature != null && GpomEarlyConfig.heiForestryBottlerRecipeCacheEnabled()
                     ? new ArrayList<ForestryBottlerRecipeRecord>()
                     : null;
+            List<ForestryBottlerRecipeRecord> groupingRecords = GpomEarlyConfig.heiCompressForestryBottlerRecipesEnabled()
+                    ? new ArrayList<ForestryBottlerRecipeRecord>()
+                    : null;
             int scanned = 0;
             int drainRecipes = 0;
             int fillCandidates = 0;
@@ -510,6 +603,7 @@ public final class HeiOptimizations {
                         ItemStack output = handler.getContainer();
                         recipes.add(newForestryBottlerRecipe(stack, drained, output, false));
                         addForestryBottlerRecord(records, stack, drained, output, false);
+                        addForestryBottlerRecord(groupingRecords, stack, drained, output, false);
                         drainRecipes++;
                     }
                 }
@@ -538,11 +632,30 @@ public final class HeiOptimizations {
                     ItemStack output = fillHandler.getContainer();
                     recipes.add(newForestryBottlerRecipe(stack, filledFluid, output, true));
                     addForestryBottlerRecord(records, stack, filledFluid, output, true);
+                    addForestryBottlerRecord(groupingRecords, stack, filledFluid, output, true);
                     fillRecipes++;
                 }
             }
 
             saveForestryBottlerRecipeCache(cacheSignature, records);
+            if (GpomEarlyConfig.heiCompressForestryBottlerRecipesEnabled() && groupingRecords != null) {
+                List groupedRecipes = compressForestryBottlerRecords(groupingRecords);
+                if (!groupedRecipes.isEmpty()) {
+                    long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+                    GPOM.LOGGER.info(
+                            "[HEI Optimizations] Built Forestry Bottler recipes with grouped GPOM fast path in {} ms (scanned={}, fluids={}, drainRows={}, fillCandidates={}, fullFillSkipped={}, fillRows={}, groupedRows={})",
+                            elapsedMs,
+                            scanned,
+                            fluids.size(),
+                            drainRecipes,
+                            fillCandidates,
+                            fullFillSkipped,
+                            fillRecipes,
+                            groupedRecipes.size()
+                    );
+                    return groupedRecipes;
+                }
+            }
             long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
             GPOM.LOGGER.info(
                     "[HEI Optimizations] Built Forestry Bottler recipes with GPOM fast path in {} ms (scanned={}, fluids={}, drainRecipes={}, fillCandidates={}, fullFillSkipped={}, fillRecipes={}, total={})",
@@ -577,6 +690,98 @@ public final class HeiOptimizations {
             return;
         }
         records.add(new ForestryBottlerRecipeRecord(input, fluidName, fluid.amount, output, filling));
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static List compressForestryBottlerRecords(List<ForestryBottlerRecipeRecord> records) throws ReflectiveOperationException {
+        if (records == null || records.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<String, ForestryBottlerRecipeGroup> groups = new HashMap<>();
+        for (ForestryBottlerRecipeRecord record : records) {
+            if (record == null || record.fluidName == null || record.fluidName.isEmpty() || record.amount <= 0) {
+                continue;
+            }
+            String key = (record.filling ? "fill:" : "drain:") + record.fluidName + ':' + record.amount;
+            ForestryBottlerRecipeGroup group = groups.get(key);
+            if (group == null) {
+                Fluid fluid = FluidRegistry.getFluid(record.fluidName);
+                if (fluid == null) {
+                    continue;
+                }
+                group = new ForestryBottlerRecipeGroup(record.filling, new FluidStack(fluid, record.amount));
+                groups.put(key, group);
+            }
+            if (record.input != null) {
+                group.inputs.add(copyStack(record.input));
+            }
+            if (record.output != null && !isStackEmptyReflective(record.output)) {
+                group.outputs.add(copyStack(record.output));
+            }
+        }
+
+        List recipes = new ArrayList(groups.size());
+        for (ForestryBottlerRecipeGroup group : groups.values()) {
+            if (group.inputs.isEmpty()) {
+                continue;
+            }
+            ItemStack representativeInput = group.inputs.get(0);
+            ItemStack representativeOutput = group.outputs.isEmpty() ? null : group.outputs.get(0);
+            Object wrapper = newForestryBottlerRecipe(representativeInput, group.fluid, representativeOutput, group.filling);
+            synchronized (FORESTRY_BOTTLER_COMPRESSED_INGREDIENTS) {
+                FORESTRY_BOTTLER_COMPRESSED_INGREDIENTS.put(
+                        wrapper,
+                        new CompressedForestryBottlerIngredients(
+                                group.filling ? Collections.singletonList(group.fluid) : Collections.<FluidStack>emptyList(),
+                                group.filling ? Collections.<FluidStack>emptyList() : Collections.singletonList(group.fluid),
+                                Collections.unmodifiableList(group.inputs),
+                                Collections.unmodifiableList(group.outputs)
+                        )
+                );
+            }
+            recipes.add(wrapper);
+        }
+        return recipes;
+    }
+
+    public static boolean applyCompressedForestryBottlerIngredients(Object wrapper, Object ingredients) {
+        if (wrapper == null || ingredients == null) {
+            return false;
+        }
+
+        CompressedForestryBottlerIngredients data;
+        synchronized (FORESTRY_BOTTLER_COMPRESSED_INGREDIENTS) {
+            data = FORESTRY_BOTTLER_COMPRESSED_INGREDIENTS.get(wrapper);
+        }
+        if (data == null) {
+            return false;
+        }
+
+        try {
+            ingredients.getClass()
+                    .getMethod("setInputs", Class.class, List.class)
+                    .invoke(ingredients, ItemStack.class, data.itemInputs);
+            if (!data.itemOutputs.isEmpty()) {
+                ingredients.getClass()
+                        .getMethod("setOutputs", Class.class, List.class)
+                        .invoke(ingredients, ItemStack.class, data.itemOutputs);
+            }
+            if (!data.fluidInputs.isEmpty()) {
+                ingredients.getClass()
+                        .getMethod("setInputs", Class.class, List.class)
+                        .invoke(ingredients, FluidStack.class, data.fluidInputs);
+            }
+            if (!data.fluidOutputs.isEmpty()) {
+                ingredients.getClass()
+                        .getMethod("setOutputs", Class.class, List.class)
+                        .invoke(ingredients, FluidStack.class, data.fluidOutputs);
+            }
+            return true;
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[HEI Optimizations] Failed to apply grouped Forestry Bottler ingredients; using representative recipe", throwable);
+            return false;
+        }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -621,6 +826,9 @@ public final class HeiOptimizations {
             }
 
             List recipes = new ArrayList(count);
+            List<ForestryBottlerRecipeRecord> cachedRecords = GpomEarlyConfig.heiCompressForestryBottlerRecipesEnabled()
+                    ? new ArrayList<ForestryBottlerRecipeRecord>(count)
+                    : null;
             List<ForestryBottlerRecipeRecord> legacyRecords = legacySignature
                     ? new ArrayList<ForestryBottlerRecipeRecord>(count)
                     : null;
@@ -642,11 +850,26 @@ public final class HeiOptimizations {
                 }
                 FluidStack fluidStack = new FluidStack(fluid, amount);
                 recipes.add(newForestryBottlerRecipe(inputStack, fluidStack, outputStack, filling));
+                addForestryBottlerRecord(cachedRecords, inputStack, fluidStack, outputStack, filling);
                 addForestryBottlerRecord(legacyRecords, inputStack, fluidStack, outputStack, filling);
             }
 
             if (legacySignature) {
                 saveForestryBottlerRecipeCache(signature, legacyRecords);
+            }
+            if (GpomEarlyConfig.heiCompressForestryBottlerRecipesEnabled() && cachedRecords != null) {
+                List groupedRecipes = compressForestryBottlerRecords(cachedRecords);
+                if (!groupedRecipes.isEmpty()) {
+                    long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
+                    GPOM.LOGGER.info(
+                            "[HEI Optimizations] Loaded {} Forestry Bottler recipe record(s) from {}cache and grouped into {} HEI row(s) in {} ms",
+                            recipes.size(),
+                            legacySignature ? "legacy " : "",
+                            groupedRecipes.size(),
+                            elapsedMs
+                    );
+                    return groupedRecipes;
+                }
             }
             long elapsedMs = (System.nanoTime() - started) / 1_000_000L;
             GPOM.LOGGER.info(
@@ -1264,6 +1487,11 @@ public final class HeiOptimizations {
             ingredients.getClass()
                     .getMethod("setOutputs", Class.class, List.class)
                     .invoke(ingredients, ItemStack.class, data.itemOutputs);
+            if (!data.fluidOutputs.isEmpty()) {
+                ingredients.getClass()
+                        .getMethod("setOutputs", Class.class, List.class)
+                        .invoke(ingredients, FluidStack.class, data.fluidOutputs);
+            }
             return true;
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[HEI Optimizations] Failed to apply compressed EnderIO Tank mending ingredients; using representative recipe", throwable);
@@ -1365,6 +1593,10 @@ public final class HeiOptimizations {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static int addEnderIOTankFluidRecipes(List recipes, List fluidHandlers) throws ReflectiveOperationException {
+        if (GpomEarlyConfig.heiCompressEnderIOTankFluidRecipesEnabled()) {
+            return addCompressedEnderIOTankFluidRecipes(recipes, fluidHandlers);
+        }
+
         int added = 0;
         List<Fluid> fluids = forestryBottlerFluids();
         for (Object ingredient : fluidHandlers) {
@@ -1404,6 +1636,102 @@ public final class HeiOptimizations {
             }
         }
         return added;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static int addCompressedEnderIOTankFluidRecipes(List recipes, List fluidHandlers) throws ReflectiveOperationException {
+        int originalRows = 0;
+        List<Fluid> fluids = forestryBottlerFluids();
+        Map<String, EnderIOTankFluidRecipeGroup> groups = new HashMap<>();
+        for (Object ingredient : fluidHandlers) {
+            if (!(ingredient instanceof ItemStack)) {
+                continue;
+            }
+            ItemStack stack = (ItemStack) ingredient;
+            ItemStack drainStack = copyStack(stack);
+            IFluidHandlerItem handler = fluidHandlerItem(drainStack);
+            if (handler == null) {
+                continue;
+            }
+
+            FluidStack drained = handler.drain(16000, true);
+            ItemStack drainOutput = handler.getContainer();
+            if (drained != null && drained.amount > 0 && drained.getFluid() != null) {
+                addEnderIOTankFluidGroup(groups, false, drained, stack, drainOutput);
+                originalRows++;
+                continue;
+            }
+
+            for (Fluid fluid : fluids) {
+                if (fluid == null) {
+                    continue;
+                }
+                ItemStack fillStack = copyStack(stack);
+                IFluidHandlerItem fillHandler = fluidHandlerItem(fillStack);
+                if (fillHandler == null) {
+                    continue;
+                }
+                int filled = fillHandler.fill(new FluidStack(fluid, 16000), true);
+                if (filled <= 0) {
+                    continue;
+                }
+                addEnderIOTankFluidGroup(groups, true, new FluidStack(fluid, filled), stack, fillHandler.getContainer());
+                originalRows++;
+            }
+        }
+
+        int groupedRows = 0;
+        for (EnderIOTankFluidRecipeGroup group : groups.values()) {
+            if (group.itemInputs.isEmpty()) {
+                continue;
+            }
+            ItemStack representativeInput = group.itemInputs.get(0);
+            ItemStack representativeOutput = group.itemOutputs.isEmpty() ? null : group.itemOutputs.get(0);
+            Object wrapper = group.filling
+                    ? newEnderIOTankSimpleWrapper(group.fluid, null, representativeInput, representativeOutput)
+                    : newEnderIOTankSimpleWrapper(null, group.fluid, representativeInput, representativeOutput);
+            synchronized (ENDERIO_TANK_COMPRESSED_INGREDIENTS) {
+                ENDERIO_TANK_COMPRESSED_INGREDIENTS.put(
+                        wrapper,
+                        new CompressedEnderIOTankIngredients(
+                                group.filling ? Collections.singletonList(group.fluid) : Collections.<FluidStack>emptyList(),
+                                group.filling ? Collections.<FluidStack>emptyList() : Collections.singletonList(group.fluid),
+                                Collections.unmodifiableList(group.itemInputs),
+                                Collections.unmodifiableList(group.itemOutputs)
+                        )
+                );
+            }
+            recipes.add(wrapper);
+            groupedRows++;
+        }
+        GPOM.LOGGER.info(
+                "[HEI Optimizations] Grouped {} EnderIO Tank fluid recipe row(s) into {} HEI row(s)",
+                originalRows,
+                groupedRows
+        );
+        return groupedRows;
+    }
+
+    private static void addEnderIOTankFluidGroup(
+            Map<String, EnderIOTankFluidRecipeGroup> groups,
+            boolean filling,
+            FluidStack fluid,
+            ItemStack input,
+            ItemStack output
+    ) throws ReflectiveOperationException {
+        if (fluid == null || fluid.getFluid() == null || fluid.amount <= 0 || input == null) {
+            return;
+        }
+        String key = (filling ? "fill:" : "drain:") + fluid.getFluid().getName();
+        EnderIOTankFluidRecipeGroup group = groups.get(key);
+        if (group == null) {
+            group = new EnderIOTankFluidRecipeGroup(filling, new FluidStack(fluid.getFluid(), fluid.amount));
+            groups.put(key, group);
+        }
+        group.itemInputs.add(copyStack(input));
+        if (output != null && !isStackEmptyReflective(output)) {
+            group.itemOutputs.add(copyStack(output));
+        }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -1481,6 +1809,7 @@ public final class HeiOptimizations {
                     wrapper,
                     new CompressedEnderIOTankIngredients(
                             Collections.singletonList(new FluidStack(xpJuice, 16000)),
+                            Collections.<FluidStack>emptyList(),
                             Collections.unmodifiableList(damagedInputs),
                             Collections.unmodifiableList(repairedOutputs)
                     )
@@ -1894,6 +2223,21 @@ public final class HeiOptimizations {
 
     public static void finishRecipeRegistryBulk() {
         RECIPE_REGISTRY_BULK.remove();
+        HEI_RECIPE_MAP_EXPANDED_SUBTYPES.clear();
+        HEI_RECIPE_MAP_UNIQUE_IDS.clear();
+        int handlerHits = HEI_RECIPE_HANDLER_CACHE_HITS.getAndSet(0);
+        int handlerMisses = HEI_RECIPE_HANDLER_CACHE_MISSES.getAndSet(0);
+        int handlerNulls = HEI_RECIPE_HANDLER_CACHE_NULLS.getAndSet(0);
+        long handlerLookupMs = HEI_RECIPE_HANDLER_LOOKUP_NANOS.getAndSet(0L) / 1_000_000L;
+        if (handlerHits != 0 || handlerMisses != 0 || handlerNulls != 0) {
+            GPOM.LOGGER.info(
+                    "[HEI Optimizations] Recipe handler cache stats: hits={} misses={} nulls={} lookup={} ms",
+                    handlerHits,
+                    handlerMisses,
+                    handlerNulls,
+                    handlerLookupMs
+            );
+        }
     }
 
     @SuppressWarnings("rawtypes")
@@ -1904,6 +2248,435 @@ public final class HeiOptimizations {
         if (cache != null) {
             cache.clear();
         }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List cachedHeiRecipeMapExpandSubtypes(IIngredientHelper helper, List ingredients) {
+        if (helper == null || ingredients == null || ingredients.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List cached = HEI_RECIPE_MAP_EXPANDED_SUBTYPES.get(ingredients);
+        if (cached != null) {
+            return cached;
+        }
+        List expanded = helper.expandSubtypes(ingredients);
+        HEI_RECIPE_MAP_EXPANDED_SUBTYPES.put(ingredients, expanded);
+        return expanded;
+    }
+
+    @SuppressWarnings("rawtypes")
+    public static String cachedHeiRecipeMapUniqueId(IIngredientHelper helper, Object ingredient) {
+        if (helper == null || ingredient == null) {
+            return "";
+        }
+        String cached = HEI_RECIPE_MAP_UNIQUE_IDS.get(ingredient);
+        if (cached != null) {
+            return cached;
+        }
+        String uniqueId = helper.getUniqueId(ingredient);
+        HEI_RECIPE_MAP_UNIQUE_IDS.put(ingredient, uniqueId);
+        return uniqueId;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static IRecipeHandler cachedHeiRecipeHandler(Object recipeRegistry, Class recipeClass, String recipeCategoryUid) {
+        if (recipeRegistry == null || recipeClass == null) {
+            return null;
+        }
+
+        Map<HeiRecipeHandlerKey, Object> cache;
+        synchronized (HEI_RECIPE_HANDLER_CACHE) {
+            cache = HEI_RECIPE_HANDLER_CACHE.get(recipeRegistry);
+            if (cache == null) {
+                cache = Collections.synchronizedMap(new HashMap<>());
+                HEI_RECIPE_HANDLER_CACHE.put(recipeRegistry, cache);
+            }
+        }
+
+        HeiRecipeHandlerKey key = new HeiRecipeHandlerKey(recipeClass, recipeCategoryUid);
+        synchronized (cache) {
+            Object cached = cache.get(key);
+            if (cached != null) {
+                HEI_RECIPE_HANDLER_CACHE_HITS.incrementAndGet();
+                return cached == NULL_HEI_RECIPE_HANDLER ? null : (IRecipeHandler) cached;
+            }
+
+            long started = System.nanoTime();
+            Object handler = findHeiRecipeHandler(recipeRegistry, recipeClass, recipeCategoryUid);
+            HEI_RECIPE_HANDLER_LOOKUP_NANOS.addAndGet(System.nanoTime() - started);
+            HEI_RECIPE_HANDLER_CACHE_MISSES.incrementAndGet();
+            if (handler == null) {
+                HEI_RECIPE_HANDLER_CACHE_NULLS.incrementAndGet();
+            }
+            cache.put(key, handler == null ? NULL_HEI_RECIPE_HANDLER : handler);
+            return (IRecipeHandler) handler;
+        }
+    }
+
+    public static boolean fastAddKnownRuntimeRecipe(Object recipeRegistry, Object recipe) {
+        if (!FAST_KNOWN_RUNTIME_RECIPES || recipeRegistry == null || recipe == null) {
+            return false;
+        }
+
+        String recipeClassName = recipe.getClass().getName();
+        try {
+            if ("com.infinityraider.agricraft.core.JsonPlant".equals(recipeClassName)) {
+                Object wrapper = newAgriCraftProduceRecipeWrapper(recipe);
+                addHeiRecipeWrapper(recipeRegistry, wrapper, "agricraft.produce");
+                int count = HEI_KNOWN_RUNTIME_RECIPES.incrementAndGet();
+                if (count == 1 || count % 250 == 0) {
+                    GPOM.LOGGER.info("[HEI Optimizations] Fast-registered {} known runtime HEI recipe(s)", count);
+                }
+                return true;
+            }
+            if ("com.infinityraider.agricraft.farming.mutation.Mutation".equals(recipeClassName)) {
+                Object wrapper = newAgriCraftMutationRecipeWrapper(recipe);
+                addHeiRecipeWrapper(recipeRegistry, wrapper, "agricraft.mutation");
+                int count = HEI_KNOWN_RUNTIME_RECIPES.incrementAndGet();
+                if (count == 1 || count % 250 == 0) {
+                    GPOM.LOGGER.info("[HEI Optimizations] Fast-registered {} known runtime HEI recipe(s)", count);
+                }
+                return true;
+            }
+            if ("com.rwtema.extrautils2.crafting.jei.JEIMachine$JEIMachineRecipe".equals(recipeClassName)) {
+                Object wrapper = newExtraUtilsJeiMachineWrapper(recipe);
+                String categoryUid = extraUtilsJeiMachineCategoryUid(recipe);
+                addHeiRecipeWrapper(recipeRegistry, wrapper, categoryUid);
+                int count = HEI_KNOWN_RUNTIME_RECIPES.incrementAndGet();
+                if (count == 1 || count % 250 == 0) {
+                    GPOM.LOGGER.info("[HEI Optimizations] Fast-registered {} known runtime HEI recipe(s)", count);
+                }
+                return true;
+            }
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[HEI Optimizations] Failed known runtime HEI recipe fast path for {}; using HEI stock lookup",
+                    recipeClassName,
+                    throwable);
+        }
+        return false;
+    }
+
+    public static boolean skipUnsupportedRuntimeRecipe(Object recipeRegistry, Object recipe, Class<?> recipeClass, String recipeCategoryUid) {
+        if (!SKIP_UNSUPPORTED_RUNTIME_RECIPES || recipeRegistry == null || recipe == null || recipeCategoryUid != null) {
+            return false;
+        }
+        Class<?> effectiveClass = recipeClass != null ? recipeClass : recipe.getClass();
+        if (effectiveClass == null || !UNSUPPORTED_RUNTIME_RECIPE_CLASSES.contains(effectiveClass.getName())) {
+            return false;
+        }
+        int count = HEI_SKIPPED_UNSUPPORTED_RUNTIME_RECIPES.incrementAndGet();
+        if (count == 1 || count % 250 == 0) {
+            GPOM.LOGGER.info("[HEI Optimizations] Skipped {} unsupported runtime HEI recipe(s); latest={}",
+                    count,
+                    effectiveClass.getName());
+        }
+        return true;
+    }
+
+    private static Set<String> unsupportedRuntimeRecipeClasses() {
+        Set<String> classes = new HashSet<>(Arrays.asList(
+                "WayofTime.bloodmagic.compat.jei.armourDowngrade.ArmourDowngradeRecipeJEI",
+                "WayofTime.bloodmagic.compat.jei.binding.BindingRecipeJEI",
+                "com.brandon3055.draconicevolution.api.fusioncrafting.SimpleFusionRecipe",
+                "com.brandon3055.draconicevolution.api.itemupgrade.FusionUpgradeRecipe",
+                "com.brandon3055.draconicevolution.integration.jei.EIOSpawnerRecipesWrapper",
+                "com.brandon3055.draconicevolution.lib.ToolUpgradeRecipe",
+                "com.rwtema.extrautils2.blocks.BlockDecorativeSolid$DecorStates$9$1",
+                "com.rwtema.extrautils2.crafting.ResonatorRecipe",
+                "com.rwtema.extrautils2.crafting.jei.JEITerraformerHandler$Holder",
+                "com.rwtema.extrautils2.structure.PatternRecipe",
+                "com.setycz.chickens.jei.breeding.BreedingRecipeWrapper",
+                "com.setycz.chickens.jei.drop.DropRecipeWrapper",
+                "com.setycz.chickens.jei.henhousing.HenhousingRecipeWrapper",
+                "com.setycz.chickens.jei.laying.LayingRecipeWrapper",
+                "com.setycz.chickens.jei.throwing.ThrowingRecipeWrapper",
+                "ipsis.woot.plugins.jei.anvil.StygianAnvilRecipeJEI",
+                "nc.integration.jei.JEIRecipeWrapper$ActiveCooler",
+                "nc.integration.jei.JEIRecipeWrapper$AlloyFurnace",
+                "nc.integration.jei.JEIRecipeWrapper$Centrifuge",
+                "nc.integration.jei.JEIRecipeWrapper$ChemicalReactor",
+                "nc.integration.jei.JEIRecipeWrapper$Collector",
+                "nc.integration.jei.JEIRecipeWrapper$Condenser",
+                "nc.integration.jei.JEIRecipeWrapper$CoolantHeater",
+                "nc.integration.jei.JEIRecipeWrapper$Crystallizer",
+                "nc.integration.jei.JEIRecipeWrapper$DecayGenerator",
+                "nc.integration.jei.JEIRecipeWrapper$DecayHastener",
+                "nc.integration.jei.JEIRecipeWrapper$Dissolver",
+                "nc.integration.jei.JEIRecipeWrapper$Electrolyser",
+                "nc.integration.jei.JEIRecipeWrapper$Extractor",
+                "nc.integration.jei.JEIRecipeWrapper$Fission",
+                "nc.integration.jei.JEIRecipeWrapper$FuelReprocessor",
+                "nc.integration.jei.JEIRecipeWrapper$Fusion",
+                "nc.integration.jei.JEIRecipeWrapper$HeatExchanger",
+                "nc.integration.jei.JEIRecipeWrapper$Infuser",
+                "nc.integration.jei.JEIRecipeWrapper$IngotFormer",
+                "nc.integration.jei.JEIRecipeWrapper$Irradiator",
+                "nc.integration.jei.JEIRecipeWrapper$IsotopeSeparator",
+                "nc.integration.jei.JEIRecipeWrapper$Manufactory",
+                "nc.integration.jei.JEIRecipeWrapper$Melter",
+                "nc.integration.jei.JEIRecipeWrapper$Pressurizer",
+                "nc.integration.jei.JEIRecipeWrapper$RockCrusher",
+                "nc.integration.jei.JEIRecipeWrapper$SaltMixer",
+                "nc.integration.jei.JEIRecipeWrapper$SaltFission",
+                "nc.integration.jei.JEIRecipeWrapper$Supercooler",
+                "nc.integration.jei.JEIRecipeWrapper$Turbine",
+                "techreborn.api.recipe.machines.BlastFurnaceRecipe",
+                "techreborn.api.recipe.machines.DistillationTowerRecipe",
+                "techreborn.api.recipe.machines.ImplosionCompressorRecipe",
+                "techreborn.api.recipe.machines.IndustrialElectrolyzerRecipe",
+                "techreborn.api.recipe.machines.IndustrialGrinderRecipe",
+                "techreborn.api.recipe.machines.IndustrialSawmillRecipe",
+                "techreborn.api.recipe.machines.ScrapboxRecipe",
+                "techreborn.api.recipe.machines.VacuumFreezerRecipe"
+        ));
+        String extraClasses = System.getProperty("gpom.hei.skipUnsupportedRuntimeRecipes.classes", "");
+        if (extraClasses != null && !extraClasses.trim().isEmpty()) {
+            for (String className : extraClasses.split(",")) {
+                String trimmed = className.trim();
+                if (!trimmed.isEmpty()) {
+                    classes.add(trimmed);
+                }
+            }
+        }
+        return Collections.unmodifiableSet(classes);
+    }
+
+    private static void addHeiRecipeWrapper(Object recipeRegistry, Object wrapper, String categoryUid) throws ReflectiveOperationException {
+        Method method = heiRecipeRegistryAddWrapperMethod;
+        if (method == null) {
+            method = recipeRegistry.getClass().getMethod("addRecipe", IRecipeWrapper.class, String.class);
+            heiRecipeRegistryAddWrapperMethod = method;
+        }
+        method.invoke(recipeRegistry, wrapper, categoryUid);
+    }
+
+    private static Object newAgriCraftProduceRecipeWrapper(Object recipe) throws ReflectiveOperationException, ClassNotFoundException {
+        Constructor<?> constructor = agricraftProduceRecipeWrapperConstructor;
+        if (constructor == null) {
+            ClassLoader loader = recipe.getClass().getClassLoader();
+            Class<?> plantClass = Class.forName("com.infinityraider.agricraft.api.v1.plant.IAgriPlant", false, loader);
+            constructor = Class.forName("com.infinityraider.agricraft.compat.jei.produce.ProduceRecipeWrapper", false, loader)
+                    .getConstructor(plantClass);
+            agricraftProduceRecipeWrapperConstructor = constructor;
+        }
+        return constructor.newInstance(recipe);
+    }
+
+    private static Object newAgriCraftMutationRecipeWrapper(Object recipe) throws ReflectiveOperationException, ClassNotFoundException {
+        Constructor<?> constructor = agricraftMutationRecipeWrapperConstructor;
+        if (constructor == null) {
+            ClassLoader loader = recipe.getClass().getClassLoader();
+            Class<?> mutationClass = Class.forName("com.infinityraider.agricraft.api.v1.mutation.IAgriMutation", false, loader);
+            constructor = Class.forName("com.infinityraider.agricraft.compat.jei.mutation.MutationRecipeWrapper", false, loader)
+                    .getConstructor(mutationClass);
+            agricraftMutationRecipeWrapperConstructor = constructor;
+        }
+        return constructor.newInstance(recipe);
+    }
+
+    private static Object newExtraUtilsJeiMachineWrapper(Object recipe) throws ReflectiveOperationException {
+        Method method = extraUtilsJeiMachineCreateWrapperMethod;
+        if (method == null) {
+            method = methodByNameOrReturnType(
+                    recipe.getClass(),
+                    "createWrapper",
+                    "com.rwtema.extrautils2.crafting.jei.JEIMachine$JEIMachineRecipe$Wrapper"
+            );
+            extraUtilsJeiMachineCreateWrapperMethod = method;
+        }
+        return method.invoke(recipe);
+    }
+
+    private static String extraUtilsJeiMachineCategoryUid(Object recipe) throws ReflectiveOperationException, ClassNotFoundException {
+        Field machineField = extraUtilsJeiMachineRecipeMachineField;
+        if (machineField == null) {
+            machineField = fieldByNameOrType(
+                    recipe.getClass(),
+                    "machine",
+                    "com.rwtema.extrautils2.api.machine.Machine",
+                    0
+            );
+            extraUtilsJeiMachineRecipeMachineField = machineField;
+        }
+        Object machine = machineField.get(recipe);
+        if (machine == null) {
+            throw new IllegalStateException("ExtraUtils2 JEI machine recipe has no machine");
+        }
+
+        Method getString = extraUtilsJeiMachineGetStringMethod;
+        if (getString == null) {
+            ClassLoader loader = recipe.getClass().getClassLoader();
+            Class<?> machineClass = Class.forName("com.rwtema.extrautils2.api.machine.Machine", false, loader);
+            getString = staticMethodByNameOrReturnType(
+                    Class.forName("com.rwtema.extrautils2.crafting.jei.JEIMachine", false, loader),
+                    "getString",
+                    String.class,
+                    machineClass
+            );
+            extraUtilsJeiMachineGetStringMethod = getString;
+        }
+        Object categoryUid = getString.invoke(null, machine);
+        if (!(categoryUid instanceof String) || ((String) categoryUid).isEmpty()) {
+            throw new IllegalStateException("ExtraUtils2 JEI machine recipe has invalid category " + categoryUid);
+        }
+        return (String) categoryUid;
+    }
+
+    private static Object findHeiRecipeHandler(Object recipeRegistry, Class<?> recipeClass, String recipeCategoryUid) {
+        try {
+            HeiRecipeHandlerFields fields = heiRecipeHandlerFields(recipeRegistry.getClass());
+            Collection<?> categoryHandlers = recipeCategoryUid == null
+                    ? multimapValues(fields.recipeHandlers.get(recipeRegistry))
+                    : multimapGet(fields.recipeHandlers.get(recipeRegistry), recipeCategoryUid);
+            Collection<?> unsortedHandlers = collectionValue(fields.unsortedRecipeHandlers.get(recipeRegistry));
+
+            Object handler = findHeiRecipeHandlerExact(categoryHandlers, recipeClass);
+            if (handler != null) {
+                return handler;
+            }
+            handler = findHeiRecipeHandlerExact(unsortedHandlers, recipeClass);
+            if (handler != null) {
+                return handler;
+            }
+            handler = findHeiRecipeHandlerAssignable(categoryHandlers, recipeClass);
+            if (handler != null) {
+                return handler;
+            }
+            return findHeiRecipeHandlerAssignable(unsortedHandlers, recipeClass);
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.debug("[HEI Optimizations] Cached HEI recipe handler lookup failed for {}", recipeClass, throwable);
+            return null;
+        }
+    }
+
+    private static Object findHeiRecipeHandlerExact(Collection<?> handlers, Class<?> recipeClass) throws ReflectiveOperationException {
+        if (handlers == null || handlers.isEmpty()) {
+            return null;
+        }
+        for (Object handler : handlers) {
+            Class<?> handlerRecipeClass = heiRecipeHandlerClass(handler);
+            if (recipeClass.equals(handlerRecipeClass)) {
+                return handler;
+            }
+        }
+        return null;
+    }
+
+    private static Object findHeiRecipeHandlerAssignable(Collection<?> handlers, Class<?> recipeClass) throws ReflectiveOperationException {
+        if (handlers == null || handlers.isEmpty()) {
+            return null;
+        }
+        for (Object handler : handlers) {
+            Class<?> handlerRecipeClass = heiRecipeHandlerClass(handler);
+            if (handlerRecipeClass != null && handlerRecipeClass.isAssignableFrom(recipeClass)) {
+                return handler;
+            }
+        }
+        return null;
+    }
+
+    private static Class<?> heiRecipeHandlerClass(Object handler) throws ReflectiveOperationException {
+        if (handler == null) {
+            return null;
+        }
+        Method method = HEI_RECIPE_HANDLER_CLASS_METHODS.get(handler.getClass());
+        if (method == null) {
+            method = handler.getClass().getMethod("getRecipeClass");
+            HEI_RECIPE_HANDLER_CLASS_METHODS.put(handler.getClass(), method);
+        }
+        Object value = method.invoke(handler);
+        return value instanceof Class ? (Class<?>) value : null;
+    }
+
+    private static HeiRecipeHandlerFields heiRecipeHandlerFields(Class<?> registryClass) {
+        HeiRecipeHandlerFields fields = HEI_RECIPE_HANDLER_FIELDS.get(registryClass);
+        if (fields != null) {
+            return fields;
+        }
+        Field recipeHandlers = fieldByNameOrType(registryClass, "recipeHandlers", "com.google.common.collect.ImmutableMultimap", 0);
+        Field unsortedRecipeHandlers = fieldByNameOrType(registryClass, "unsortedRecipeHandlers", "com.google.common.collect.ImmutableList", 0);
+        fields = new HeiRecipeHandlerFields(recipeHandlers, unsortedRecipeHandlers);
+        HEI_RECIPE_HANDLER_FIELDS.put(registryClass, fields);
+        return fields;
+    }
+
+    private static Field fieldByNameOrType(Class<?> owner, String preferredName, String fallbackTypeName, int fallbackIndex) {
+        try {
+            Field field = owner.getDeclaredField(preferredName);
+            field.setAccessible(true);
+            return field;
+        } catch (Throwable ignored) {
+        }
+
+        int seen = 0;
+        for (Field field : owner.getDeclaredFields()) {
+            Class<?> type = field.getType();
+            if (type != null && fallbackTypeName.equals(type.getName())) {
+                if (seen++ == fallbackIndex) {
+                    field.setAccessible(true);
+                    return field;
+                }
+            }
+        }
+        throw new IllegalStateException("Missing HEI field " + preferredName + " on " + owner.getName());
+    }
+
+    private static Method methodByNameOrReturnType(Class<?> owner, String preferredName, String fallbackReturnTypeName) throws NoSuchMethodException {
+        try {
+            Method method = owner.getMethod(preferredName);
+            method.setAccessible(true);
+            return method;
+        } catch (Throwable ignored) {
+        }
+
+        for (Method method : owner.getMethods()) {
+            if (method.getParameterTypes().length == 0
+                    && method.getReturnType() != null
+                    && fallbackReturnTypeName.equals(method.getReturnType().getName())) {
+                method.setAccessible(true);
+                return method;
+            }
+        }
+        throw new NoSuchMethodException(preferredName);
+    }
+
+    private static Method staticMethodByNameOrReturnType(Class<?> owner, String preferredName, Class<?> returnType, Class<?>... parameterTypes) throws NoSuchMethodException {
+        try {
+            Method method = owner.getMethod(preferredName, parameterTypes);
+            method.setAccessible(true);
+            return method;
+        } catch (Throwable ignored) {
+        }
+
+        for (Method method : owner.getMethods()) {
+            if (Modifier.isStatic(method.getModifiers())
+                    && returnType.equals(method.getReturnType())
+                    && Arrays.equals(parameterTypes, method.getParameterTypes())) {
+                method.setAccessible(true);
+                return method;
+            }
+        }
+        throw new NoSuchMethodException(preferredName);
+    }
+
+    private static Collection<?> multimapGet(Object multimap, Object key) throws ReflectiveOperationException {
+        if (multimap == null) {
+            return Collections.emptyList();
+        }
+        Object value = multimap.getClass().getMethod("get", Object.class).invoke(multimap, key);
+        return collectionValue(value);
+    }
+
+    private static Collection<?> multimapValues(Object multimap) throws ReflectiveOperationException {
+        if (multimap == null) {
+            return Collections.emptyList();
+        }
+        Object value = multimap.getClass().getMethod("values").invoke(multimap);
+        return collectionValue(value);
+    }
+
+    private static Collection<?> collectionValue(Object value) {
+        return value instanceof Collection ? (Collection<?>) value : Collections.emptyList();
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -2259,13 +3032,63 @@ public final class HeiOptimizations {
         }
     }
 
-    private static final class CompressedEnderIOTankIngredients {
+    private static final class ForestryBottlerRecipeGroup {
+        private final boolean filling;
+        private final FluidStack fluid;
+        private final List<ItemStack> inputs = new ArrayList<>();
+        private final List<ItemStack> outputs = new ArrayList<>();
+
+        private ForestryBottlerRecipeGroup(boolean filling, FluidStack fluid) {
+            this.filling = filling;
+            this.fluid = fluid;
+        }
+    }
+
+    private static final class CompressedForestryBottlerIngredients {
         private final List<FluidStack> fluidInputs;
+        private final List<FluidStack> fluidOutputs;
         private final List<ItemStack> itemInputs;
         private final List<ItemStack> itemOutputs;
 
-        private CompressedEnderIOTankIngredients(List<FluidStack> fluidInputs, List<ItemStack> itemInputs, List<ItemStack> itemOutputs) {
+        private CompressedForestryBottlerIngredients(
+                List<FluidStack> fluidInputs,
+                List<FluidStack> fluidOutputs,
+                List<ItemStack> itemInputs,
+                List<ItemStack> itemOutputs
+        ) {
             this.fluidInputs = fluidInputs == null ? Collections.emptyList() : fluidInputs;
+            this.fluidOutputs = fluidOutputs == null ? Collections.emptyList() : fluidOutputs;
+            this.itemInputs = itemInputs == null ? Collections.emptyList() : itemInputs;
+            this.itemOutputs = itemOutputs == null ? Collections.emptyList() : itemOutputs;
+        }
+    }
+
+    private static final class EnderIOTankFluidRecipeGroup {
+        private final boolean filling;
+        private final FluidStack fluid;
+        private final List<ItemStack> itemInputs = new ArrayList<>();
+        private final List<ItemStack> itemOutputs = new ArrayList<>();
+
+        private EnderIOTankFluidRecipeGroup(boolean filling, FluidStack fluid) {
+            this.filling = filling;
+            this.fluid = fluid;
+        }
+    }
+
+    private static final class CompressedEnderIOTankIngredients {
+        private final List<FluidStack> fluidInputs;
+        private final List<FluidStack> fluidOutputs;
+        private final List<ItemStack> itemInputs;
+        private final List<ItemStack> itemOutputs;
+
+        private CompressedEnderIOTankIngredients(
+                List<FluidStack> fluidInputs,
+                List<FluidStack> fluidOutputs,
+                List<ItemStack> itemInputs,
+                List<ItemStack> itemOutputs
+        ) {
+            this.fluidInputs = fluidInputs == null ? Collections.emptyList() : fluidInputs;
+            this.fluidOutputs = fluidOutputs == null ? Collections.emptyList() : fluidOutputs;
             this.itemInputs = itemInputs == null ? Collections.emptyList() : itemInputs;
             this.itemOutputs = itemOutputs == null ? Collections.emptyList() : itemOutputs;
         }
@@ -3584,6 +4407,70 @@ public final class HeiOptimizations {
         method.invoke(subtypeRegistry, item, interpreter);
     }
 
+    public static String cachedOpenComputersManualPathFor(ItemStack stack) {
+        try {
+            String key = openComputersStackKey(stack);
+            String cached = OC_MANUAL_PATH_CACHE.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            if (OC_MANUAL_PATH_MISSES.contains(key)) {
+                return null;
+            }
+
+            String path = openComputersManualPathFor(stack);
+            if (path == null) {
+                OC_MANUAL_PATH_MISSES.add(key);
+            } else {
+                OC_MANUAL_PATH_CACHE.putIfAbsent(key, path);
+            }
+            return path;
+        } catch (Throwable ignored) {
+            return openComputersManualPathForFallback(stack);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static Set cachedOpenComputersEnvironmentsFor(ItemStack stack) {
+        try {
+            String key = openComputersStackKey(stack);
+            Set cached = (Set) OC_ENVIRONMENTS_CACHE.get(key);
+            if (cached != null) {
+                return new HashSet(cached);
+            }
+
+            Set environments = openComputersEnvironmentsFor(stack);
+            Set safeCopy = environments == null || environments.isEmpty()
+                    ? Collections.emptySet()
+                    : Collections.unmodifiableSet(new HashSet(environments));
+            Set previous = OC_ENVIRONMENTS_CACHE.putIfAbsent(key, safeCopy);
+            return new HashSet(previous != null ? previous : safeCopy);
+        } catch (Throwable ignored) {
+            return openComputersEnvironmentsForFallback(stack);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static scala.collection.mutable.Map cachedOpenComputersCallbacksFromClass(Object callbacksModule, Class<?> type) {
+        if (type == null) {
+            return openComputersCallbacksFromClassFallback(callbacksModule, null);
+        }
+        try {
+            scala.collection.mutable.Map cached = OC_CALLBACKS_CACHE.get(type);
+            if (cached != null) {
+                return cached;
+            }
+            scala.collection.mutable.Map callbacks = openComputersCallbacksFromClass(callbacksModule, type);
+            if (callbacks == null) {
+                callbacks = scala.collection.mutable.Map$.MODULE$.empty();
+            }
+            scala.collection.mutable.Map previous = OC_CALLBACKS_CACHE.putIfAbsent(type, callbacks);
+            return previous != null ? previous : callbacks;
+        } catch (Throwable ignored) {
+            return openComputersCallbacksFromClassFallback(callbacksModule, type);
+        }
+    }
+
     public static Object fastJerPrivateValue(Class<?> ownerClass, Object target, String fieldName) {
         try {
             if (ownerClass == null || target == null || fieldName == null) {
@@ -3601,6 +4488,82 @@ public final class HeiOptimizations {
             return field.get(target);
         } catch (Throwable ignored) {
             return jerGetPrivateValue(target, fieldName);
+        }
+    }
+
+    private static String openComputersStackKey(ItemStack stack) throws ReflectiveOperationException {
+        StringBuilder builder = new StringBuilder(96);
+        appendFastStackKey(builder, stack);
+        return builder.toString();
+    }
+
+    private static String openComputersManualPathFor(ItemStack stack) throws ReflectiveOperationException, ClassNotFoundException {
+        Method method = ocManualPathFor;
+        if (method == null) {
+            method = Class.forName("li.cil.oc.api.Manual").getMethod("pathFor", ItemStack.class);
+            method.setAccessible(true);
+            ocManualPathFor = method;
+        }
+        Object value = method.invoke(null, stack);
+        return value instanceof String ? (String) value : null;
+    }
+
+    private static String openComputersManualPathForFallback(ItemStack stack) {
+        try {
+            return openComputersManualPathFor(stack);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static Set openComputersEnvironmentsFor(ItemStack stack) throws ReflectiveOperationException, ClassNotFoundException {
+        Method method = ocDriverEnvironmentsFor;
+        if (method == null) {
+            method = Class.forName("li.cil.oc.api.Driver").getMethod("environmentsFor", ItemStack.class);
+            method.setAccessible(true);
+            ocDriverEnvironmentsFor = method;
+        }
+        Object value = method.invoke(null, stack);
+        return value instanceof Set ? (Set) value : Collections.emptySet();
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static Set openComputersEnvironmentsForFallback(ItemStack stack) {
+        try {
+            return openComputersEnvironmentsFor(stack);
+        } catch (Throwable ignored) {
+            return Collections.emptySet();
+        }
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static scala.collection.mutable.Map openComputersCallbacksFromClass(Object callbacksModule, Class<?> type)
+            throws ReflectiveOperationException, ClassNotFoundException {
+        Object module = callbacksModule;
+        if (module == null) {
+            Class<?> moduleClass = Class.forName("li.cil.oc.server.machine.Callbacks$");
+            Field field = moduleClass.getField("MODULE$");
+            module = field.get(null);
+        }
+        Method method = ocCallbacksFromClass;
+        if (method == null) {
+            method = module.getClass().getMethod("fromClass", Class.class);
+            method.setAccessible(true);
+            ocCallbacksFromClass = method;
+        }
+        Object value = method.invoke(module, type);
+        return value instanceof scala.collection.mutable.Map
+                ? (scala.collection.mutable.Map) value
+                : scala.collection.mutable.Map$.MODULE$.empty();
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static scala.collection.mutable.Map openComputersCallbacksFromClassFallback(Object callbacksModule, Class<?> type) {
+        try {
+            return openComputersCallbacksFromClass(callbacksModule, type);
+        } catch (Throwable ignored) {
+            return scala.collection.mutable.Map$.MODULE$.empty();
         }
     }
 
@@ -3626,6 +4589,30 @@ public final class HeiOptimizations {
             }
         }
         return drops;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List cachedEnvironmentalTechVoidMinerRecipes(Object registry) {
+        if (registry == null) {
+            return null;
+        }
+        synchronized (ENVTECH_VOIDMINER_RECIPE_CACHE) {
+            List cached = (List) ENVTECH_VOIDMINER_RECIPE_CACHE.get(registry);
+            return cached == null ? null : new ArrayList(cached);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static List cacheEnvironmentalTechVoidMinerRecipes(Object registry, List recipes) {
+        if (registry == null || recipes == null) {
+            return recipes;
+        }
+        synchronized (ENVTECH_VOIDMINER_RECIPE_CACHE) {
+            if (!ENVTECH_VOIDMINER_RECIPE_CACHE.containsKey(registry)) {
+                ENVTECH_VOIDMINER_RECIPE_CACHE.put(registry, Collections.unmodifiableList(new ArrayList(recipes)));
+            }
+        }
+        return recipes;
     }
 
     private static Method findMethod(Class<?> type, String... names) {
@@ -3728,7 +4715,7 @@ public final class HeiOptimizations {
 
     private static int computeSearchWorkerCount() {
         int max = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-        int auto = Math.max(1, Math.min(8, max));
+        int auto = 1;
         int configured = GpomEarlyConfig.heiSearchWorkers();
         if (System.getProperty("gpom.hei.searchWorkers") != null) {
             configured = intProperty("gpom.hei.searchWorkers", configured);
@@ -3837,6 +4824,57 @@ public final class HeiOptimizations {
         @Override
         public JeiPluginClassLoadResult call() {
             return loadJeiPluginClass(data, loader);
+        }
+    }
+
+    private static final class HeiSearchThreadFactory implements ThreadFactory {
+        private final AtomicInteger sequence = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "GPOM HEI search " + sequence.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
+
+    private static final class HeiRecipeHandlerFields {
+        private final Field recipeHandlers;
+        private final Field unsortedRecipeHandlers;
+
+        private HeiRecipeHandlerFields(Field recipeHandlers, Field unsortedRecipeHandlers) {
+            this.recipeHandlers = recipeHandlers;
+            this.unsortedRecipeHandlers = unsortedRecipeHandlers;
+        }
+    }
+
+    private static final class HeiRecipeHandlerKey {
+        private final Class<?> recipeClass;
+        private final String recipeCategoryUid;
+
+        private HeiRecipeHandlerKey(Class<?> recipeClass, String recipeCategoryUid) {
+            this.recipeClass = recipeClass;
+            this.recipeCategoryUid = recipeCategoryUid;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof HeiRecipeHandlerKey)) {
+                return false;
+            }
+            HeiRecipeHandlerKey that = (HeiRecipeHandlerKey) other;
+            return recipeClass == that.recipeClass
+                    && (recipeCategoryUid == null ? that.recipeCategoryUid == null : recipeCategoryUid.equals(that.recipeCategoryUid));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = System.identityHashCode(recipeClass);
+            result = 31 * result + (recipeCategoryUid == null ? 0 : recipeCategoryUid.hashCode());
+            return result;
         }
     }
 

@@ -38,7 +38,6 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "vswe/superfactory/client/IndexItemsOnLogin.class",
             "vswe/superfactory/util/SearchUtil.class"
     };
-
     @Override
     public void onLoad(String mixinPackage) {
     }

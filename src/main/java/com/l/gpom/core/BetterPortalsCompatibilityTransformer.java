@@ -13,10 +13,14 @@ import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -46,6 +50,7 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
     private static final String AETHER_SKYROOT_BUCKET = "com.gildedgames.the_aether.items.tools.ItemSkyrootBucket";
     private static final String AETHER_SKYROOT_BUCKET_INTERNAL = "com/gildedgames/the_aether/items/tools/ItemSkyrootBucket";
     private static final String THIS_INTERNAL = "com/l/gpom/core/BetterPortalsCompatibilityTransformer";
+    private static final String GUARD_INTERNAL = "com/l/gpom/compat/betterportals/BetterPortalsWaypointCrashGuard";
     private static final String LEGACY_AETHER_PREFIX = "com/legacy/aether/";
     private static final String CURRENT_AETHER_PREFIX = "com/gildedgames/the_aether/";
     private static final String LEGACY_AETHER_BLOCKS = LEGACY_AETHER_PREFIX + "blocks/BlocksAether";
@@ -63,6 +68,7 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
     private static final String NEW_ADD_CALLBACK_DESC = "(Lcom/google/common/util/concurrent/ListenableFuture;Lcom/google/common/util/concurrent/FutureCallback;Ljava/util/concurrent/Executor;)V";
     private static final String SKYROOT_TRY_PLACE_LIQUID_DESC = "(Lnet/minecraft/entity/player/EntityPlayer;Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;Lnet/minecraft/util/math/BlockPos;)Z";
     private static final String SERVER_WORLD_MANAGER_INTERNAL = "de/johni0702/minecraft/view/impl/server/ServerWorldManager";
+    private static final String DIMENSION_TRANSITION_HANDLER = "de.johni0702.minecraft.betterportals.impl.transition.server.DimensionTransitionHandler";
     private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
     private static final String AT = "Lorg/spongepowered/asm/mixin/injection/At;";
     private static final String FRUSTUM_TARGET = "net.minecraft.client.renderer.culling.Frustum";
@@ -92,16 +98,20 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
                 && AETHER_SKYROOT_BUCKET.equals(className)
                 && classResourceExists(CURRENT_AETHER_PORTAL);
         boolean patchPlayerChunkMapMissingWorldManager = PLAYER_CHUNK_MAP_MIXIN.equals(className);
+        boolean patchUnsafeThirdPartyTransition = GpomEarlyConfig.betterPortalsSkipUnsafeThirdPartyTransitionEnabled()
+                && DIMENSION_TRANSITION_HANDLER.equals(className);
         if (!patchEntityRenderer && !patchLegacyAether && !patchGuavaAddCallback && !remapLegacyAether
                 && !patchAetherPortalAssignment && !patchAetherPortalWaterActivation
-                && !patchAetherSkyrootBucketWaterPlacement && !patchPlayerChunkMapMissingWorldManager) {
+                && !patchAetherSkyrootBucketWaterPlacement && !patchPlayerChunkMapMissingWorldManager
+                && !patchUnsafeThirdPartyTransition) {
             return basicClass;
         }
 
         try {
             boolean changed = false;
             byte[] transformed = basicClass;
-            if (patchEntityRenderer || patchLegacyAether || patchGuavaAddCallback || patchPlayerChunkMapMissingWorldManager) {
+            if (patchEntityRenderer || patchLegacyAether || patchGuavaAddCallback
+                    || patchPlayerChunkMapMissingWorldManager || patchUnsafeThirdPartyTransition) {
                 ClassNode node = new ClassNode();
                 new ClassReader(transformed).accept(node, 0);
                 if (patchEntityRenderer) {
@@ -122,6 +132,11 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
                 if (patchPlayerChunkMapMissingWorldManager) {
                     for (MethodNode method : node.methods) {
                         changed |= patchPlayerChunkMapMissingWorldManager(method);
+                    }
+                }
+                if (patchUnsafeThirdPartyTransition) {
+                    for (MethodNode method : node.methods) {
+                        changed |= patchUnsafeThirdPartyTransition(method);
                     }
                 }
                 if (changed) {
@@ -1458,6 +1473,45 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
             changed = true;
         }
         return changed;
+    }
+
+    private static boolean patchUnsafeThirdPartyTransition(MethodNode method) {
+        if (method == null
+                || !"transferPlayerToDimension".equals(method.name)
+                || !"(Lnet/minecraft/entity/player/EntityPlayerMP;ILnet/minecraftforge/common/util/ITeleporter;)Z".equals(method.desc)) {
+            return false;
+        }
+        for (AbstractInsnNode instruction = method.instructions.getFirst();
+             instruction != null;
+             instruction = instruction.getNext()) {
+            if (instruction instanceof MethodInsnNode) {
+                MethodInsnNode call = (MethodInsnNode) instruction;
+                if (GUARD_INTERNAL.equals(call.owner)
+                        && "shouldSkipUnsafeThirdPartyTransition".equals(call.name)) {
+                    return false;
+                }
+            }
+        }
+
+        LabelNode continueTransition = new LabelNode();
+        InsnList guard = new InsnList();
+        guard.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        guard.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        guard.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        guard.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                GUARD_INTERNAL,
+                "shouldSkipUnsafeThirdPartyTransition",
+                "(Lnet/minecraft/entity/player/EntityPlayerMP;ILnet/minecraftforge/common/util/ITeleporter;)Z",
+                false
+        ));
+        guard.add(new JumpInsnNode(Opcodes.IFEQ, continueTransition));
+        guard.add(new InsnNode(Opcodes.ICONST_0));
+        guard.add(new InsnNode(Opcodes.IRETURN));
+        guard.add(continueTransition);
+        guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+        method.instructions.insert(guard);
+        return true;
     }
 
     private static boolean isNewInjectionPoint(AnnotationNode annotation) {

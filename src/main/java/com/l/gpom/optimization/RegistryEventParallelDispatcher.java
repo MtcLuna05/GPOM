@@ -67,6 +67,7 @@ public final class RegistryEventParallelDispatcher {
     private static volatile Field asmReadableField;
     private static final Set<String> LOGGED_ENABLED_REGISTRIES = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final Set<String> LOGGED_NO_PARALLEL = Collections.synchronizedSet(new LinkedHashSet<>());
+    private static final Set<String> LOGGED_NULL_REGISTRY_MUTATIONS = Collections.synchronizedSet(new LinkedHashSet<>());
     private static final ThreadLocal<QueuingRegistry> ACTIVE_QUEUING_REGISTRY = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> BYPASS_WORKER_QUEUE = new ThreadLocal<>();
 
@@ -1603,10 +1604,12 @@ public final class RegistryEventParallelDispatcher {
     private static final class QueuingRegistry implements IForgeRegistryModifiable {
         private final IForgeRegistry backing;
         private final IForgeRegistryModifiable modifiableBacking;
+        private final String registryName;
         private final boolean immediateCommit;
         private final int listenerIndex;
         private final ImmediateCommitCoordinator immediateCoordinator;
         private final List<RegistryMutation> mutations = new ArrayList<>();
+        private final Object mutationLock = new Object();
         private final LinkedHashMap<ResourceLocation, IForgeRegistryEntry> localValues = new LinkedHashMap<>();
         private final Set<ResourceLocation> removedKeys = new LinkedHashSet<>();
         private int immediateMutations;
@@ -1619,6 +1622,7 @@ public final class RegistryEventParallelDispatcher {
                                 ImmediateCommitCoordinator immediateCoordinator) {
             this.backing = backing;
             this.modifiableBacking = backing instanceof IForgeRegistryModifiable ? (IForgeRegistryModifiable) backing : null;
+            this.registryName = registryName;
             this.immediateCommit = usesImmediateCommit(registryName);
             this.listenerIndex = listenerIndex;
             this.immediateCoordinator = immediateCoordinator;
@@ -1644,7 +1648,7 @@ public final class RegistryEventParallelDispatcher {
 
         private void queueRegister(IForgeRegistryEntry value) {
             if (value == null) {
-                mutations.add(registry -> registry.register(null));
+                addMutation(registry -> registry.register(null), "register(null)");
                 return;
             }
             ResourceLocation key = value.getRegistryName();
@@ -1652,7 +1656,7 @@ public final class RegistryEventParallelDispatcher {
                 localValues.put(key, value);
                 removedKeys.remove(key);
             }
-            mutations.add(registry -> registry.register(value));
+            addMutation(registry -> registry.register(value), "register");
         }
 
         private void registerFromWorker(IForgeRegistryEntry value) {
@@ -1804,7 +1808,7 @@ public final class RegistryEventParallelDispatcher {
             cleared = true;
             localValues.clear();
             removedKeys.clear();
-            mutations.add(registry -> ((IForgeRegistryModifiable) registry).clear());
+            addMutation(registry -> ((IForgeRegistryModifiable) registry).clear(), "clear");
         }
 
         @Override
@@ -1829,7 +1833,7 @@ public final class RegistryEventParallelDispatcher {
                     removedKeys.add(key);
                 }
             }
-            mutations.add(registry -> ((IForgeRegistryModifiable) registry).remove(key));
+            addMutation(registry -> ((IForgeRegistryModifiable) registry).remove(key), "remove");
             return existing;
         }
 
@@ -1860,8 +1864,12 @@ public final class RegistryEventParallelDispatcher {
         }
 
         private void applyImmediateMutation(RegistryMutation mutation) {
+            if (mutation == null) {
+                logNullMutation("immediate");
+                return;
+            }
             if (immediateCoordinator != null && !immediateCoordinator.isTurn(listenerIndex)) {
-                mutations.add(mutation);
+                addMutation(mutation, "deferred immediate");
                 return;
             }
             BYPASS_WORKER_QUEUE.set(Boolean.TRUE);
@@ -1873,25 +1881,61 @@ public final class RegistryEventParallelDispatcher {
             immediateMutations++;
         }
 
-        private void commitToBacking() {
-            if (mutations.isEmpty()) {
+        private void addMutation(RegistryMutation mutation, String action) {
+            if (mutation == null) {
+                logNullMutation(action);
                 return;
             }
-            List<RegistryMutation> pending = new ArrayList<>(mutations);
-            mutations.clear();
-            BYPASS_WORKER_QUEUE.set(Boolean.TRUE);
-            try {
-                for (RegistryMutation mutation : pending) {
-                    mutation.apply(backing);
-                }
-            } finally {
-                BYPASS_WORKER_QUEUE.remove();
+            synchronized (mutationLock) {
+                mutations.add(mutation);
             }
-            committedQueuedMutations += pending.size();
+        }
+
+        private void logNullMutation(String action) {
+            String key = registryName + ':' + listenerIndex + ':' + action;
+            if (LOGGED_NULL_REGISTRY_MUTATIONS.add(key)) {
+                GPOM.LOGGER.warn(
+                        "[RegistryParallel] ignored null registry mutation registry={} listener={} action={}",
+                        registryName,
+                        listenerIndex,
+                        action
+                );
+            }
+        }
+
+        private void commitToBacking() {
+            int committed = 0;
+            while (true) {
+                List<RegistryMutation> pending;
+                synchronized (mutationLock) {
+                    if (mutations.isEmpty()) {
+                        committedQueuedMutations += committed;
+                        return;
+                    }
+                    pending = new ArrayList<>(mutations);
+                    mutations.clear();
+                }
+                BYPASS_WORKER_QUEUE.set(Boolean.TRUE);
+                try {
+                    for (int i = 0; i < pending.size(); i++) {
+                        RegistryMutation mutation = pending.get(i);
+                        if (mutation == null) {
+                            logNullMutation("commit[" + i + "]");
+                            continue;
+                        }
+                        mutation.apply(backing);
+                        committed++;
+                    }
+                } finally {
+                    BYPASS_WORKER_QUEUE.remove();
+                }
+            }
         }
 
         private int mutationCount() {
-            return mutations.size() + immediateMutations + committedQueuedMutations;
+            synchronized (mutationLock) {
+                return mutations.size() + immediateMutations + committedQueuedMutations;
+            }
         }
     }
 }

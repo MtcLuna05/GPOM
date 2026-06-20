@@ -1,6 +1,5 @@
 package com.l.gpom.core;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -16,6 +15,9 @@ import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public final class LogSpamTransformer implements IClassTransformer {
     private static final boolean UCW_TEXTURE_STITCH_STDOUT = Boolean.parseBoolean(System.getProperty(
@@ -46,6 +48,9 @@ public final class LogSpamTransformer implements IClassTransformer {
             "gpom.clientPackets.suppressNullPlayerEarlySync",
             "true"
     ));
+    private static volatile Method getMinecraftMethod;
+    private static volatile Field minecraftPlayerField;
+    private static volatile Field minecraftWorldField;
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -106,11 +111,62 @@ public final class LogSpamTransformer implements IClassTransformer {
 
     public static boolean isClientPlayerReadyForEarlyPacket() {
         try {
-            Minecraft mc = Minecraft.getMinecraft();
-            return mc != null && mc.player != null && mc.world != null;
+            Object mc = minecraftOrNull();
+            return mc != null && minecraftField(mc, true) != null && minecraftField(mc, false) != null;
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    private static Object minecraftOrNull() throws ReflectiveOperationException {
+        Method method = getMinecraftMethod;
+        if (method == null) {
+            method = findStaticMethod(Class.forName("net.minecraft.client.Minecraft"), "func_71410_x", "getMinecraft");
+            method.setAccessible(true);
+            getMinecraftMethod = method;
+        }
+        return method.invoke(null);
+    }
+
+    private static Object minecraftField(Object minecraft, boolean player) throws ReflectiveOperationException {
+        Field field = player ? minecraftPlayerField : minecraftWorldField;
+        if (field == null) {
+            field = findField(
+                    minecraft.getClass(),
+                    player ? new String[]{"field_71439_g", "player"} : new String[]{"field_71441_e", "world"}
+            );
+            field.setAccessible(true);
+            if (player) {
+                minecraftPlayerField = field;
+            } else {
+                minecraftWorldField = field;
+            }
+        }
+        return field.get(minecraft);
+    }
+
+    private static Method findStaticMethod(Class<?> type, String... names) throws NoSuchMethodException {
+        for (String name : names) {
+            try {
+                return type.getDeclaredMethod(name);
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + "." + String.join("/", names));
+    }
+
+    private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
+        Class<?> current = type;
+        while (current != null) {
+            for (String name : names) {
+                try {
+                    return current.getDeclaredField(name);
+                } catch (NoSuchFieldException ignored) {
+                }
+            }
+            current = current.getSuperclass();
+        }
+        throw new NoSuchFieldException(type.getName() + "." + String.join("/", names));
     }
 
     private static byte[] patchEarlyClientPacketNullPlayer(String className, byte[] basicClass) {

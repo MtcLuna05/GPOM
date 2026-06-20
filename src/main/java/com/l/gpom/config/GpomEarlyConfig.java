@@ -128,12 +128,13 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.probeLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.probeHighVolumeEventBusPosts", "false");
+        DEFAULTS.setProperty("gpom.startupProfiler.probePrefixAllowlist", "");
         DEFAULTS.setProperty("gpom.startupProfiler.topCount", "40");
         DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressBars", "true");
         DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressSteps", "96");
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "false");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "Minecraft");
-        DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "false");
+        DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "true");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.enabled", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
@@ -154,6 +155,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.extendedCraftingLowerTierTransfer.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.draconicFusionTransfer.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.craftableRecipesFirst.enabled", "true");
         DEFAULTS.setProperty("gpom.journeymap.waypointDimensionDropup.enabled", "true");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "false");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.enabled", "false");
@@ -168,6 +170,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
         DEFAULTS.setProperty("gpom.betterPortals.fixGuavaAddCallback", "true");
+        DEFAULTS.setProperty("gpom.betterPortals.skipUnsafeThirdPartyTransition", "true");
         DEFAULTS.setProperty("gpom.betterPortals.cleanupClientWorlds", "false");
         DEFAULTS.setProperty("gpom.betterPortals.journeymapWaypointTeleportTransition", "true");
         DEFAULTS.setProperty("gpom.betterPortals.journeymapWaypointTeleportRequireActiveView", "true");
@@ -197,7 +200,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.agricraft.fastJsonIo", "true");
         DEFAULTS.setProperty("gpom.agricraft.fastResourceScan", "true");
         DEFAULTS.setProperty("gpom.agricraft.skipJsonWriteback", "true");
-        DEFAULTS.setProperty("gpom.agricraft.refreshChannelsAfterBulkPlacement", "true");
+        DEFAULTS.setProperty("gpom.agricraft.refreshChannelsAfterBulkPlacement", "false");
         DEFAULTS.setProperty("gpom.openComputersSettingsCache", "true");
         DEFAULTS.setProperty("gpom.openComputers.fastLuaSelection", "true");
         DEFAULTS.setProperty("gpom.openComputersCallProfiler", "false");
@@ -263,17 +266,26 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false");
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.workers", "0");
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.enabled", "false");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.workers", "0");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.overlapSerial", "false");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.allowlist", "");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.denylist", "");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.workers", "6");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.overlapSerial", "true");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.allowlist", "*");
+        DEFAULTS.setProperty(
+                "gpom.hei.parallelPluginRegistration.denylist",
+                "mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,"
+                        + "com.l.gpom.compat.hei.GpomHeiQoLPlugin,"
+                        + "lumien.randomthings.handler.compability.jei.RandomThingsPlugin"
+        );
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.jerVillagerTradeCache.samples", "32");
         DEFAULTS.setProperty("gpom.hei.jerLootDropCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.fastForestryBottler.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.forestryBottlerRecipeCache.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.compressForestryBottlerRecipes.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.skipUnsupportedRuntimeRecipes.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.skipUnsupportedRuntimeRecipes.classes", "");
         DEFAULTS.setProperty("gpom.hei.fastEnderIOTank.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.compressEnderIOTankFluidRecipes.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.extraTreesLumbermillRecipeCache.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.fastThermalTransposerContainers.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.thermalTransposerContainerCache.enabled", "true");
@@ -440,6 +452,10 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.hei.draconicFusionTransfer.enabled");
     }
 
+    public static boolean heiCraftableRecipesFirstEnabled() {
+        return booleanValue("gpom.hei.craftableRecipesFirst.enabled");
+    }
+
     private static void load() {
         File file = configFile();
         ensureDefaultFile(file);
@@ -567,7 +583,8 @@ public final class GpomEarlyConfig {
         );
         writeSection(writer, "HEI QoL", "Client-side Had Enough Items integration tweaks. These only register when the relevant target mod is loaded.",
                 "gpom.hei.extendedCraftingLowerTierTransfer.enabled",
-                "gpom.hei.draconicFusionTransfer.enabled"
+                "gpom.hei.draconicFusionTransfer.enabled",
+                "gpom.hei.craftableRecipesFirst.enabled"
         );
         writeSection(writer, "GPOM Logging", "Controls GPOM's own logger and high-volume categories. Keep the root logger enabled when diagnostics such as world lifecycle snapshots are needed.",
                 "gpom.logging.enabled",
@@ -600,6 +617,7 @@ public final class GpomEarlyConfig {
                 "gpom.startupProfiler.logs.postPreInitProbeSummary.enabled",
                 "gpom.startupProfiler.probeLogs.enabled",
                 "gpom.startupProfiler.probeHighVolumeEventBusPosts",
+                "gpom.startupProfiler.probePrefixAllowlist",
                 "gpom.startupProfiler.topCount",
                 "gpom.startupProfiler.postPreInitProgressBars",
                 "gpom.startupProfiler.postPreInitProgressSteps"
@@ -654,6 +672,7 @@ public final class GpomEarlyConfig {
                 "gpom.betterPortals.remapLegacyAetherBridge",
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
                 "gpom.betterPortals.fixGuavaAddCallback",
+                "gpom.betterPortals.skipUnsafeThirdPartyTransition",
                 "gpom.betterPortals.cleanupClientWorlds",
                 "gpom.betterPortals.journeymapWaypointTeleportTransition",
                 "gpom.betterPortals.journeymapWaypointTeleportRequireActiveView",
@@ -771,7 +790,11 @@ public final class GpomEarlyConfig {
                 "gpom.hei.jerLootDropCache.enabled",
                 "gpom.hei.fastForestryBottler.enabled",
                 "gpom.hei.forestryBottlerRecipeCache.enabled",
+                "gpom.hei.compressForestryBottlerRecipes.enabled",
+                "gpom.hei.skipUnsupportedRuntimeRecipes.enabled",
+                "gpom.hei.skipUnsupportedRuntimeRecipes.classes",
                 "gpom.hei.fastEnderIOTank.enabled",
+                "gpom.hei.compressEnderIOTankFluidRecipes.enabled",
                 "gpom.hei.extraTreesLumbermillRecipeCache.enabled",
                 "gpom.hei.fastThermalTransposerContainers.enabled",
                 "gpom.hei.thermalTransposerContainerCache.enabled"
@@ -932,6 +955,8 @@ public final class GpomEarlyConfig {
                 return "Compatibility alias for older configs; false also disables raw [Probe] startup lines.";
             case "gpom.startupProfiler.probeHighVolumeEventBusPosts":
                 return "When true, records per-post probe totals for very high-volume EventBus events such as VintageFix model bake and CTM texture collection; keep false unless investigating those events directly.";
+            case "gpom.startupProfiler.probePrefixAllowlist":
+                return "Comma-separated probe name prefixes to record and log. Empty records every probe; use HEI to keep only Had Enough Items probes.";
             case "gpom.startupProfiler.topCount":
                 return "Number of top mods/probes included in startup profiler summaries.";
             case "gpom.startupProfiler.postPreInitProgressBars":
@@ -984,6 +1009,8 @@ public final class GpomEarlyConfig {
                 return "Adds HEI transfer buttons for lower-tier ExtendedCrafting table recipes in higher-tier table GUIs, mapping the lower recipe into the centered sub-grid.";
             case "gpom.hei.draconicFusionTransfer.enabled":
                 return "Adds a HEI transfer button for Draconic Evolution Fusion Crafting that stages catalyst and injector ingredients through a server-validated packet.";
+            case "gpom.hei.craftableRecipesFirst.enabled":
+                return "Sorts HEI recipe views so recipes whose item inputs are present in the player inventory appear first. Non-item requirements are ignored.";
             case "gpom.mainMenuStartupTime.enabled":
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
             case "gpom.baubles.sideSlots.enabled":
@@ -1010,6 +1037,8 @@ public final class GpomEarlyConfig {
                 return "Skips BetterPortals' optional Aether bridge when neither its legacy Aether target nor GPOM's remap target is available.";
             case "gpom.betterPortals.fixGuavaAddCallback":
                 return "Patches BetterPortals' old two-argument Guava Futures.addCallback helper calls to the executor-taking overload required by modern Guava.";
+            case "gpom.betterPortals.skipUnsafeThirdPartyTransition":
+                return "Makes BetterPortals decline enhanced third-party transfers when its server view-world manager state is already unsafe, allowing the original mod transfer to continue instead of crashing.";
             case "gpom.betterPortals.cleanupClientWorlds":
                 return "Reflectively resets BetterPortals' retained client view-world registry on client world handoffs and disconnects. Experimental; keep false unless debugging retained BetterPortals client worlds.";
             case "gpom.betterPortals.journeymapWaypointTeleportTransition":
@@ -1222,8 +1251,16 @@ public final class GpomEarlyConfig {
                 return "Uses Forestry's exact-version Bottler HEI fast path and skips redundant full-fluid-container fill loops.";
             case "gpom.hei.forestryBottlerRecipeCache.enabled":
                 return "Persists Forestry Bottler HEI wrapper inputs/outputs and reuses them when item/fluid signatures match.";
+            case "gpom.hei.compressForestryBottlerRecipes.enabled":
+                return "Groups Forestry Bottler fluid-container recipes by fluid and amount to avoid tens of thousands of individual HEI recipe rows.";
+            case "gpom.hei.skipUnsupportedRuntimeRecipes.enabled":
+                return "Skips exact recipe classes that HEI already rejects with no handler, avoiding repeated failed lookups and error spam during recipe registry construction.";
+            case "gpom.hei.skipUnsupportedRuntimeRecipes.classes":
+                return "Comma-separated extra fully-qualified recipe class names to skip when HEI is asked to register them without an explicit category.";
             case "gpom.hei.fastEnderIOTank.enabled":
                 return "Uses EnderIO's exact-version tank HEI fast path while preserving the full item list for mending recipes.";
+            case "gpom.hei.compressEnderIOTankFluidRecipes.enabled":
+                return "Groups EnderIO Tank fill/drain display recipes by fluid and amount to reduce HEI recipe registry construction cost.";
             case "gpom.hei.extraTreesLumbermillRecipeCache.enabled":
                 return "Persists ExtraTrees Lumbermill wrapper tuples and reuses them when item/recipe/log signatures match.";
             case "gpom.hei.fastThermalTransposerContainers.enabled":
@@ -1247,9 +1284,11 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.ctm.suppressTextureMetadataErrorSpam");
         copySystemPropertyIfAbsent("gpom.hei.extendedCraftingLowerTierTransfer.enabled");
         copySystemPropertyIfAbsent("gpom.hei.draconicFusionTransfer.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.craftableRecipesFirst.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.logs.constructCriticalPath.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
         copySystemPropertyIfAbsent("gpom.startupProfiler.probeHighVolumeEventBusPosts");
+        copySystemPropertyIfAbsent("gpom.startupProfiler.probePrefixAllowlist");
         copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressBars");
         copySystemPropertyIfAbsent("gpom.startupProfiler.postPreInitProgressSteps");
         copySystemPropertyIfAbsent("gpom.railcraftLazyItemConditions");
@@ -1325,6 +1364,16 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.enabled");
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.workers");
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.deepProbes");
+        copySystemPropertyIfAbsent("gpom.hei.fastForestryBottler.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.forestryBottlerRecipeCache.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.compressForestryBottlerRecipes.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.skipUnsupportedRuntimeRecipes.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.skipUnsupportedRuntimeRecipes.classes");
+        copySystemPropertyIfAbsent("gpom.hei.fastEnderIOTank.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.compressEnderIOTankFluidRecipes.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.extraTreesLumbermillRecipeCache.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.fastThermalTransposerContainers.enabled");
+        copySystemPropertyIfAbsent("gpom.hei.thermalTransposerContainerCache.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
@@ -1355,6 +1404,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixGuavaAddCallback");
+        copySystemPropertyIfAbsent("gpom.betterPortals.skipUnsafeThirdPartyTransition");
         copySystemPropertyIfAbsent("gpom.betterPortals.cleanupClientWorlds");
         copySystemPropertyIfAbsent("gpom.betterPortals.journeymapWaypointTeleportTransition");
         copySystemPropertyIfAbsent("gpom.betterPortals.journeymapWaypointTeleportRequireActiveView");
@@ -1667,6 +1717,10 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.betterPortals.fixGuavaAddCallback");
     }
 
+    public static boolean betterPortalsSkipUnsafeThirdPartyTransitionEnabled() {
+        return booleanValue("gpom.betterPortals.skipUnsafeThirdPartyTransition");
+    }
+
     public static boolean betterPortalsCleanupClientWorldsEnabled() {
         return booleanValue("gpom.betterPortals.cleanupClientWorlds");
     }
@@ -1951,8 +2005,16 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.hei.forestryBottlerRecipeCache.enabled");
     }
 
+    public static boolean heiCompressForestryBottlerRecipesEnabled() {
+        return booleanValue("gpom.hei.compressForestryBottlerRecipes.enabled");
+    }
+
     public static boolean heiFastEnderIOTankEnabled() {
         return booleanValue("gpom.hei.fastEnderIOTank.enabled");
+    }
+
+    public static boolean heiCompressEnderIOTankFluidRecipesEnabled() {
+        return booleanValue("gpom.hei.compressEnderIOTankFluidRecipes.enabled");
     }
 
     public static boolean heiExtraTreesLumbermillRecipeCacheEnabled() {

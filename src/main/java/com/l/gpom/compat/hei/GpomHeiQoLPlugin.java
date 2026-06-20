@@ -5,12 +5,15 @@ import com.l.gpom.GPOM;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.IModRegistry;
 import mezz.jei.api.JEIPlugin;
+import mezz.jei.api.recipe.VanillaRecipeCategoryUid;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandlerHelper;
 import mezz.jei.api.recipe.transfer.IRecipeTransferRegistry;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.ContainerPlayer;
 import net.minecraft.inventory.ContainerWorkbench;
 import net.minecraftforge.fml.common.Loader;
+
+import java.util.Collections;
 
 @JEIPlugin
 public final class GpomHeiQoLPlugin implements IModPlugin {
@@ -32,6 +35,10 @@ public final class GpomHeiQoLPlugin implements IModPlugin {
             return;
         }
 
+        if (Loader.isModLoaded("thaumcraft")) {
+            registerThaumcraftRecipes(registry);
+        }
+
         IRecipeTransferHandlerHelper transferHelper = registry.getJeiHelpers().recipeTransferHandlerHelper();
         if (GpomEarlyConfig.heiExtendedCraftingLowerTierTransferEnabled()
                 && Loader.isModLoaded("extendedcrafting")) {
@@ -40,6 +47,20 @@ public final class GpomHeiQoLPlugin implements IModPlugin {
         if (GpomEarlyConfig.heiDraconicFusionTransferEnabled()
                 && Loader.isModLoaded("draconicevolution")) {
             registerDraconicFusionTransfer(transfers, transferHelper);
+        }
+    }
+
+    private static void registerThaumcraftRecipes(IModRegistry registry) {
+        try {
+            SalisMundusRecipeWrapper salisMundus = SalisMundusRecipeWrapper.createOrNull();
+            if (salisMundus == null) {
+                GPOM.LOGGER.warn("[GPOM HEI QoL] Could not register Salis Mundus HEI recipe because one or more Thaumcraft items are unavailable");
+                return;
+            }
+            registry.addRecipes(Collections.singletonList(salisMundus), VanillaRecipeCategoryUid.CRAFTING);
+            GPOM.LOGGER.info("[GPOM HEI QoL] Registered Salis Mundus crafting recipe");
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[GPOM HEI QoL] Could not register Salis Mundus HEI recipe", throwable);
         }
     }
 

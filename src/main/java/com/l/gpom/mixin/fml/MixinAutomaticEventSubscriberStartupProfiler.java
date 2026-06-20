@@ -18,6 +18,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = AutomaticEventSubscriber.class, remap = false)
 public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     @Unique
+    private static final String GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE = "thaumcraft.client.fx.ParticleEngine";
+
+    @Unique
+    private static boolean gpom$loggedThaumcraftParticleEngineSkip;
+
+    @Unique
     private static final ThreadLocal<String> gpom$currentModId = new ThreadLocal<>();
 
     @Unique
@@ -50,7 +56,15 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     private static Class<?> gpom$timeSubscriberClassLoad(String className, boolean initialize, ClassLoader loader) throws ClassNotFoundException {
         long startedAt = StartupProfiler.beginAutomaticSubscriberProbe();
         try {
-            return Class.forName(className, initialize, loader);
+            if (gpom$shouldSkipMissingSubscriber(className)) {
+                gpom$logThaumcraftParticleEngineSkip();
+                return GpomSkippedAutomaticSubscriber.class;
+            }
+            try {
+                return Class.forName(className, initialize, loader);
+            } catch (ClassNotFoundException exception) {
+                throw exception;
+            }
         } finally {
             StartupProfiler.endAutomaticSubscriberClassLoad(gpom$currentModId.get(), className, startedAt);
         }
@@ -81,5 +95,28 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
             return ((Class<?>) target).getName();
         }
         return target == null ? null : target.getClass().getName();
+    }
+
+    @Unique
+    private static boolean gpom$shouldSkipMissingSubscriber(String className) {
+        return GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE.equals(className)
+                && "thaumcraft".equals(gpom$currentModId.get());
+    }
+
+    @Unique
+    private static void gpom$logThaumcraftParticleEngineSkip() {
+        if (gpom$loggedThaumcraftParticleEngineSkip) {
+            return;
+        }
+        gpom$loggedThaumcraftParticleEngineSkip = true;
+        com.l.gpom.GPOM.LOGGER.warn(
+                "[ForgeConstructionAnnotationOptimizations] Skipping missing Thaumcraft automatic subscriber {}",
+                GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE
+        );
+    }
+
+    private static final class GpomSkippedAutomaticSubscriber {
+        private GpomSkippedAutomaticSubscriber() {
+        }
     }
 }

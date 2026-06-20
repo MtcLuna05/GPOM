@@ -6,7 +6,6 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -63,15 +62,12 @@ public final class CustomMainMenuStartupOverlayTransformer implements IClassTran
     private static InsnList renderCall() {
         InsnList instructions = new InsnList();
         instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-        instructions.add(new FieldInsnNode(Opcodes.GETFIELD, TARGET_OWNER, "field_146294_l", "I"));
-        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-        instructions.add(new FieldInsnNode(Opcodes.GETFIELD, TARGET_OWNER, "field_146295_m", "I"));
         instructions.add(new LdcInsnNode(TARGET_CLASS));
         instructions.add(new MethodInsnNode(
                 Opcodes.INVOKESTATIC,
                 "com/l/gpom/client/MainMenuStartupOverlay",
-                "render",
-                "(IILjava/lang/String;)V",
+                "renderFromScreen",
+                "(Ljava/lang/Object;Ljava/lang/String;)V",
                 false
         ));
         return instructions;

@@ -27,10 +27,11 @@ import java.util.Set;
 public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.heiProfiler", "true"));
     private static final boolean ASYNC_TOOLTIP_SEARCH = Boolean.parseBoolean(System.getProperty("gpom.hei.asyncTooltipSearch", "false"));
-    private static final boolean PARALLEL_SEARCH_BUILD = Boolean.parseBoolean(System.getProperty("gpom.hei.parallelSearchBuild", "true"));
+    private static final boolean PARALLEL_SEARCH_BUILD = Boolean.parseBoolean(System.getProperty("gpom.hei.parallelSearchBuild", "false"));
     private static final boolean SKIP_RECIPE_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipRecipeProgress", "true"));
     private static final boolean SKIP_SEARCH_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipSearchProgress", "true"));
     private static final boolean SKIP_PLUGIN_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.skipPluginProgress", "true"));
+    private static final boolean DEFER_SEARCH_BLOCK = Boolean.parseBoolean(System.getProperty("gpom.hei.deferSearchBlock", "false"));
     private static final boolean DISABLE_TOOLTIP_SEARCH_INDEX = Boolean.parseBoolean(System.getProperty("gpom.hei.disableTooltipSearchIndex", "true"));
     private static final boolean FAST_JER_ENCHANTMENTS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastJerEnchantments", "true"));
     private static final boolean FAST_JER_VILLAGERS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastJerVillagers", "true"));
@@ -38,9 +39,13 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static final boolean FAST_HEI_FALLBACK_SUBTYPES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastFallbackSubtypes", "true"));
     private static final boolean FAST_HEI_CREATIVE_TABS_ONLY_ITEM_ENUMERATION = Boolean.parseBoolean(System.getProperty("gpom.hei.creativeTabsOnlyItemEnumeration", "true"));
     private static final boolean FAST_HEI_FLUID_HANDLER_ITEMS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastFluidHandlerItemEnumeration", "true"));
+    private static final boolean THAUMCRAFT_RESEARCH_CLICK = Boolean.parseBoolean(System.getProperty("gpom.hei.thaumcraftResearchClick", "true"));
+    private static final boolean CRAFTABLE_RECIPES_FIRST = Boolean.parseBoolean(System.getProperty("gpom.hei.craftableRecipesFirst.enabled", "true"));
     private static final boolean FAST_EXTRATREES_LUMBERMILL = Boolean.parseBoolean(System.getProperty("gpom.hei.fastExtraTreesLumbermill", "true"));
     private static final boolean FAST_ENDERIO_TANK = Boolean.parseBoolean(System.getProperty("gpom.hei.fastEnderIOTank", "true"));
     private static final boolean FAST_TE_TRANSPOSER_CONTAINERS = Boolean.parseBoolean(System.getProperty("gpom.hei.fastThermalTransposerContainers", "true"));
+    private static final boolean FAST_ENVTECH_VOIDMINER = Boolean.parseBoolean(System.getProperty("gpom.hei.fastEnvironmentalTechVoidMiner", "true"));
+    private static final boolean FAST_OC_DOC_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastOpenComputersDocRecipes", "true"));
     private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false"));
     private static final boolean LOG_HEI_REGISTRY_ONLY_ITEMS = Boolean.parseBoolean(System.getProperty("gpom.hei.logRegistryOnlyItems", "true"));
     private static final boolean PLUGIN_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.hei.pluginProfiler", "true"));
@@ -72,12 +77,23 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         if (supportedHeiClass && "mezz.jei.search.AsyncPrefixedSearchable".equals(className) && PARALLEL_SEARCH_BUILD) {
             return patchAsyncSearchExecutor(basicClass);
         }
+        if (supportedHeiClass && "mezz.jei.search.ElementSearch".equals(className) && DEFER_SEARCH_BLOCK) {
+            basicClass = patchElementSearchDeferredBlock(basicClass);
+        }
+        if (supportedHeiClass && "mezz.jei.search.ElementSearch".equals(className) && PARALLEL_SEARCH_BUILD) {
+            basicClass = patchElementSearchNoPrefixAsync(basicClass);
+        }
         if (supportedHeiClass && "mezz.jei.recipes.RecipeRegistry".equals(className) && SKIP_RECIPE_PROGRESS) {
             basicClass = patchRecipeRegistrySkipProgress(basicClass);
         }
         if (supportedHeiClass && "mezz.jei.recipes.RecipeRegistry".equals(className)) {
             basicClass = patchRecipeRegistryGpomProgress(basicClass);
             basicClass = patchRecipeRegistryBulkVisibleCache(basicClass);
+            basicClass = patchRecipeRegistryHandlerCache(basicClass);
+            basicClass = patchRecipeRegistryKnownRuntimeRecipes(basicClass);
+        }
+        if (supportedHeiClass && "mezz.jei.recipes.RecipeMap".equals(className)) {
+            basicClass = patchRecipeMapIngredientHelperCaches(basicClass);
         }
         if (supportedHeiClass && "mezz.jei.startup.ModRegistry".equals(className)) {
             basicClass = patchSynchronizedMethods(basicClass, modRegistrySynchronizedMethods());
@@ -90,6 +106,12 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         }
         if (supportedHeiClass && "mezz.jei.gui.GuiEventHandler".equals(className)) {
             basicClass = patchGuiEventHandlerLayering(basicClass);
+        }
+        if (supportedHeiClass && "mezz.jei.gui.recipes.RecipesGui".equals(className) && THAUMCRAFT_RESEARCH_CLICK) {
+            basicClass = patchRecipesGuiThaumcraftResearchClick(basicClass);
+        }
+        if (supportedHeiClass && "mezz.jei.gui.recipes.RecipeGuiLogic".equals(className) && CRAFTABLE_RECIPES_FIRST) {
+            basicClass = patchRecipeGuiLogicCraftableRecipesFirst(basicClass);
         }
         if (supportedHeiClass && "mezz.jei.search.PrefixedSearchable".equals(className) && SKIP_SEARCH_PROGRESS) {
             basicClass = patchPrefixedSearchableSkipProgress(basicClass);
@@ -131,6 +153,10 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                 && "forestry.factory.recipes.jei.bottler.BottlerRecipeMaker".equals(className)) {
             basicClass = patchForestryBottlerFastPath(basicClass);
         }
+        if (supportedHeiDetailClass && FAST_HEI_FLUID_HANDLER_ITEMS
+                && "forestry.factory.recipes.jei.bottler.BottlerRecipeWrapper".equals(className)) {
+            basicClass = patchForestryBottlerCompressedWrapperIngredients(basicClass);
+        }
         if (supportedHeiDetailClass && FAST_EXTRATREES_LUMBERMILL
                 && "binnie.extratrees.integration.jei.lumbermill.LumbermillRecipeMaker".equals(className)) {
             basicClass = patchExtraTreesLumbermillFastPath(basicClass);
@@ -146,6 +172,18 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         if (supportedHeiDetailClass && FAST_TE_TRANSPOSER_CONTAINERS
                 && "cofh.thermalexpansion.plugins.jei.machine.transposer.TransposerRecipeWrapperContainer".equals(className)) {
             basicClass = patchThermalTransposerContainerWrapper(basicClass);
+        }
+        if (supportedHeiDetailClass && FAST_ENVTECH_VOIDMINER
+                && "com.valkyrieofnight.et.m_plugins.jei.multiblocks.voidminer.VoidMinerRecipeMaker".equals(className)) {
+            basicClass = patchEnvironmentalTechVoidMinerRecipes(basicClass);
+        }
+        if (supportedHeiDetailClass && className.startsWith("li.cil.oc.integration.jei.")) {
+            basicClass = patchOpenComputersJeiCaches(basicClass);
+        }
+        if (supportedHeiDetailClass && FAST_OC_DOC_RECIPES
+                && ("li.cil.oc.integration.jei.ManualUsageHandler$".equals(className)
+                || "li.cil.oc.integration.jei.CallbackDocHandler$".equals(className))) {
+            basicClass = patchOpenComputersDocRecipesFastPath(basicClass);
         }
 
         Set<MethodKey> methods = TARGETS.get(name);
@@ -212,15 +250,100 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                         if ("java/util/concurrent/Executors".equals(methodInsn.owner)
                                 && "newSingleThreadExecutor".equals(methodInsn.name)
                                 && "()Ljava/util/concurrent/ExecutorService;".equals(methodInsn.desc)) {
-                            method.instructions.insertBefore(insn, new MethodInsnNode(
-                                    Opcodes.INVOKESTATIC,
-                                    "com/l/gpom/optimization/HeiOptimizations",
-                                    "searchWorkerCount",
-                                    "()I",
-                                    false
-                            ));
-                            methodInsn.name = "newFixedThreadPool";
-                            methodInsn.desc = "(I)Ljava/util/concurrent/ExecutorService;";
+                            methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                            methodInsn.name = "newHeiSearchExecutor";
+                            methodInsn.desc = "()Ljava/util/concurrent/ExecutorService;";
+                            return writeNode(node);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchElementSearchDeferredBlock(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if ("block".equals(method.name) && "()V".equals(method.desc)) {
+                    LabelNode original = new LabelNode();
+                    InsnList instructions = new InsnList();
+                    instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    instructions.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "deferElementSearchBlock",
+                            "(Ljava/lang/Object;)Z",
+                            false
+                    ));
+                    instructions.add(new JumpInsnNode(Opcodes.IFEQ, original));
+                    instructions.add(new InsnNode(Opcodes.RETURN));
+                    instructions.add(original);
+                    instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                    method.instructions.insert(instructions);
+                    changed = true;
+                } else if ("getSearchResults".equals(method.name)
+                        && "(Lmezz/jei/search/TokenInfo;)Ljava/util/Set;".equals(method.desc)) {
+                    InsnList instructions = new InsnList();
+                    instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    instructions.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "forceElementSearchBlock",
+                            "(Ljava/lang/Object;)V",
+                            false
+                    ));
+                    method.instructions.insert(instructions);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                return writeNodeWithFrames(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchElementSearchNoPrefixAsync(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            for (MethodNode method : node.methods) {
+                if (!"<init>".equals(method.name) || !"()V".equals(method.desc)) {
+                    continue;
+                }
+
+                boolean sawNoPrefix = false;
+                boolean replacedNew = false;
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn instanceof FieldInsnNode) {
+                        FieldInsnNode fieldInsn = (FieldInsnNode) insn;
+                        if ("mezz/jei/search/PrefixInfo".equals(fieldInsn.owner)
+                                && "NO_PREFIX".equals(fieldInsn.name)
+                                && "Lmezz/jei/search/PrefixInfo;".equals(fieldInsn.desc)) {
+                            sawNoPrefix = true;
+                        }
+                    }
+
+                    if (sawNoPrefix
+                            && insn instanceof org.objectweb.asm.tree.TypeInsnNode
+                            && insn.getOpcode() == Opcodes.NEW
+                            && "mezz/jei/search/PrefixedSearchable".equals(((org.objectweb.asm.tree.TypeInsnNode) insn).desc)) {
+                        ((org.objectweb.asm.tree.TypeInsnNode) insn).desc = "mezz/jei/search/AsyncPrefixedSearchable";
+                        replacedNew = true;
+                        continue;
+                    }
+
+                    if (replacedNew && insn instanceof MethodInsnNode) {
+                        MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                        if (methodInsn.getOpcode() == Opcodes.INVOKESPECIAL
+                                && "mezz/jei/search/PrefixedSearchable".equals(methodInsn.owner)
+                                && "<init>".equals(methodInsn.name)
+                                && "(Lmezz/jei/search/ISearchStorage;Lmezz/jei/search/PrefixInfo;)V".equals(methodInsn.desc)) {
+                            methodInsn.owner = "mezz/jei/search/AsyncPrefixedSearchable";
                             return writeNode(node);
                         }
                     }
@@ -384,6 +507,132 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                 && "mezz/jei/recipes/RecipeRegistry".equals(((FieldInsnNode) cursor).owner)
                 && "recipeCategoriesVisibleCache".equals(((FieldInsnNode) cursor).name)
                 && "Ljava/util/List;".equals(((FieldInsnNode) cursor).desc);
+    }
+
+    private static byte[] patchRecipeRegistryHandlerCache(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn.getOpcode() != Opcodes.INVOKESPECIAL) {
+                        continue;
+                    }
+                    MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                    if ("mezz/jei/recipes/RecipeRegistry".equals(methodInsn.owner)
+                            && "getRecipeHandler".equals(methodInsn.name)
+                            && "(Ljava/lang/Class;Ljava/lang/String;)Lmezz/jei/api/recipe/IRecipeHandler;".equals(methodInsn.desc)) {
+                        methodInsn.setOpcode(Opcodes.INVOKESTATIC);
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedHeiRecipeHandler";
+                        methodInsn.desc = "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;)Lmezz/jei/api/recipe/IRecipeHandler;";
+                        methodInsn.itf = false;
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchRecipeRegistryKnownRuntimeRecipes(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"addRecipe".equals(method.name)
+                        || (!"(Ljava/lang/Object;)V".equals(method.desc)
+                        && !"(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;)V".equals(method.desc))) {
+                    continue;
+                }
+
+                LabelNode stockPath = new LabelNode();
+                InsnList patch = new InsnList();
+                if ("(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;)V".equals(method.desc)) {
+                    LabelNode supportedRecipePath = new LabelNode();
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                    patch.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                    patch.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "skipUnsupportedRuntimeRecipe",
+                            "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;)Z",
+                            false
+                    ));
+                    patch.add(new JumpInsnNode(Opcodes.IFEQ, supportedRecipePath));
+                    patch.add(new InsnNode(Opcodes.RETURN));
+                    patch.add(supportedRecipePath);
+                    patch.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                }
+                patch.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                patch.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                patch.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/HeiOptimizations",
+                        "fastAddKnownRuntimeRecipe",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Z",
+                        false
+                ));
+                patch.add(new JumpInsnNode(Opcodes.IFEQ, stockPath));
+                patch.add(new InsnNode(Opcodes.RETURN));
+                patch.add(stockPath);
+                patch.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(patch);
+                changed = true;
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchRecipeMapIngredientHelperCaches(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (!(insn instanceof MethodInsnNode)) {
+                        continue;
+                    }
+                    MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                    if (methodInsn.getOpcode() == Opcodes.INVOKEINTERFACE
+                            && "mezz/jei/api/ingredients/IIngredientHelper".equals(methodInsn.owner)
+                            && "expandSubtypes".equals(methodInsn.name)
+                            && "(Ljava/util/List;)Ljava/util/List;".equals(methodInsn.desc)) {
+                        methodInsn.setOpcode(Opcodes.INVOKESTATIC);
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedHeiRecipeMapExpandSubtypes";
+                        methodInsn.desc = "(Lmezz/jei/api/ingredients/IIngredientHelper;Ljava/util/List;)Ljava/util/List;";
+                        methodInsn.itf = false;
+                        changed = true;
+                    } else if (methodInsn.getOpcode() == Opcodes.INVOKEINTERFACE
+                            && "mezz/jei/api/ingredients/IIngredientHelper".equals(methodInsn.owner)
+                            && "getUniqueId".equals(methodInsn.name)
+                            && "(Ljava/lang/Object;)Ljava/lang/String;".equals(methodInsn.desc)) {
+                        methodInsn.setOpcode(Opcodes.INVOKESTATIC);
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedHeiRecipeMapUniqueId";
+                        methodInsn.desc = "(Lmezz/jei/api/ingredients/IIngredientHelper;Ljava/lang/Object;)Ljava/lang/String;";
+                        methodInsn.itf = false;
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
     }
 
     private static byte[] patchSynchronizedMethods(byte[] basicClass, Set<MethodKey> methods) {
@@ -925,6 +1174,137 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         return basicClass;
     }
 
+    private static byte[] patchEnvironmentalTechVoidMinerRecipes(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            for (MethodNode method : node.methods) {
+                if (!"getRecipes".equals(method.name)
+                        || !"(Lcom/valkyrieofnight/et/m_multiblocks/m_voidminer/registry/ITargetableRegistry;Lmezz/jei/api/IJeiHelpers;)Ljava/util/List;".equals(method.desc)) {
+                    continue;
+                }
+
+                LabelNode original = new LabelNode();
+                InsnNode cachedReturn = new InsnNode(Opcodes.ARETURN);
+                int cacheLocal = method.maxLocals;
+                InsnList cacheCheck = new InsnList();
+                cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                cacheCheck.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/HeiOptimizations",
+                        "cachedEnvironmentalTechVoidMinerRecipes",
+                        "(Ljava/lang/Object;)Ljava/util/List;",
+                        false
+                ));
+                cacheCheck.add(new VarInsnNode(Opcodes.ASTORE, cacheLocal));
+                cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, cacheLocal));
+                cacheCheck.add(new JumpInsnNode(Opcodes.IFNULL, original));
+                cacheCheck.add(new VarInsnNode(Opcodes.ALOAD, cacheLocal));
+                cacheCheck.add(cachedReturn);
+                cacheCheck.add(original);
+                cacheCheck.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(cacheCheck);
+                method.maxLocals = Math.max(method.maxLocals, cacheLocal + 1);
+
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn == cachedReturn || insn.getOpcode() != Opcodes.ARETURN) {
+                        continue;
+                    }
+                    InsnList cacheStore = new InsnList();
+                    cacheStore.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    cacheStore.add(new InsnNode(Opcodes.SWAP));
+                    cacheStore.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/HeiOptimizations",
+                            "cacheEnvironmentalTechVoidMinerRecipes",
+                            "(Ljava/lang/Object;Ljava/util/List;)Ljava/util/List;",
+                            false
+                    ));
+                    method.instructions.insertBefore(insn, cacheStore);
+                }
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchRecipesGuiThaumcraftResearchClick(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            for (MethodNode method : node.methods) {
+                if (!"func_73864_a".equals(method.name) || !"(III)V".equals(method.desc)) {
+                    continue;
+                }
+
+                LabelNode original = new LabelNode();
+                InsnList instructions = new InsnList();
+                instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                instructions.add(new VarInsnNode(Opcodes.ILOAD, 1));
+                instructions.add(new VarInsnNode(Opcodes.ILOAD, 2));
+                instructions.add(new VarInsnNode(Opcodes.ILOAD, 3));
+                instructions.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/compat/hei/ThaumcraftHeiResearchClickBridge",
+                        "handleClick",
+                        "(Ljava/lang/Object;III)Z",
+                        false
+                ));
+                instructions.add(new JumpInsnNode(Opcodes.IFEQ, original));
+                instructions.add(new InsnNode(Opcodes.RETURN));
+                instructions.add(original);
+                instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(instructions);
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchRecipeGuiLogicCraftableRecipesFirst(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            for (MethodNode method : node.methods) {
+                if (!"updateRecipes".equals(method.name) || !"()V".equals(method.desc)) {
+                    continue;
+                }
+
+                for (AbstractInsnNode insn = method.instructions.getLast(); insn != null; insn = insn.getPrevious()) {
+                    if (insn.getOpcode() != Opcodes.RETURN) {
+                        continue;
+                    }
+
+                    InsnList instructions = new InsnList();
+                    instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                    instructions.add(new FieldInsnNode(
+                            Opcodes.GETFIELD,
+                            "mezz/jei/gui/recipes/RecipeGuiLogic",
+                            "recipes",
+                            "Ljava/util/List;"
+                    ));
+                    instructions.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/compat/hei/HeiCraftableRecipeSorter",
+                            "sortRecipes",
+                            "(Ljava/util/List;)Ljava/util/List;",
+                            false
+                    ));
+                    instructions.add(new FieldInsnNode(
+                            Opcodes.PUTFIELD,
+                            "mezz/jei/gui/recipes/RecipeGuiLogic",
+                            "recipes",
+                            "Ljava/util/List;"
+                    ));
+                    method.instructions.insertBefore(insn, instructions);
+                    return writeNode(node);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
     private static byte[] patchHeiItemStackListFactoryCreate(byte[] basicClass) {
         try {
             ClassNode node = readNode(basicClass);
@@ -1152,6 +1532,42 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         return basicClass;
     }
 
+    private static byte[] patchForestryBottlerCompressedWrapperIngredients(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"getIngredients".equals(method.name)
+                        || !"(Lmezz/jei/api/ingredients/IIngredients;)V".equals(method.desc)) {
+                    continue;
+                }
+
+                LabelNode original = new LabelNode();
+                InsnList instructions = new InsnList();
+                instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                instructions.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "com/l/gpom/optimization/HeiOptimizations",
+                        "applyCompressedForestryBottlerIngredients",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Z",
+                        false
+                ));
+                instructions.add(new JumpInsnNode(Opcodes.IFEQ, original));
+                instructions.add(new InsnNode(Opcodes.RETURN));
+                instructions.add(original);
+                instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(instructions);
+                changed = true;
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
     private static byte[] patchExtraTreesLumbermillFastPath(byte[] basicClass) {
         try {
             ClassNode node = readNode(basicClass);
@@ -1298,6 +1714,81 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
                         false
                 ));
                 replacement.add(new InsnNode(Opcodes.RETURN));
+                changed = true;
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchOpenComputersJeiCaches(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (!(insn instanceof MethodInsnNode)) {
+                        continue;
+                    }
+                    MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                    if (methodInsn.getOpcode() == Opcodes.INVOKESTATIC
+                            && "li/cil/oc/api/Manual".equals(methodInsn.owner)
+                            && "pathFor".equals(methodInsn.name)
+                            && "(Lnet/minecraft/item/ItemStack;)Ljava/lang/String;".equals(methodInsn.desc)) {
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedOpenComputersManualPathFor";
+                        changed = true;
+                    } else if (methodInsn.getOpcode() == Opcodes.INVOKESTATIC
+                            && "li/cil/oc/api/Driver".equals(methodInsn.owner)
+                            && "environmentsFor".equals(methodInsn.name)
+                            && "(Lnet/minecraft/item/ItemStack;)Ljava/util/Set;".equals(methodInsn.desc)) {
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedOpenComputersEnvironmentsFor";
+                        changed = true;
+                    } else if (methodInsn.getOpcode() == Opcodes.INVOKEVIRTUAL
+                            && "li/cil/oc/server/machine/Callbacks$".equals(methodInsn.owner)
+                            && "fromClass".equals(methodInsn.name)
+                            && "(Ljava/lang/Class;)Lscala/collection/mutable/Map;".equals(methodInsn.desc)) {
+                        methodInsn.setOpcode(Opcodes.INVOKESTATIC);
+                        methodInsn.owner = "com/l/gpom/optimization/HeiOptimizations";
+                        methodInsn.name = "cachedOpenComputersCallbacksFromClass";
+                        methodInsn.desc = "(Ljava/lang/Object;Ljava/lang/Class;)Lscala/collection/mutable/Map;";
+                        methodInsn.itf = false;
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                return writeNode(node);
+            }
+        } catch (Throwable ignored) {
+        }
+        return basicClass;
+    }
+
+    private static byte[] patchOpenComputersDocRecipesFastPath(byte[] basicClass) {
+        try {
+            ClassNode node = readNode(basicClass);
+            boolean changed = false;
+            for (MethodNode method : node.methods) {
+                if (!"getRecipes".equals(method.name)
+                        || !"(Lmezz/jei/api/IModRegistry;)Ljava/util/List;".equals(method.desc)) {
+                    continue;
+                }
+                method.instructions.clear();
+                method.tryCatchBlocks.clear();
+                method.localVariables = null;
+                method.instructions.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        "java/util/Collections",
+                        "emptyList",
+                        "()Ljava/util/List;",
+                        false
+                ));
+                method.instructions.add(new InsnNode(Opcodes.ARETURN));
                 changed = true;
             }
             if (changed) {

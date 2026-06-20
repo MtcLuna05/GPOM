@@ -57,12 +57,12 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.InitPhaseDeepProfilerTransformer",
                 "com.l.gpom.core.ForcedResourceReloadTransformer",
                 "com.l.gpom.core.BetweenlandsItemRendererTransformer",
-                "com.l.gpom.core.CustomMainMenuStartupOverlayTransformer",
                 "com.l.gpom.core.RenderLibCompatibilityTransformer",
                 "com.l.gpom.core.LibVulpesCompatibilityTransformer",
                 "com.l.gpom.core.LoliAsmCompatibilityTransformer",
                 "com.l.gpom.core.BetterPortalsCompatibilityTransformer",
                 "com.l.gpom.core.JourneyMapBetterPortalsTeleportTransformer",
+                "com.l.gpom.core.CustomMainMenuStartupOverlayTransformer",
                 "com.l.gpom.core.ArchitectureCraftCompatibilityTransformer",
                 "com.l.gpom.core.BlockcrafteryHitboxTransformer",
                 "com.l.gpom.core.JecVolatileNbtTransformer",
@@ -87,6 +87,10 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         long startedAt = System.nanoTime();
         ForgeEventSubscriptionTransformerOptimizations.install();
         markBootDuration("GPOM injectData/install subscription optimizer", startedAt);
+        startedAt = System.nanoTime();
+        ChickenAsmConcurrencyTransformer.hardenRuntimeCaches();
+        ChickenAsmConcurrencyTransformer.preloadObfMapping();
+        markBootDuration("GPOM injectData/harden ChickenASM", startedAt);
     }
 
     @Override

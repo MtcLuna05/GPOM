@@ -4,6 +4,7 @@ import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.jecalculation.JecPinnedCraftOverlay;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanupEvents;
 import com.l.gpom.compat.journeymap.JourneyMapWaypointDimensionDropupEvents;
+import com.l.gpom.compat.thaumcraft.ThaumcraftResearchClientProbe;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 public final class ClientProxy extends CommonProxy {
@@ -14,6 +15,7 @@ public final class ClientProxy extends CommonProxy {
         JourneyMapLeakCleanupEvents.register();
         JourneyMapWaypointDimensionDropupEvents.register();
         JecPinnedCraftOverlay.register();
+        ThaumcraftResearchClientProbe.register();
     }
 
     @Override
