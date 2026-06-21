@@ -47,6 +47,13 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
     private static final boolean FAST_ENVTECH_VOIDMINER = Boolean.parseBoolean(System.getProperty("gpom.hei.fastEnvironmentalTechVoidMiner", "true"));
     private static final boolean FAST_OC_DOC_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastOpenComputersDocRecipes", "true"));
     private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "false"));
+    private static final boolean RECIPE_REGISTRY_FAST_PATHS = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryFastPaths.enabled", "true"));
+    private static final boolean RECIPE_REGISTRY_BULK_PROGRESS = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryBulkProgress.enabled", "false"));
+    private static final boolean RECIPE_REGISTRY_DEFER_VISIBLE_CACHE = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryDeferVisibleCache.enabled", "false"));
+    private static final boolean RECIPE_REGISTRY_HANDLER_CACHE = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryHandlerCache.enabled", "true"));
+    private static final boolean RECIPE_REGISTRY_KNOWN_RUNTIME = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryKnownRuntime.enabled", "true"));
+    private static final boolean RECIPE_REGISTRY_NULL_UNHIDE_GUARD = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeRegistryNullUnhideGuard.enabled", "true"));
+    private static final boolean RECIPE_MAP_INGREDIENT_CACHE = Boolean.parseBoolean(System.getProperty("gpom.hei.recipeMapIngredientCache.enabled", "false"));
     private static final boolean LOG_HEI_REGISTRY_ONLY_ITEMS = Boolean.parseBoolean(System.getProperty("gpom.hei.logRegistryOnlyItems", "true"));
     private static final boolean PLUGIN_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.hei.pluginProfiler", "true"));
     private static final boolean HOT_METHOD_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.hei.hotMethodProfiler", "false"));
@@ -86,14 +93,24 @@ public final class HeiStartupProfilerTransformer implements IClassTransformer {
         if (supportedHeiClass && "mezz.jei.recipes.RecipeRegistry".equals(className) && SKIP_RECIPE_PROGRESS) {
             basicClass = patchRecipeRegistrySkipProgress(basicClass);
         }
-        if (supportedHeiClass && "mezz.jei.recipes.RecipeRegistry".equals(className)) {
-            basicClass = patchRecipeRegistryGpomProgress(basicClass);
-            basicClass = patchRecipeRegistryBulkVisibleCache(basicClass);
-            basicClass = patchRecipeRegistryHandlerCache(basicClass);
-            basicClass = patchRecipeRegistryKnownRuntimeRecipes(basicClass);
-            basicClass = patchRecipeRegistryNullUnhideGuard(basicClass);
+        if (supportedHeiClass && "mezz.jei.recipes.RecipeRegistry".equals(className) && RECIPE_REGISTRY_FAST_PATHS) {
+            if (RECIPE_REGISTRY_BULK_PROGRESS) {
+                basicClass = patchRecipeRegistryGpomProgress(basicClass);
+            }
+            if (RECIPE_REGISTRY_DEFER_VISIBLE_CACHE) {
+                basicClass = patchRecipeRegistryBulkVisibleCache(basicClass);
+            }
+            if (RECIPE_REGISTRY_HANDLER_CACHE) {
+                basicClass = patchRecipeRegistryHandlerCache(basicClass);
+            }
+            if (RECIPE_REGISTRY_KNOWN_RUNTIME) {
+                basicClass = patchRecipeRegistryKnownRuntimeRecipes(basicClass);
+            }
+            if (RECIPE_REGISTRY_NULL_UNHIDE_GUARD) {
+                basicClass = patchRecipeRegistryNullUnhideGuard(basicClass);
+            }
         }
-        if (supportedHeiClass && "mezz.jei.recipes.RecipeMap".equals(className)) {
+        if (supportedHeiClass && "mezz.jei.recipes.RecipeMap".equals(className) && RECIPE_MAP_INGREDIENT_CACHE) {
             basicClass = patchRecipeMapIngredientHelperCaches(basicClass);
         }
         if (supportedHeiClass && "mezz.jei.startup.ModRegistry".equals(className)) {

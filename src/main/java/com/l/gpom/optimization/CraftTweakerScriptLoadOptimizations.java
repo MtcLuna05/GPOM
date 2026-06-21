@@ -2,6 +2,7 @@ package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.profiling.StartupProfiler;
+import net.minecraft.launchwrapper.Launch;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -331,6 +332,21 @@ public final class CraftTweakerScriptLoadOptimizations {
     }
 
     private static ParseResult parseScript(Bridge bridge, Object environment, Object compileEnvironment, ScriptPlan plan) {
+        Object lock = parseLock();
+        synchronized (lock) {
+            return parseScriptLocked(bridge, environment, compileEnvironment, plan);
+        }
+    }
+
+    private static Object parseLock() {
+        if (Launch.classLoader != null) {
+            return Launch.classLoader;
+        }
+        ClassLoader loader = CraftTweakerScriptLoadOptimizations.class.getClassLoader();
+        return loader == null ? CraftTweakerScriptLoadOptimizations.class : loader;
+    }
+
+    private static ParseResult parseScriptLocked(Bridge bridge, Object environment, Object compileEnvironment, ScriptPlan plan) {
         long startedAt = beginDeepProbe();
         Object tokener = null;
         try (Reader reader = new InputStreamReader(

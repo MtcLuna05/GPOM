@@ -14,7 +14,8 @@ public final class MainMenuStartupOverlay {
     }
 
     public static boolean isSupportedMainMenu(Object screen) {
-        return screen instanceof GuiMainMenu;
+        return screen instanceof GuiMainMenu
+                || (screen != null && "lumien.custommainmenu.gui.GuiCustom".equals(screen.getClass().getName()));
     }
 
     public static void renderFromScreen(Object screen, String screenName) {

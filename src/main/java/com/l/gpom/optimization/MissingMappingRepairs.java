@@ -9,8 +9,8 @@ import net.minecraft.potion.Potion;
 import net.minecraft.potion.PotionType;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.SoundEvent;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegistryEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 import net.minecraftforge.registries.IForgeRegistry;
@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-@Mod.EventBusSubscriber(modid = Reference.MOD_ID)
 public final class MissingMappingRepairs {
     private static final Set<String> AOA_GRASS_BLOCKS = new HashSet<>(Arrays.asList(
             "abyss_grass",
@@ -60,14 +59,23 @@ public final class MissingMappingRepairs {
     ));
     private static final Set<String> IGNORED_MISSING_SOUND_NAMESPACES =
             GpomEarlyConfig.registryIgnoredMissingSoundEventNamespaces();
+    private static final Set<String> IGNORED_MISSING_BLOCK_ITEM_NAMESPACES =
+            GpomEarlyConfig.registryIgnoredMissingBlockItemNamespaces();
+    private static final Set<String> IGNORED_MISSING_AETHER_ENCHANTMENT_NAMESPACES =
+            GpomEarlyConfig.registryIgnoredMissingAetherEnchantmentNamespaces();
     private static final Set<String> FAIL_MISSING_BLOCK_ITEM_NAMESPACES =
             GpomEarlyConfig.registryFailMissingBlockItemNamespaces();
 
     private MissingMappingRepairs() {
     }
 
+    public static void register() {
+        MinecraftForge.EVENT_BUS.register(MissingMappingRepairs.class);
+    }
+
     @SubscribeEvent
     public static void onMissingBlockMappings(RegistryEvent.MissingMappings<Block> event) {
+        IgnoreSummary ignored = new IgnoreSummary("block", IGNORED_MISSING_BLOCK_ITEM_NAMESPACES);
         for (RegistryEvent.MissingMappings.Mapping<Block> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
             if (isAdvancedRocketryWirelessTransciever(key)) {
@@ -82,14 +90,19 @@ public final class MissingMappingRepairs {
                 remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("aoa3", path(key)), "block");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
+            } else if (isIgnoredMissingBlockItemNamespace(key)) {
+                mapping.ignore();
+                ignored.add(key);
             } else if (shouldFailMissingBlockItemMapping(key)) {
                 failMissing(mapping, "block");
             }
         }
+        ignored.log();
     }
 
     @SubscribeEvent
     public static void onMissingItemMappings(RegistryEvent.MissingMappings<Item> event) {
+        IgnoreSummary ignored = new IgnoreSummary("item", IGNORED_MISSING_BLOCK_ITEM_NAMESPACES);
         for (RegistryEvent.MissingMappings.Mapping<Item> mapping : event.getAllMappings()) {
             ResourceLocation key = mapping.key;
             if (isAdvancedRocketryWirelessTransciever(key)) {
@@ -106,10 +119,14 @@ public final class MissingMappingRepairs {
                 remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("aoa3", path(key)), "item");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.ITEMS, "item");
+            } else if (isIgnoredMissingBlockItemNamespace(key)) {
+                mapping.ignore();
+                ignored.add(key);
             } else if (shouldFailMissingBlockItemMapping(key)) {
                 failMissing(mapping, "item");
             }
         }
+        ignored.log();
     }
 
     @SubscribeEvent
@@ -148,6 +165,28 @@ public final class MissingMappingRepairs {
             } else if (isIgnoredMissingSoundNamespace(mapping.key)) {
                 mapping.ignore();
                 ignored.add(mapping.key);
+            }
+        }
+        ignored.log();
+    }
+
+    @SubscribeEvent
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static void onMissingAetherEnchantmentMappings(RegistryEvent.MissingMappings event) {
+        if (!isAetherEnchantmentRegistry(event)) {
+            return;
+        }
+
+        IgnoreSummary ignored = new IgnoreSummary("Aether enchantment", IGNORED_MISSING_AETHER_ENCHANTMENT_NAMESPACES);
+        for (Object raw : event.getAllMappings()) {
+            if (!(raw instanceof RegistryEvent.MissingMappings.Mapping)) {
+                continue;
+            }
+            RegistryEvent.MissingMappings.Mapping mapping = (RegistryEvent.MissingMappings.Mapping) raw;
+            ResourceLocation key = mapping.key;
+            if (isIgnoredMissingAetherEnchantmentNamespace(key)) {
+                mapping.ignore();
+                ignored.add(key);
             }
         }
         ignored.log();
@@ -246,6 +285,18 @@ public final class MissingMappingRepairs {
 
     private static boolean isIgnoredMissingSoundNamespace(ResourceLocation key) {
         return key != null && IGNORED_MISSING_SOUND_NAMESPACES.contains(namespace(key));
+    }
+
+    private static boolean isIgnoredMissingBlockItemNamespace(ResourceLocation key) {
+        return key != null && IGNORED_MISSING_BLOCK_ITEM_NAMESPACES.contains(namespace(key));
+    }
+
+    private static boolean isIgnoredMissingAetherEnchantmentNamespace(ResourceLocation key) {
+        return key != null && IGNORED_MISSING_AETHER_ENCHANTMENT_NAMESPACES.contains(namespace(key));
+    }
+
+    private static boolean isAetherEnchantmentRegistry(RegistryEvent.MissingMappings<?> event) {
+        return event != null && "aetherapi:enchantments".equals(String.valueOf(event.getName()));
     }
 
     private static boolean shouldFailMissingBlockItemMapping(ResourceLocation key) {

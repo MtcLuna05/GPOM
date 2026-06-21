@@ -203,13 +203,11 @@ public final class PreInitClassPrewarmer {
                 }
 
                 List<String> classNames = scanSource(source, prefixes, includeAnonClasses, maxClassesPerMod);
-                if (!classNames.isEmpty()) {
-                    Map<String, LinkedHashSet<String>> targetClasses = shouldInitializeScannedMod(modId, initializeClasses, initializeAllowlist)
-                            ? classesByMod
-                            : noInitClassesByMod;
-                    LinkedHashSet<String> classes = targetClasses.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
-                    classes.addAll(classNames);
-                }
+                addScannedClasses(classesByMod,
+                        noInitClassesByMod,
+                        modId,
+                        classNames,
+                        shouldInitializeScannedMod(modId, initializeClasses, initializeAllowlist));
             }
         }
 
@@ -266,7 +264,7 @@ public final class PreInitClassPrewarmer {
         List<WarmGroup> groups = new ArrayList<WarmGroup>();
         Map<String, Integer> totalsByLabel = new LinkedHashMap<String, Integer>();
         for (Map.Entry<String, List<String>> entry : immutable.entrySet()) {
-            groups.add(new WarmGroup(entry.getKey(), entry.getValue(), initializeClasses));
+            groups.add(new WarmGroup(entry.getKey(), entry.getValue(), true));
             totalsByLabel.put(entry.getKey(), entry.getValue().size());
         }
         for (Map.Entry<String, List<String>> entry : noInitImmutable.entrySet()) {
@@ -348,6 +346,34 @@ public final class PreInitClassPrewarmer {
         if (!classNames.isEmpty()) {
             LinkedHashSet<String> classes = classesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
             classes.addAll(classNames);
+        }
+    }
+
+    private static void addScannedClasses(Map<String, LinkedHashSet<String>> initClassesByMod,
+                                          Map<String, LinkedHashSet<String>> noInitClassesByMod,
+                                          String modId,
+                                          List<String> classNames,
+                                          boolean initialize) {
+        if (modId == null || modId.isEmpty() || classNames == null || classNames.isEmpty()) {
+            return;
+        }
+        if (!initialize) {
+            LinkedHashSet<String> classes = noInitClassesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
+            classes.addAll(classNames);
+            return;
+        }
+
+        LinkedHashSet<String> initClasses = initClassesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
+        LinkedHashSet<String> noInitClasses = null;
+        for (String className : classNames) {
+            if (isUnsafeToInitializeDuringPrewarm(modId, className)) {
+                if (noInitClasses == null) {
+                    noInitClasses = noInitClassesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
+                }
+                noInitClasses.add(className);
+            } else {
+                initClasses.add(className);
+            }
         }
     }
 
@@ -618,6 +644,48 @@ public final class PreInitClassPrewarmer {
             "crafttweaker.runtime.CrTTweaker",
             "crafttweaker.mc1120.CraftTweaker",
             "com.teamacronymcoders.contenttweaker.ContentTweaker"
+    ));
+
+    private static boolean isUnsafeToInitializeDuringPrewarm(String modId, String className) {
+        if (className == null || className.isEmpty()) {
+            return true;
+        }
+        String normalizedModId = normalize(modId);
+        if (PREWARM_NO_INIT_EXACT_CLASSES.contains(className)
+                || PREWARM_NO_INIT_EXACT_CLASSES.contains(normalizedModId + ":" + className)) {
+            return true;
+        }
+
+        String lower = className.toLowerCase(Locale.ROOT);
+        if (lower.endsWith("registry")
+                || lower.endsWith("registries")
+                || lower.endsWith("modblocks")
+                || lower.endsWith("moditems")
+                || lower.endsWith("blockregistry")
+                || lower.endsWith("itemregistry")
+                || lower.endsWith("recipehandler")
+                || lower.endsWith("recipehandlers")
+                || lower.contains(".registry.")
+                || lower.contains(".registries.")
+                || lower.contains(".init.")
+                || lower.contains(".blocks.")
+                || lower.contains(".block.")
+                || lower.contains(".items.")
+                || lower.contains(".item.")
+                || lower.contains(".recipes.")
+                || lower.contains(".recipe.")) {
+            return true;
+        }
+        return lower.endsWith("$blocks")
+                || lower.endsWith("$items")
+                || lower.endsWith("$recipes")
+                || lower.endsWith("$registry")
+                || lower.endsWith("$registries");
+    }
+
+    private static final Set<String> PREWARM_NO_INIT_EXACT_CLASSES = new HashSet<String>(Arrays.asList(
+            "mustapelto.deepmoblearning.common.DMLRegistry",
+            "deepmoblearning:mustapelto.deepmoblearning.common.DMLRegistry"
     ));
 
     private static boolean shouldInitializeScannedMod(String modId, boolean initializeClasses, Set<String> initializeAllowlist) {

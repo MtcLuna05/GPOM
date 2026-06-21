@@ -2,15 +2,15 @@
 
 This catalog tracks GPOM features, not only startup optimizations. It is intended as the high-level inventory for maintainers and pack operators. Use `docs/FEATURE_LOG.md` for measured run history, validation notes, crashes, and active decisions.
 
-Current live context, 2026-06-20:
+Current live context, 2026-06-21:
 
 - Target pack: MeatballCraft, Dimensional Ascension on Minecraft 1.12.2 Cleanroom/Forge.
-- GPOM jar in the tested Prism instance was rebuilt and installed after the CMM overlay cleanup, HEI null-unhide guard, and Mystical Agradditions HEI helper patch with SHA-256 `6f56f477c69d1225512187ea4a773d0baf192e884f9851805d0b2cf6a5448611`.
+- GPOM jar in the tested Prism instance was rebuilt and installed with every non-probe feature switch enabled and probes/profilers/verbose logs/deep diagnostics left disabled, with SHA-256 `c2556d08f0faeb1322feba2a79ad6dfa367195ce24fee72921af91fd9d016149`.
 - Probe, deep HEI profiler, runtime sink profiler, and coarse startup-summary output are disabled in the live config for speed. The main-menu startup timer remains enabled.
-- `docs/gpom-early.properties` and the live MeatballCraft instance config are aligned except for active triage toggles noted in `docs/FEATURE_LOG.md`.
+- `docs/gpom-early.properties`, the live MeatballCraft instance config, and `GpomEarlyConfig` source defaults are aligned to the current all-non-probe speed profile.
 - The baseline from the earlier Celeritas-switch status was `263.251 s` average (`242.169 s`, `290.494 s`, `257.090 s`), so the current average saving is about `77.501 s` or `29.4%`.
 - HEI search tree concurrency is intentionally conservative now: `gpom.hei.searchWorkers=1`, `gpom.hei.deferSearchBlock=false` by default, and `gpom.hei.parallelSearchBuild=false` by default. This avoids the HEI `ObjectOpenHashSet`/`StringUtil.intern` race seen on 2026-06-20.
-- Active recipe-missing triage disabled `gpom.hei.parallelPluginRegistration.enabled` in the live instance config; the `6318` runtime ingredient removal still occurred, so the current evidence points at staged/progression filtering rather than HEI plugin parallel registration.
+- Active validation intentionally enables all non-probe HEI feature switches, including plugin discovery/registration parallelism, `RecipeRegistry` bulk/visible-cache paths, and `RecipeMap` ingredient caching. Probes, profilers, verbose logs, and deep diagnostics remain disabled.
 
 ## Configuration Model
 
@@ -186,6 +186,7 @@ Behavior details:
 - Queued commits keep real Forge registry writes on a controlled path.
 - Immediate commit registries are used where the proxy path is not safe or where the registry needs immediate visibility.
 - Per-mod/per-registry deny entries use `modid@registry:name`.
+- DeepMobEvolution/DeepMobLearning block and item registry handlers stay serial because its block/item registration ran under `RegistryParallel` but produced missing world mappings for registered DML IDs.
 - `minecraft:recipes` is separately gated and disabled by default because recipe registration has strong ordering/visibility constraints.
 
 Live MeatballCraft posture:
@@ -206,9 +207,9 @@ Core HEI startup keys:
 ```properties
 gpom.hei.recipeProgressBar.enabled=true
 gpom.hei.recipeProgressBar.stepSize=256
-gpom.hei.searchWorkers=0
-gpom.hei.fastPreInitPluginDiscovery.enabled=false
-gpom.hei.fastPreInitPluginDiscovery.workers=0
+gpom.hei.searchWorkers=1
+gpom.hei.fastPreInitPluginDiscovery.enabled=true
+gpom.hei.fastPreInitPluginDiscovery.workers=4
 gpom.hei.fastPreInitPluginDiscovery.deepProbes=false
 gpom.hei.parallelPluginRegistration.enabled=true
 gpom.hei.parallelPluginRegistration.workers=6
@@ -222,9 +223,9 @@ Performance capabilities:
 - Fast pre-init plugin discovery defines JEI plugin classes on a bounded worker pool and constructs plugin instances serially.
 - Experimental HEI plugin registration can run allowlisted `IModPlugin.register` calls on workers while serial plugins run on the client thread.
 - HEI registry surfaces touched by plugin threading are synchronized where GPOM has exact knowledge.
-- HEI `RecipeRegistry` ingestion has bulk visible-cache suppression, recipe-handler caching, and known-runtime fast paths.
+- HEI `RecipeRegistry` ingestion keeps recipe-handler caching, known-runtime recipe wrappers, and the null-unhide guard enabled. The handler cache delegates misses to HEI's original private handler lookup before caching the exact result. Bulk progress wrapping and bulk visible-cache suppression are available as opt-ins but disabled in the current validation profile because staged/progression packs can query category visibility during registration.
 - Unsupported runtime recipe classes can be skipped when no handler exists, avoiding expensive repeated failed handler lookups.
-- `RecipeMap` ingredient-helper subtype and unique-id calls are cached during bulk registry ingestion.
+- `RecipeMap` ingredient-helper subtype and unique-id caching is enabled in the current speed profile with content-keyed signatures. Unknown mutable ingredient types bypass the cache and use HEI stock calls when a stable key cannot be built.
 - HEI item-stack list, Forestry, ExtraTrees, EnderIO, Thermal Expansion, JER, and Environmental Tech paths have targeted caches or fast paths.
 
 Current HEI search safety state:
@@ -347,14 +348,16 @@ Capabilities:
 - Can pause during serial handlers to avoid adding CPU contention during main-thread-only work.
 - Can use no-static-init class loading by default to avoid executing mod code early.
 - Can be configured with extra prefixes and explicit classes for targeted testing.
+- When static initialization is enabled broadly, scanned registry/block/item/recipe holder classes are automatically routed through no-static-init loading. This preserves class metadata warming without constructing registry objects before Forge has the owning mod container active.
 
 Live MeatballCraft posture:
 
-- Enabled for a narrow allowlist: `erebus`, `environmentaltech`, `extrautils2`, `integrateddynamics`, `teslacorelib`, and `twilightforest`.
-- Uses `2` workers and pauses during serial handlers.
+- Enabled with broad `allowlist=*`, broad `initializeAllowlist=*`, and `initializeClasses=true` for validation.
+- Uses `2` workers, pauses during serial handlers and blocking waits, and keeps unsafe static registry holder classes on the no-init path.
+- The no-init guard specifically protects DML/DeepMobEvolution-style static registry holders such as `mustapelto.deepmoblearning.common.DMLRegistry`, which construct `Item`/`Block` instances in class initialization and must not run before their mod container is active.
 - This contributes to nondeterministic timings but is accepted for speed in the current profile.
 
-Risk level: medium. Keep static initialization disabled unless a specific class set is proven safe.
+Risk level: medium to high. Broad static initialization is only acceptable with the unsafe-holder no-init split; add exact no-init protections for any mod that still constructs runtime registries from class initializers.
 
 ## Runtime Caches and Cache Invalidation
 
@@ -402,7 +405,7 @@ Key config:
 gpom.earlySplash.enabled=false
 gpom.earlySplash.packName=Minecraft
 gpom.worldLoadingScreen.enabled=true
-gpom.mainMenuStartupTime.enabled=false
+gpom.mainMenuStartupTime.enabled=true
 ```
 
 Capabilities:
@@ -416,7 +419,7 @@ Capabilities:
 Live MeatballCraft posture:
 
 - Main-menu startup timer is enabled.
-- `gpom.worldLoadingScreen.enabled=true` is the documented default/profile value, but the unstable custom world-loading mixins are currently not registered in `gpom.mod.mixin.json` after restoring the upstream mixin posture. Re-enable the mixins only with a targeted fix and validation pass.
+- `gpom.worldLoadingScreen.enabled=true` is the documented/live value and the custom world-loading mixins are registered again in `gpom.mod.mixin.json`.
 - Non-HEI probes are disabled.
 - Forge's startup screen must not be disabled.
 
@@ -722,6 +725,8 @@ Key config:
 ```properties
 gpom.enderio.repairMissingTileEntityMappings=true
 gpom.registry.repairThaumicWondersMissingMappings=false
+gpom.registry.ignoreMissingBlockItemNamespaces=railcraft,ae2fc,packagedfluidcrafting
+gpom.registry.ignoreMissingAetherEnchantmentNamespaces=contenttweaker
 gpom.registry.ignoreMissingSoundEventNamespaces=erebus
 gpom.registry.failMissingBlockItemNamespaces=
 ```
@@ -729,6 +734,9 @@ gpom.registry.failMissingBlockItemNamespaces=
 Capabilities:
 
 - Repairs missing EnderIO tile entity class-to-id mappings from EnderIO's own metadata during late startup.
+- Ignores stale missing block/item mappings only for configured intentionally removed namespaces. Current pack defaults cover Railcraft decorative blocks disabled by config and stale AE2FC/PackagedFluidCrafting IDs from removed jars.
+- Ignores stale Aether API enchantment mappings only for configured namespaces in `aetherapi:enchantments`. Current pack default covers the old ContentTweaker `infinity_fruit_meta_0` entry.
+- The missing-mapping repair listener is explicitly registered from GPOM preInit instead of relying on Forge automatic subscriber discovery, so stale-namespace ignores do not depend on annotation-subscriber optimization behavior.
 - Can ignore stale missing sound events for configured namespaces, currently `erebus`, to avoid hidden Forge confirmation gates for removed sounds.
 - Can fail hard on missing block/item namespaces when configured for diagnostics.
 - Thaumic Wonders missing mapping repair remains disabled by default because prior testing showed those missing registries were intentionally disabled and not the cause of the observed issue.

@@ -23,6 +23,10 @@
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
     "client.MixinWorldNotifyBlockUpdateSnapshot",
+    "client.MixinMinecraftWorldLoadingScreen",
+    "client.MixinLoadingScreenRendererWorldLoading",
+    "client.MixinGuiScreenWorkingWorldLoading",
+    "client.MixinGuiDownloadTerrainWorldLoading",
     "client.MixinGuiMainMenuStartupOverlay",
     "client.MixinMinecraftMouseFocus",
     "client.MixinMouseHelperFocusDelta",
@@ -35,6 +39,7 @@
     "client.resources.MixinTextureMapStartupProfiler",
     "client.model.MixinModelManagerStartupProfiler",
     "client.model.MixinModelLoaderStartupProfiler",
+    "client.render.MixinEntityRendererWorldLoadingScreen",
     "client.render.MixinRenderGlobalLifecycleCleanup",
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",

@@ -95,10 +95,13 @@ public final class HeiOptimizations {
     private static final boolean FAST_PREINIT_PLUGIN_DISCOVERY_DEEP_PROBES = Boolean.parseBoolean(System.getProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false"));
     private static final boolean SKIP_UNSUPPORTED_RUNTIME_RECIPES = Boolean.parseBoolean(System.getProperty("gpom.hei.skipUnsupportedRuntimeRecipes.enabled", "true"));
     private static final int FAST_PREINIT_PLUGIN_DISCOVERY_WORKERS = intProperty("gpom.hei.fastPreInitPluginDiscovery.workers", 0);
+    private static final int HEI_RECIPE_MAP_CACHE_MAX_ENTRIES = intProperty("gpom.hei.recipeMapIngredientCache.maxEntries", 65536);
     private static final int SEARCH_WORKERS = computeSearchWorkerCount();
     private static final Set<String> UNSUPPORTED_RUNTIME_RECIPE_CLASSES = unsupportedRuntimeRecipeClasses();
     private static final ThreadLocal<RecipeProgress> RECIPE_PROGRESS = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> RECIPE_REGISTRY_BULK = new ThreadLocal<>();
+    @SuppressWarnings("rawtypes")
+    private static final ThreadLocal<Set<List>> RECIPE_REGISTRY_BULK_VISIBLE_CACHES = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> FORCE_HEI_SEARCH_BLOCK = new ThreadLocal<>();
     private static final Set<Object> DEFERRED_HEI_SEARCH_BLOCKS = Collections.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap<>()));
     private static Method jerEnchantmentWrapperCreate;
@@ -151,6 +154,7 @@ public final class HeiOptimizations {
     private static Constructor<?> agricraftProduceRecipeWrapperConstructor;
     private static Constructor<?> agricraftMutationRecipeWrapperConstructor;
     private static Method heiRecipeRegistryAddWrapperMethod;
+    private static Method heiRecipeRegistryGetRecipeHandlerMethod;
     private static Method extraUtilsJeiMachineCreateWrapperMethod;
     private static Method extraUtilsJeiMachineGetStringMethod;
     private static Field extraUtilsJeiMachineRecipeMachineField;
@@ -160,8 +164,8 @@ public final class HeiOptimizations {
     private static final Map<Object, List<?>> HEI_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Object, List<?>> HEI_FILLABLE_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<Object, List<?>> HEI_DRAINABLE_FLUID_HANDLER_ITEMS = Collections.synchronizedMap(new IdentityHashMap<>());
-    private static final Map<Object, List<?>> HEI_RECIPE_MAP_EXPANDED_SUBTYPES = Collections.synchronizedMap(new IdentityHashMap<>());
-    private static final Map<Object, String> HEI_RECIPE_MAP_UNIQUE_IDS = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final ConcurrentMap<RecipeMapListCacheKey, List<?>> HEI_RECIPE_MAP_EXPANDED_SUBTYPES = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<RecipeMapIngredientCacheKey, String> HEI_RECIPE_MAP_UNIQUE_IDS = new ConcurrentHashMap<>();
     private static final Object NULL_HEI_RECIPE_HANDLER = new Object();
     private static final Map<Object, Map<HeiRecipeHandlerKey, Object>> HEI_RECIPE_HANDLER_CACHE = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentMap<Class<?>, HeiRecipeHandlerFields> HEI_RECIPE_HANDLER_FIELDS = new ConcurrentHashMap<>();
@@ -2220,10 +2224,26 @@ public final class HeiOptimizations {
 
     public static void beginRecipeRegistryBulk() {
         RECIPE_REGISTRY_BULK.set(Boolean.TRUE);
+        RECIPE_REGISTRY_BULK_VISIBLE_CACHES.set(Collections.newSetFromMap(new IdentityHashMap<List, Boolean>()));
     }
 
+    @SuppressWarnings("rawtypes")
     public static void finishRecipeRegistryBulk() {
+        Set<List> visibleCaches = RECIPE_REGISTRY_BULK_VISIBLE_CACHES.get();
+        RECIPE_REGISTRY_BULK_VISIBLE_CACHES.remove();
         RECIPE_REGISTRY_BULK.remove();
+        if (visibleCaches != null) {
+            int clearedVisibleCaches = 0;
+            for (List cache : visibleCaches) {
+                if (cache != null) {
+                    cache.clear();
+                    clearedVisibleCaches++;
+                }
+            }
+            if (clearedVisibleCaches != 0) {
+                GPOM.LOGGER.info("[HEI Optimizations] Cleared {} deferred recipe category visibility cache(s)", clearedVisibleCaches);
+            }
+        }
         HEI_RECIPE_MAP_EXPANDED_SUBTYPES.clear();
         HEI_RECIPE_MAP_UNIQUE_IDS.clear();
         int handlerHits = HEI_RECIPE_HANDLER_CACHE_HITS.getAndSet(0);
@@ -2243,12 +2263,17 @@ public final class HeiOptimizations {
 
     @SuppressWarnings("rawtypes")
     public static void clearRecipeCategoriesVisibleCache(List cache) {
-        if (Boolean.TRUE.equals(RECIPE_REGISTRY_BULK.get())) {
+        if (cache == null) {
             return;
         }
-        if (cache != null) {
-            cache.clear();
+        if (Boolean.TRUE.equals(RECIPE_REGISTRY_BULK.get())) {
+            Set<List> visibleCaches = RECIPE_REGISTRY_BULK_VISIBLE_CACHES.get();
+            if (visibleCaches != null) {
+                visibleCaches.add(cache);
+            }
+            return;
         }
+        cache.clear();
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -2256,13 +2281,18 @@ public final class HeiOptimizations {
         if (helper == null || ingredients == null || ingredients.isEmpty()) {
             return Collections.emptyList();
         }
-        List cached = HEI_RECIPE_MAP_EXPANDED_SUBTYPES.get(ingredients);
+        RecipeMapListCacheKey key = recipeMapListCacheKey(helper, ingredients);
+        if (key == null) {
+            return helper.expandSubtypes(ingredients);
+        }
+        List cached = HEI_RECIPE_MAP_EXPANDED_SUBTYPES.get(key);
         if (cached != null) {
             return cached;
         }
         List expanded = helper.expandSubtypes(ingredients);
-        HEI_RECIPE_MAP_EXPANDED_SUBTYPES.put(ingredients, expanded);
-        return expanded;
+        List stableExpanded = expanded == null ? Collections.emptyList() : Collections.unmodifiableList(new ArrayList<>(expanded));
+        cacheRecipeMapExpandedSubtypes(key, stableExpanded);
+        return stableExpanded;
     }
 
     @SuppressWarnings("rawtypes")
@@ -2270,13 +2300,135 @@ public final class HeiOptimizations {
         if (helper == null || ingredient == null) {
             return "";
         }
-        String cached = HEI_RECIPE_MAP_UNIQUE_IDS.get(ingredient);
+        RecipeMapIngredientCacheKey key = recipeMapIngredientCacheKey(helper, ingredient);
+        if (key == null) {
+            return helper.getUniqueId(ingredient);
+        }
+        String cached = HEI_RECIPE_MAP_UNIQUE_IDS.get(key);
         if (cached != null) {
             return cached;
         }
         String uniqueId = helper.getUniqueId(ingredient);
-        HEI_RECIPE_MAP_UNIQUE_IDS.put(ingredient, uniqueId);
+        cacheRecipeMapUniqueId(key, uniqueId);
         return uniqueId;
+    }
+
+    private static void cacheRecipeMapExpandedSubtypes(RecipeMapListCacheKey key, List<?> expanded) {
+        if (HEI_RECIPE_MAP_CACHE_MAX_ENTRIES <= 0) {
+            return;
+        }
+        if (HEI_RECIPE_MAP_EXPANDED_SUBTYPES.size() >= HEI_RECIPE_MAP_CACHE_MAX_ENTRIES) {
+            HEI_RECIPE_MAP_EXPANDED_SUBTYPES.clear();
+        }
+        HEI_RECIPE_MAP_EXPANDED_SUBTYPES.putIfAbsent(key, expanded);
+    }
+
+    private static void cacheRecipeMapUniqueId(RecipeMapIngredientCacheKey key, String uniqueId) {
+        if (HEI_RECIPE_MAP_CACHE_MAX_ENTRIES <= 0 || uniqueId == null) {
+            return;
+        }
+        if (HEI_RECIPE_MAP_UNIQUE_IDS.size() >= HEI_RECIPE_MAP_CACHE_MAX_ENTRIES) {
+            HEI_RECIPE_MAP_UNIQUE_IDS.clear();
+        }
+        HEI_RECIPE_MAP_UNIQUE_IDS.putIfAbsent(key, uniqueId);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static RecipeMapListCacheKey recipeMapListCacheKey(IIngredientHelper helper, List ingredients) {
+        List<String> signatures = new ArrayList<>(ingredients.size());
+        for (Object ingredient : ingredients) {
+            String signature = recipeMapIngredientSignature(ingredient, 0);
+            if (signature == null) {
+                return null;
+            }
+            signatures.add(signature);
+        }
+        return new RecipeMapListCacheKey(helper.getClass(), signatures);
+    }
+
+    @SuppressWarnings("rawtypes")
+    private static RecipeMapIngredientCacheKey recipeMapIngredientCacheKey(IIngredientHelper helper, Object ingredient) {
+        String signature = recipeMapIngredientSignature(ingredient, 0);
+        return signature == null ? null : new RecipeMapIngredientCacheKey(helper.getClass(), signature);
+    }
+
+    private static String recipeMapIngredientSignature(Object ingredient, int depth) {
+        if (ingredient == null) {
+            return "null";
+        }
+        if (depth > 8) {
+            return null;
+        }
+        if (ingredient instanceof ItemStack) {
+            return itemStackRecipeMapSignature((ItemStack) ingredient);
+        }
+        if (ingredient instanceof FluidStack) {
+            return fluidStackRecipeMapSignature((FluidStack) ingredient);
+        }
+        if (ingredient instanceof ResourceLocation
+                || ingredient instanceof String
+                || ingredient instanceof Number
+                || ingredient instanceof Boolean
+                || ingredient instanceof Character
+                || ingredient instanceof Enum<?>) {
+            return ingredient.getClass().getName() + ':' + ingredient;
+        }
+        if (ingredient instanceof Iterable<?>) {
+            StringBuilder builder = new StringBuilder("iterable[");
+            int count = 0;
+            for (Object child : (Iterable<?>) ingredient) {
+                String childSignature = recipeMapIngredientSignature(child, depth + 1);
+                if (childSignature == null) {
+                    return null;
+                }
+                builder.append(count++).append('=').append(childSignature).append(';');
+            }
+            return builder.append(']').toString();
+        }
+        if (ingredient.getClass().isArray()) {
+            int length = Array.getLength(ingredient);
+            StringBuilder builder = new StringBuilder("array[").append(length).append(':');
+            for (int i = 0; i < length; i++) {
+                String childSignature = recipeMapIngredientSignature(Array.get(ingredient, i), depth + 1);
+                if (childSignature == null) {
+                    return null;
+                }
+                builder.append(i).append('=').append(childSignature).append(';');
+            }
+            return builder.append(']').toString();
+        }
+        return null;
+    }
+
+    private static String itemStackRecipeMapSignature(ItemStack stack) {
+        try {
+            if (stack == null || isStackEmptyReflective(stack)) {
+                return "item:empty";
+            }
+            Object itemObject = getItemReflective(stack);
+            ResourceLocation name = itemObject instanceof Item ? ((Item) itemObject).getRegistryName() : null;
+            return "item:"
+                    + (name == null ? "unknown" : name.toString())
+                    + ':'
+                    + stackMetadata(stack)
+                    + ':'
+                    + stackCount(stack)
+                    + ':'
+                    + Integer.toHexString(Arrays.hashCode(writeItemStack(stack)));
+        } catch (Throwable throwable) {
+            return null;
+        }
+    }
+
+    private static String fluidStackRecipeMapSignature(FluidStack stack) {
+        if (stack == null || stack.getFluid() == null) {
+            return "fluid:empty";
+        }
+        try {
+            return "fluid:" + stack.writeToNBT(new NBTTagCompound());
+        } catch (Throwable throwable) {
+            return "fluid:fallback:" + stack.getFluid().getName() + ':' + stack.amount;
+        }
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -2303,7 +2455,7 @@ public final class HeiOptimizations {
             }
 
             long started = System.nanoTime();
-            Object handler = findHeiRecipeHandler(recipeRegistry, recipeClass, recipeCategoryUid);
+            Object handler = invokeHeiRecipeHandler(recipeRegistry, recipeClass, recipeCategoryUid);
             HEI_RECIPE_HANDLER_LOOKUP_NANOS.addAndGet(System.nanoTime() - started);
             HEI_RECIPE_HANDLER_CACHE_MISSES.incrementAndGet();
             if (handler == null) {
@@ -2363,6 +2515,9 @@ public final class HeiOptimizations {
         }
         Class<?> effectiveClass = recipeClass != null ? recipeClass : recipe.getClass();
         if (effectiveClass == null || !UNSUPPORTED_RUNTIME_RECIPE_CLASSES.contains(effectiveClass.getName())) {
+            return false;
+        }
+        if (invokeHeiRecipeHandler(recipeRegistry, effectiveClass, null) != null) {
             return false;
         }
         int count = HEI_SKIPPED_UNSUPPORTED_RUNTIME_RECIPES.incrementAndGet();
@@ -2523,7 +2678,47 @@ public final class HeiOptimizations {
         return (String) categoryUid;
     }
 
-    private static Object findHeiRecipeHandler(Object recipeRegistry, Class<?> recipeClass, String recipeCategoryUid) {
+    private static Object invokeHeiRecipeHandler(Object recipeRegistry, Class<?> recipeClass, String recipeCategoryUid) {
+        if (recipeRegistry == null || recipeClass == null) {
+            return null;
+        }
+        try {
+            Method method = heiRecipeRegistryGetRecipeHandlerMethod;
+            if (method == null || method.getDeclaringClass() != recipeRegistry.getClass()) {
+                method = heiRecipeRegistryGetRecipeHandlerMethod(recipeRegistry.getClass());
+                heiRecipeRegistryGetRecipeHandlerMethod = method;
+            }
+            return method.invoke(recipeRegistry, recipeClass, recipeCategoryUid);
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.debug("[HEI Optimizations] Reflected HEI recipe handler lookup failed for {}; using field fallback",
+                    recipeClass,
+                    throwable);
+            return findHeiRecipeHandlerFallback(recipeRegistry, recipeClass, recipeCategoryUid);
+        }
+    }
+
+    private static Method heiRecipeRegistryGetRecipeHandlerMethod(Class<?> registryClass) throws NoSuchMethodException {
+        try {
+            Method method = registryClass.getDeclaredMethod("getRecipeHandler", Class.class, String.class);
+            method.setAccessible(true);
+            return method;
+        } catch (Throwable ignored) {
+        }
+
+        for (Method method : registryClass.getDeclaredMethods()) {
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length == 2
+                    && Class.class.equals(params[0])
+                    && String.class.equals(params[1])
+                    && IRecipeHandler.class.isAssignableFrom(method.getReturnType())) {
+                method.setAccessible(true);
+                return method;
+            }
+        }
+        throw new NoSuchMethodException("getRecipeHandler");
+    }
+
+    private static Object findHeiRecipeHandlerFallback(Object recipeRegistry, Class<?> recipeClass, String recipeCategoryUid) {
         try {
             HeiRecipeHandlerFields fields = heiRecipeHandlerFields(recipeRegistry.getClass());
             Collection<?> categoryHandlers = recipeCategoryUid == null
@@ -4936,6 +5131,64 @@ public final class HeiOptimizations {
         public int hashCode() {
             int result = System.identityHashCode(recipeClass);
             result = 31 * result + (recipeCategoryUid == null ? 0 : recipeCategoryUid.hashCode());
+            return result;
+        }
+    }
+
+    private static final class RecipeMapListCacheKey {
+        private final Class<?> helperClass;
+        private final List<String> signatures;
+
+        private RecipeMapListCacheKey(Class<?> helperClass, List<String> signatures) {
+            this.helperClass = helperClass;
+            this.signatures = Collections.unmodifiableList(new ArrayList<>(signatures));
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof RecipeMapListCacheKey)) {
+                return false;
+            }
+            RecipeMapListCacheKey that = (RecipeMapListCacheKey) other;
+            return helperClass == that.helperClass && signatures.equals(that.signatures);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = System.identityHashCode(helperClass);
+            result = 31 * result + signatures.hashCode();
+            return result;
+        }
+    }
+
+    private static final class RecipeMapIngredientCacheKey {
+        private final Class<?> helperClass;
+        private final String signature;
+
+        private RecipeMapIngredientCacheKey(Class<?> helperClass, String signature) {
+            this.helperClass = helperClass;
+            this.signature = signature;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof RecipeMapIngredientCacheKey)) {
+                return false;
+            }
+            RecipeMapIngredientCacheKey that = (RecipeMapIngredientCacheKey) other;
+            return helperClass == that.helperClass && signature.equals(that.signature);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = System.identityHashCode(helperClass);
+            result = 31 * result + signature.hashCode();
             return result;
         }
     }
