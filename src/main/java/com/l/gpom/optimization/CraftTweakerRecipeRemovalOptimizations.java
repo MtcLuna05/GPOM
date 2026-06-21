@@ -43,6 +43,7 @@ public final class CraftTweakerRecipeRemovalOptimizations {
     private static volatile Method recipeIngredientsMethod;
     private static volatile Method itemStackIsEmptyMethod;
     private static volatile Method itemStackGetItemMethod;
+    private static volatile Method itemStackGetMetadataMethod;
     private static volatile Method ingredientMatchingStacksMethod;
     private static volatile Method ingredientApplyMethod;
     private static volatile ItemStack emptyStack;
@@ -359,6 +360,15 @@ public final class CraftTweakerRecipeRemovalOptimizations {
         if (isEmpty(entry.output)) {
             return false;
         }
+        List<ItemStack> expectedStacks = concreteStacks(expected);
+        if (!expectedStacks.isEmpty()) {
+            for (ItemStack expectedStack : expectedStacks) {
+                if (sameItemAndMetadata(entry.output, expectedStack)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         Object craftTweakerStack = entry.craftTweakerOutput();
         return craftTweakerStack != null && invokeBoolean(ingredientMatchesMethod(expected), expected, craftTweakerStack);
     }
@@ -568,6 +578,19 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             method = findMethod(ItemStack.class, "getItem");
         }
         itemStackGetItemMethod = method;
+        return method;
+    }
+
+    private static Method itemStackGetMetadataMethod() {
+        Method method = itemStackGetMetadataMethod;
+        if (method != null) {
+            return method;
+        }
+        method = findMethod(ItemStack.class, "func_77960_j");
+        if (method == null) {
+            method = findMethod(ItemStack.class, "getMetadata");
+        }
+        itemStackGetMetadataMethod = method;
         return method;
     }
 
@@ -847,6 +870,31 @@ public final class CraftTweakerRecipeRemovalOptimizations {
             return value instanceof Item ? (Item) value : null;
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    private static boolean sameItemAndMetadata(ItemStack candidate, ItemStack expected) {
+        if (isEmpty(candidate) || isEmpty(expected)) {
+            return false;
+        }
+        Item candidateItem = item(candidate);
+        if (candidateItem == null || candidateItem != item(expected)) {
+            return false;
+        }
+        int expectedMeta = metadata(expected);
+        return expectedMeta == WILDCARD_META || metadata(candidate) == expectedMeta;
+    }
+
+    private static int metadata(ItemStack stack) {
+        if (isEmpty(stack)) {
+            return 0;
+        }
+        try {
+            Method method = itemStackGetMetadataMethod();
+            Object value = method == null ? null : method.invoke(stack);
+            return value instanceof Number ? ((Number) value).intValue() : 0;
+        } catch (Throwable ignored) {
+            return 0;
         }
     }
 

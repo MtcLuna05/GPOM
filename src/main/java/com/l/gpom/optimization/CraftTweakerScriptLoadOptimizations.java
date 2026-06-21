@@ -441,13 +441,19 @@ public final class CraftTweakerScriptLoadOptimizations {
                 endDeepProbe(context, "CT parallel parse source", parseSourceStartedAt);
             }
         }
-        if (result.parsedFile == null
-                || Boolean.TRUE.equals(context.bridge.scriptFileIsCompileBlocked.invoke(plan.script))
-                || !context.success) {
+        if (result.parsedFile == null) {
             publishScriptPost(context, plan);
             return;
         }
 
+        completeParsedPlan(context, plan, result.parsedFile);
+    }
+
+    private static void completeParsedPlan(LoadContext context, ScriptPlan plan, Object parsedFile) throws Exception {
+        if (Boolean.TRUE.equals(context.bridge.scriptFileIsCompileBlocked.invoke(plan.script))) {
+            publishScriptPost(context, plan);
+            return;
+        }
         try {
             context.bridge.classNameGeneratorSetPrefix.invoke(
                     context.classNameGenerator,
@@ -461,7 +467,7 @@ public final class CraftTweakerScriptLoadOptimizations {
                 context.bridge.zenModuleCompileScripts.invoke(
                         null,
                         plan.extractedClassName,
-                        java.util.Collections.singletonList(result.parsedFile),
+                        java.util.Collections.singletonList(parsedFile),
                         context.environment,
                         debug
                 );
@@ -502,6 +508,7 @@ public final class CraftTweakerScriptLoadOptimizations {
         } catch (Throwable throwable) {
             Throwable cause = unwrap(throwable);
             logError(context.bridge, "[" + plan.mainName + "]: Error executing" + plan.script + ":" + cause.getMessage(), cause);
+            context.success = false;
         }
         publishScriptPost(context, plan);
     }
@@ -552,8 +559,11 @@ public final class CraftTweakerScriptLoadOptimizations {
             parsedPlans.add(new ParsedPlan(plan, result.parsedFile));
         }
 
-        if (!success || parsedPlans.isEmpty() || !context.success) {
-            publishRemainingScriptPost(context, parsedPlans);
+        if (parsedPlans.isEmpty()) {
+            return;
+        }
+        if (!success || !context.success) {
+            completeParsedPlansIndividually(context, parsedPlans);
             return;
         }
 
@@ -612,6 +622,12 @@ public final class CraftTweakerScriptLoadOptimizations {
         publishRemainingScriptPost(context, parsedPlans);
     }
 
+    private static void completeParsedPlansIndividually(LoadContext context, List<ParsedPlan> parsedPlans) throws Exception {
+        for (ParsedPlan parsedPlan : parsedPlans) {
+            completeParsedPlan(context, parsedPlan.plan, parsedPlan.parsedFile);
+        }
+    }
+
     private static void publishRemainingScriptPost(LoadContext context, List<ParsedPlan> parsedPlans) throws Exception {
         for (ParsedPlan parsedPlan : parsedPlans) {
             publishScriptPost(context, parsedPlan.plan);
@@ -636,6 +652,9 @@ public final class CraftTweakerScriptLoadOptimizations {
         }
         for (ScriptPlan plan : chunk) {
             if (Boolean.TRUE.equals(context.bridge.scriptFileIsExecutionBlocked.invoke(plan.script))) {
+                return false;
+            }
+            if (Boolean.TRUE.equals(context.bridge.scriptFileAreBracketErrorsIgnored.invoke(plan.script))) {
                 return false;
             }
         }
