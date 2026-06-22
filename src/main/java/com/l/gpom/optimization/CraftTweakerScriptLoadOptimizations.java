@@ -3,6 +3,8 @@ package com.l.gpom.optimization;
 import com.l.gpom.GPOM;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.launchwrapper.Launch;
+import net.minecraftforge.fml.relauncher.FMLLaunchHandler;
+import net.minecraftforge.fml.relauncher.Side;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
@@ -43,6 +45,7 @@ public final class CraftTweakerScriptLoadOptimizations {
             "gpom.crafttweaker.parallelScriptParsing.deepProbes", "false"));
     private static final boolean BATCH_ALLOWED_SCRIPTS = Boolean.parseBoolean(System.getProperty(
             "gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts", "false"));
+    private static final boolean DEDICATED_SERVER_LAUNCH = isDedicatedServerLaunch();
     private static final AtomicBoolean BRIDGE_FAILURE_LOGGED = new AtomicBoolean();
     private static final AtomicBoolean ENABLED_LOGGED = new AtomicBoolean();
     private static volatile Bridge bridge;
@@ -114,8 +117,15 @@ public final class CraftTweakerScriptLoadOptimizations {
             }
             if (ENABLED_LOGGED.compareAndSet(false, true)) {
                 GPOM.LOGGER.info(
-                        "CraftTweaker parallel script loading enabled with {} worker(s), offThreadZenParse={}, batchAllowedScripts={}, deepProbes={}, allowlist={}, denylist={}",
-                        Math.max(1, workers), OFF_THREAD_ZEN_PARSE, BATCH_ALLOWED_SCRIPTS, DEEP_PROBES, ALLOWLIST, DENYLIST
+                        "CraftTweaker parallel script loading enabled with {} worker(s), offThreadZenParse={} (configured={}, dedicatedServer={}), batchAllowedScripts={}, deepProbes={}, allowlist={}, denylist={}",
+                        Math.max(1, workers),
+                        offThreadZenParseEnabled(),
+                        OFF_THREAD_ZEN_PARSE,
+                        DEDICATED_SERVER_LAUNCH,
+                        BATCH_ALLOWED_SCRIPTS,
+                        DEEP_PROBES,
+                        ALLOWLIST,
+                        DENYLIST
                 );
             }
 
@@ -244,7 +254,7 @@ public final class CraftTweakerScriptLoadOptimizations {
             }
             return;
         }
-        if (!OFF_THREAD_ZEN_PARSE) {
+        if (!offThreadZenParseEnabled()) {
             processSourcePreloadChunk(context, chunk);
             return;
         }
@@ -370,6 +380,19 @@ public final class CraftTweakerScriptLoadOptimizations {
             return ParseResult.failure(cause, tokenPosition(bridge, tokener));
         } finally {
             endDeepProbe("CT parallel parse", startedAt);
+        }
+    }
+
+    private static boolean offThreadZenParseEnabled() {
+        return OFF_THREAD_ZEN_PARSE && !DEDICATED_SERVER_LAUNCH;
+    }
+
+    private static boolean isDedicatedServerLaunch() {
+        try {
+            return FMLLaunchHandler.side() == Side.SERVER;
+        } catch (Throwable ignored) {
+            Object side = Launch.blackboard == null ? null : Launch.blackboard.get("fml.side");
+            return side != null && "SERVER".equalsIgnoreCase(String.valueOf(side));
         }
     }
 

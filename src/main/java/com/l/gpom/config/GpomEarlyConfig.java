@@ -73,7 +73,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.init.workers", "0");
         DEFAULTS.setProperty("fml.parallel.loadComplete.workers", "0");
         DEFAULTS.setProperty("fml.parallel.construct.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.construct.denylist", "betterportals,codechickenlib,enderiomachines,enderutilities,renderlib,gpom,gunpowderlib,iceandfire,ichunutil,holoinventory,immersivepetroleum,incontrol,thaumcraft,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiopowertools,enderioendergy,aether_legacy,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore");
+        DEFAULTS.setProperty("fml.parallel.construct.denylist", "advancedrocketry,advancedrocketrycore,ausm,betterportals,codechickenlib,enderiomachines,enderutilities,renderlib,gpom,gunpowderlib,iceandfire,ichunutil,holoinventory,immersivepetroleum,incontrol,thaumcraft,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiopowertools,enderioendergy,aether_legacy,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore");
         DEFAULTS.setProperty("fml.parallel.construct.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.construct.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.preInit.allowlist", "*");
@@ -147,6 +147,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.enabled", "true");
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.profileAll", "false");
+        DEFAULTS.setProperty("gpom.client.fastNotifyBlockUpdate.enabled", "true");
+        DEFAULTS.setProperty("gpom.client.dedupeRenderSectionUpdates.enabled", "true");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.enabled", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.maxFailures", "500");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "true");
@@ -219,7 +221,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.includeAnonClasses", "true");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.extraPrefixes", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitAllowlist", "*");
-        DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitPrefixes", "erebus:erebus/entity/|erebus/client/render/entity/");
+        DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitPrefixes", "erebus:erebus/entity/|erebus/client/render/entity/;deepmoblearning:mustapelto/deepmoblearning/");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeClasses", "true");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeAllowlist", "*");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.explicitClasses", "railcraft:mods.railcraft.common.blocks.RailcraftBlocks|mods.railcraft.common.carts.RailcraftCarts|mods.railcraft.common.items.RailcraftItems|mods.railcraft.common.blocks.tracks.outfitted.TrackKits;twilightforest:twilightforest.TFFeature");
@@ -660,6 +662,10 @@ public final class GpomEarlyConfig {
                 "gpom.runtimeSinkProfiler.forgeEvents.enabled",
                 "gpom.runtimeSinkProfiler.forgeEvents.profileAll"
         );
+        writeSection(writer, "Client Runtime Optimizations", "Conservative gameplay and chunk-entry smoothing paths that avoid duplicate client work without moving mod logic off-thread.",
+                "gpom.client.fastNotifyBlockUpdate.enabled",
+                "gpom.client.dedupeRenderSectionUpdates.enabled"
+        );
         writeSection(writer, "AE2 Pattern Diagnostics", "Temporary one-shot world-load scanner that builds canonical AE2 crafting patterns for registered recipes and logs recipes that AE2 cannot validate.",
                 "gpom.ae2.patternDiagnostics.enabled",
                 "gpom.ae2.patternDiagnostics.maxFailures",
@@ -1012,6 +1018,10 @@ public final class GpomEarlyConfig {
                 return "Profiles selected high-value Forge event posts and handlers while runtime sink profiling is enabled.";
             case "gpom.runtimeSinkProfiler.forgeEvents.profileAll":
                 return "Profiles every Forge event post and handler instead of only tick, world, chunk, render, and GUI events. High volume.";
+            case "gpom.client.fastNotifyBlockUpdate.enabled":
+                return "Uses a cached MethodHandle and reusable listener snapshot for World.notifyBlockUpdate dispatch instead of reflective per-listener calls.";
+            case "gpom.client.dedupeRenderSectionUpdates.enabled":
+                return "Suppresses duplicate same-tick RenderGlobal dirty marks for the same 16x16x16 render section. Unique section updates still pass through immediately.";
             case "gpom.ae2.patternDiagnostics.enabled":
                 return "Runs a temporary one-shot AE2 crafting-pattern validation scan on server overworld load. Keep false except while debugging pattern terminal failures.";
             case "gpom.ae2.patternDiagnostics.maxFailures":
@@ -1195,7 +1205,7 @@ public final class GpomEarlyConfig {
             case "gpom.crafttweaker.parallelScriptParsing.denylist":
                 return "Comma-separated CraftTweaker script effective names, group names, or file names forced back to stock serial source-open and parse behavior.";
             case "gpom.crafttweaker.parallelScriptParsing.offThreadZenParse":
-                return "If true, runs ZenParsedFile parsing on workers. If false, only script source reads are off-thread and Zen parsing remains on the main thread.";
+                return "If true, runs ZenParsedFile parsing on workers on the client. Dedicated-server launches force this off because server bootstrap transformers are not safe to drive from CT parser workers.";
             case "gpom.crafttweaker.parallelScriptParsing.suppressGlobalDebugCompileLogs":
                 return "Suppresses CraftTweaker global debug-mode ZenScript compile chatter while preserving per-script debug and normal error logging.";
             case "gpom.crafttweaker.parallelScriptParsing.batchAllowedScripts":
@@ -1439,6 +1449,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled");
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.enabled");
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.profileAll");
+        copySystemPropertyIfAbsent("gpom.client.fastNotifyBlockUpdate.enabled");
+        copySystemPropertyIfAbsent("gpom.client.dedupeRenderSectionUpdates.enabled");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.enabled");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.maxFailures");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.logMismatchedOutputs");
@@ -1634,6 +1646,14 @@ public final class GpomEarlyConfig {
 
     public static boolean worldLoadingScreenEnabled() {
         return booleanValue("gpom.worldLoadingScreen.enabled");
+    }
+
+    public static boolean fastNotifyBlockUpdateEnabled() {
+        return booleanValue("gpom.client.fastNotifyBlockUpdate.enabled");
+    }
+
+    public static boolean dedupeRenderSectionUpdatesEnabled() {
+        return booleanValue("gpom.client.dedupeRenderSectionUpdates.enabled");
     }
 
     public static boolean worldLifecycleProfilerEnabled() {

@@ -2,12 +2,12 @@ package com.l.gpom.mixin.client;
 
 import com.l.gpom.client.WorldLoadingProgress;
 import com.l.gpom.client.ClientDimensionHandoffCleanup;
+import com.l.gpom.client.RenderUpdateDeduplicator;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanup;
 import com.l.gpom.profiling.RuntimeSinkProfiler;
 import com.l.gpom.profiling.WorldLifecycleProfiler;
-import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDownloadTerrain;
 import net.minecraft.client.gui.GuiMainMenu;
@@ -21,16 +21,12 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 @Mixin(value = Minecraft.class, remap = false)
 public abstract class MixinMinecraftWorldLoadingScreen {
-    private static Field gpom$loadingScreenField;
     private static Field gpom$worldField;
     private static Field gpom$playerField;
     private static Field gpom$currentScreenField;
-    private static Method gpom$displaySavingStringMethod;
-    private static Method gpom$displayLoadingStringMethod;
     private long gpom$loadWorldStartedAt;
     private long gpom$loadRenderersStartedAt;
     private long gpom$createPlayerStartedAt;
@@ -135,10 +131,9 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         }
 
         if (!WorldLoadingProgress.isActive()) {
-            return;
-        } else {
-            gpom$drawImmediate("Creating client world", "Binding world renderer and particle systems", 72);
+            WorldLoadingProgress.beginClientWorld(gpom$worldLabel(worldClient), message, 64);
         }
+        gpom$drawImmediate("Creating client world", "Binding world renderer and particle systems", 72);
     }
 
     @Inject(
@@ -243,6 +238,17 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return;
         }
 
+        if (!WorldLoadingProgress.isActive() && gpom$isVanillaWorldLoadingScreen(screen)) {
+            WorldLoadingProgress.beginVanillaLoadingIfNeeded(
+                    "Minecraft.displayGuiScreen(" + screen.getClass().getSimpleName() + ")",
+                    "Loading world",
+                    "Preparing client handoff",
+                    -1
+            );
+            gpom$drawImmediate("Loading world", "Preparing client handoff", -1);
+            return;
+        }
+
         if (screen == null && WorldLoadingProgress.isActive() && gpom$getWorld() != null) {
             gpom$drawImmediate("Entering world", "Waiting for first client frame", 98);
             WorldLoadingProgress.markWaitingForFirstWorldRender();
@@ -272,6 +278,7 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             require = 0
     )
     private void gpom$beginRunTickProbe(CallbackInfo ci) {
+        RenderUpdateDeduplicator.nextClientTick();
         gpom$runTickStartedAt = RuntimeSinkProfiler.begin();
     }
 
@@ -309,10 +316,6 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return;
         }
         WorldLoadingProgress.update(stage, detail, progress);
-        LoadingScreenRenderer renderer = gpom$getLoadingScreen();
-        if (renderer != null) {
-            gpom$callLoadingScreen(renderer, stage, detail);
-        }
         WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
     }
 
@@ -325,43 +328,6 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return true;
         }
         return screen != null && screen.getClass().getName().equals("lumien.custommainmenu.gui.GuiCustom");
-    }
-
-    private static boolean gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {
-        try {
-            Method method = gpom$displaySavingStringMethod;
-            if (method == null) {
-                method = gpom$findMethod(renderer.getClass(), new Class<?>[]{String.class}, "func_73720_a", "displaySavingString");
-                gpom$displaySavingStringMethod = method;
-            }
-            method.invoke(renderer, title);
-        } catch (Throwable ignored) {
-        }
-
-        try {
-            Method method = gpom$displayLoadingStringMethod;
-            if (method == null) {
-                method = gpom$findMethod(renderer.getClass(), new Class<?>[]{String.class}, "func_73719_c", "displayLoadingString");
-                gpom$displayLoadingStringMethod = method;
-            }
-            method.invoke(renderer, detail);
-            return true;
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
-    private LoadingScreenRenderer gpom$getLoadingScreen() {
-        try {
-            Field field = gpom$loadingScreenField;
-            if (field == null) {
-                field = gpom$findMinecraftField("field_71461_s", "loadingScreen");
-                gpom$loadingScreenField = field;
-            }
-            return (LoadingScreenRenderer) field.get(this);
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     private WorldClient gpom$getWorld() {
@@ -436,17 +402,5 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             }
         }
         throw new NoSuchFieldException(String.join("/", names));
-    }
-
-    private static Method gpom$findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) throws NoSuchMethodException {
-        for (String name : names) {
-            try {
-                Method method = owner.getDeclaredMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        throw new NoSuchMethodException(owner.getName() + "#" + String.join("/", names));
     }
 }

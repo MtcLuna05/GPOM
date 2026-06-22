@@ -33,6 +33,7 @@ import java.util.jar.JarFile;
 
 public final class PreInitClassPrewarmer {
     private static final Map<String, List<String>> DEFAULT_PREFIXES = defaultPrefixes();
+    private static final Set<String> FORCE_NO_INIT_MODS = forceNoInitMods();
     private static final Object SERIAL_PAUSE_LOCK = new Object();
     private static int serialPauseDepth;
 
@@ -362,6 +363,11 @@ public final class PreInitClassPrewarmer {
             classes.addAll(classNames);
             return;
         }
+        if (FORCE_NO_INIT_MODS.contains(normalize(modId))) {
+            LinkedHashSet<String> classes = noInitClassesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
+            classes.addAll(classNames);
+            return;
+        }
 
         LinkedHashSet<String> initClasses = initClassesByMod.computeIfAbsent(modId, ignored -> new LinkedHashSet<String>());
         LinkedHashSet<String> noInitClasses = null;
@@ -588,6 +594,12 @@ public final class PreInitClassPrewarmer {
         prefixes.put("forestry", Collections.singletonList("forestry/"));
         prefixes.put("jei", Collections.singletonList("mezz/jei/"));
         return prefixes;
+    }
+
+    private static Set<String> forceNoInitMods() {
+        return new HashSet<String>(Arrays.asList(
+                "deepmoblearning"
+        ));
     }
 
     private static final Comparator<String> CLASS_PRIORITY = new Comparator<String>() {

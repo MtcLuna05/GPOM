@@ -83,6 +83,11 @@ public final class FmlParallelLoadingScheduler {
             "integratedtunnels",
             "integratedtunnelscompat"
     );
+    private static final Set<String> TRANSFORMER_CLASSLOAD_SERIAL_MODS = fixedSet(
+            "advancedrocketry",
+            "advancedrocketrycore",
+            "ausm"
+    );
     private static volatile Field progressBarMessageField;
 
     private FmlParallelLoadingScheduler() {
@@ -1921,11 +1926,18 @@ public final class FmlParallelLoadingScheduler {
     }
 
     private static Set<String> withForcedDeniedMods(FMLEvent event, Set<String> configured) {
-        if (!(event instanceof FMLInitializationEvent)) {
+        boolean forceInitSerial = event instanceof FMLInitializationEvent;
+        boolean forceTransformerSerial = event instanceof FMLConstructionEvent || event instanceof FMLPreInitializationEvent;
+        if (!forceInitSerial && !forceTransformerSerial) {
             return configured;
         }
         Set<String> merged = new LinkedHashSet<>(configured);
-        merged.addAll(INIT_CAPABILITY_ATTACH_SERIAL_MODS);
+        if (forceInitSerial) {
+            merged.addAll(INIT_CAPABILITY_ATTACH_SERIAL_MODS);
+        }
+        if (forceTransformerSerial) {
+            merged.addAll(TRANSFORMER_CLASSLOAD_SERIAL_MODS);
+        }
         return merged;
     }
 

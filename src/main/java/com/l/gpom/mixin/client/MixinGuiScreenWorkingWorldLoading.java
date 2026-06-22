@@ -18,6 +18,15 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$drawWorldLoadingWorkingScreen(int mouseX, int mouseY, float partialTicks, CallbackInfo ci) {
+        if (!WorldLoadingProgress.enabled()) {
+            return;
+        }
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded(
+                "GuiScreenWorking.drawScreen",
+                "Loading world",
+                "Preparing client handoff",
+                -1
+        );
         if (!WorldLoadingProgress.isActive()) {
             return;
         }
@@ -35,6 +44,7 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingTitle(String title, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.title", title, null, -1);
         if (!WorldLoadingProgress.isActive()) {
             return;
         }
@@ -50,6 +60,7 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingDetail(String detail, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.detail", null, detail, -1);
         if (!WorldLoadingProgress.isActive()) {
             return;
         }
@@ -65,6 +76,7 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingProgress(int progress, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.progress", null, null, progress);
         if (!WorldLoadingProgress.isActive()) {
             return;
         }

@@ -33,6 +33,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$resetWorldLoadTitle(String title, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.resetProgressAndMessage", title, null, -1);
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
     }
 
@@ -45,6 +46,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadTitle(String title, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.displaySavingString", title, null, -1);
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
     }
 
@@ -57,6 +59,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadDetail(String detail, CallbackInfo ci) {
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.displayLoadingString", null, detail, -1);
         WorldLoadingProgress.updateFromVanilla(null, detail, -1);
     }
 
@@ -70,6 +73,7 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
     )
     private void gpom$drawWorldLoadingScreen(int progress, CallbackInfo ci) {
         gpom$setLoadingProgressStartedAt = RuntimeSinkProfiler.begin();
+        WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.setLoadingProgress", null, null, progress);
         if (!WorldLoadingProgress.isActive()) {
             return;
         }

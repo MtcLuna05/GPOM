@@ -10,6 +10,8 @@ import net.minecraft.client.gui.GuiScreenWorking;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Field;
@@ -17,6 +19,7 @@ import java.lang.reflect.Method;
 import java.util.Locale;
 
 public final class WorldLoadingProgress {
+    private static final Logger DIAGNOSTIC_LOGGER = LogManager.getLogger("GPOM WorldLoadingScreen");
     private static final ResourceLocation OPTIONS_BACKGROUND = new ResourceLocation("textures/gui/options_background.png");
     private static volatile boolean active;
     private static volatile String title = "Loading world";
@@ -31,6 +34,9 @@ public final class WorldLoadingProgress {
     private static volatile boolean firstFrameLogged;
     private static volatile boolean disabledAfterFailure;
     private static volatile boolean suspendedForBlockingScreen;
+    private static volatile boolean startDiagnosticLogged;
+    private static volatile boolean renderSkipDiagnosticLogged;
+    private static volatile boolean renderSuccessDiagnosticLogged;
     private static volatile Field fontRendererField;
     private static volatile Method guiDrawRectMethod;
     private static volatile Method guiTexturedRectMethod;
@@ -40,9 +46,12 @@ public final class WorldLoadingProgress {
     private static volatile Method minecraftGetTextureManagerMethod;
     private static volatile Method textureManagerBindTextureMethod;
     private static volatile Method minecraftUpdateDisplayMethod;
+    private static volatile Method minecraftGetFramebufferMethod;
+    private static volatile Method framebufferBindFramebufferMethod;
     private static volatile Method scaledResolutionGetWidthMethod;
     private static volatile Method scaledResolutionGetHeightMethod;
     private static volatile Field minecraftCurrentScreenField;
+    private static volatile boolean rendering;
     private static final DirtBackgroundScreen DIRT_BACKGROUND_SCREEN = new DirtBackgroundScreen();
 
     private WorldLoadingProgress() {
@@ -88,6 +97,7 @@ public final class WorldLoadingProgress {
         startedAt = System.nanoTime();
         firstFrameLogged = false;
         GPOM.LOGGER.info("[WorldLoadingScreen] Started integrated world loading for {}", worldName.isEmpty() ? "<unnamed>" : worldName);
+        logStartDiagnostic("integrated", worldName);
     }
 
     public static void beginTerrainIfNeeded() {
@@ -108,8 +118,61 @@ public final class WorldLoadingProgress {
             startedAt = System.nanoTime();
             firstFrameLogged = false;
             GPOM.LOGGER.info("[WorldLoadingScreen] Started terrain loading");
+            logStartDiagnostic("terrain", "");
         }
         update("Receiving terrain", "Waiting for initial chunks", 88);
+    }
+
+    public static void beginVanillaLoadingIfNeeded(String source, String newTitle, String newDetail, int newProgress) {
+        if (!enabled() || active) {
+            return;
+        }
+        if (!shouldStartTerrainOverlay()) {
+            return;
+        }
+        active = true;
+        suspendedForBlockingScreen = false;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        title = clean(newTitle);
+        if (title.isEmpty()) {
+            title = "Loading world";
+        }
+        worldName = "";
+        stage = "Loading world";
+        detail = clean(newDetail);
+        if (detail.isEmpty()) {
+            detail = "Waiting for client world data";
+        }
+        progress = newProgress;
+        startedAt = System.nanoTime();
+        firstFrameLogged = false;
+        GPOM.LOGGER.info("[WorldLoadingScreen] Started vanilla world loading overlay from {}", clean(source));
+        logStartDiagnostic("vanilla:" + clean(source), title);
+    }
+
+    public static void beginClientWorld(String label, String message, int initialProgress) {
+        if (!enabled() || active) {
+            return;
+        }
+        active = true;
+        suspendedForBlockingScreen = false;
+        suppressTerrainStartUntilScreenClears = false;
+        waitingForFirstWorldRender = false;
+        waitingForFirstWorldRenderAt = 0L;
+        title = "Loading world";
+        worldName = clean(label);
+        stage = "Creating client world";
+        detail = clean(message);
+        if (detail.isEmpty()) {
+            detail = "Binding world renderer and client state";
+        }
+        progress = initialProgress;
+        startedAt = System.nanoTime();
+        firstFrameLogged = false;
+        GPOM.LOGGER.info("[WorldLoadingScreen] Started client world loading for {}", worldName.isEmpty() ? "<unknown>" : worldName);
+        logStartDiagnostic("client-world", worldName);
     }
 
     public static void beginDimensionSwitch(String fromWorld, String toWorld) {
@@ -129,6 +192,7 @@ public final class WorldLoadingProgress {
         startedAt = System.nanoTime();
         firstFrameLogged = false;
         GPOM.LOGGER.info("[WorldLoadingScreen] Started dimension switch overlay ({})", worldName.isEmpty() ? "unknown target" : worldName);
+        logStartDiagnostic("dimension-switch", worldName);
     }
 
     public static void beginLeaving(String message) {
@@ -151,6 +215,7 @@ public final class WorldLoadingProgress {
         startedAt = System.nanoTime();
         firstFrameLogged = false;
         GPOM.LOGGER.info("[WorldLoadingScreen] Started world leave overlay ({})", detail);
+        logStartDiagnostic("leaving", detail);
     }
 
     public static void update(String newStage, String newDetail, int newProgress) {
@@ -292,23 +357,42 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean render(Minecraft minecraft, int width, int height, int progressOverride) {
+        if (rendering) {
+            logRenderSkipDiagnostic("already rendering");
+            return false;
+        }
         if (minecraft == null) {
+            logRenderSkipDiagnostic("minecraft null");
             return false;
         }
         if (!canRenderOverCurrentScreen(minecraft)) {
+            logRenderSkipDiagnostic("current screen blocked: " + screenName(currentScreen(minecraft)));
             return false;
         }
         Object font = fontRenderer(minecraft);
         if (font == null) {
+            logRenderSkipDiagnostic("font renderer null");
             return false;
         }
         int[] dimensions = normalizedDimensions(minecraft, width, height);
         width = dimensions[0];
         height = dimensions[1];
         int effectiveProgress = effectiveProgress(progressOverride);
-        setupFullScreenProjection(minecraft, width, height);
-        drawFullWindow(minecraft, font, width, height, effectiveProgress);
-        return true;
+        RenderProjection projection = null;
+        rendering = true;
+        try {
+            projection = beginFullScreenProjection(minecraft, width, height);
+            if (projection == null) {
+                logRenderSkipDiagnostic("projection setup failed");
+                return false;
+            }
+            drawFullWindow(minecraft, font, width, height, effectiveProgress);
+            logRenderSuccessDiagnostic(width, height, effectiveProgress);
+            return true;
+        } finally {
+            endFullScreenProjection(projection);
+            rendering = false;
+        }
     }
 
     public static boolean safeRender(Minecraft minecraft, int width, int height, int progressOverride) {
@@ -387,6 +471,43 @@ public final class WorldLoadingProgress {
         );
     }
 
+    private static void logStartDiagnostic(String source, String label) {
+        if (startDiagnosticLogged) {
+            return;
+        }
+        startDiagnosticLogged = true;
+        DIAGNOSTIC_LOGGER.info("[WorldLoadingScreenDiag] start source={} label={} enabled={} active={} screen={}",
+                compact(source, 80),
+                compact(label, 80),
+                enabled(),
+                active,
+                currentScreenName());
+    }
+
+    private static void logRenderSkipDiagnostic(String reason) {
+        if (renderSkipDiagnosticLogged || renderSuccessDiagnosticLogged) {
+            return;
+        }
+        renderSkipDiagnosticLogged = true;
+        DIAGNOSTIC_LOGGER.warn("[WorldLoadingScreenDiag] first render skipped: {} enabled={} active={} screen={}",
+                compact(reason, 120),
+                enabled(),
+                active,
+                currentScreenName());
+    }
+
+    private static void logRenderSuccessDiagnostic(int width, int height, int effectiveProgress) {
+        if (renderSuccessDiagnosticLogged) {
+            return;
+        }
+        renderSuccessDiagnosticLogged = true;
+        DIAGNOSTIC_LOGGER.info("[WorldLoadingScreenDiag] first render success size={}x{} progress={} screen={}",
+                width,
+                height,
+                effectiveProgress,
+                currentScreenName());
+    }
+
     private static void drawFullWindow(Minecraft minecraft, Object font, int width, int height, int effectiveProgress) {
         drawDirtBackground(minecraft, width, height);
         drawRect(0, 0, width, height, 0x22000000);
@@ -456,8 +577,10 @@ public final class WorldLoadingProgress {
         }
     }
 
-    private static void setupFullScreenProjection(Minecraft minecraft, int width, int height) {
+    private static RenderProjection beginFullScreenProjection(Minecraft minecraft, int width, int height) {
+        RenderProjection projection = new RenderProjection();
         try {
+            bindMainFramebuffer(minecraft);
             if (minecraft != null && minecraft.displayWidth > 0 && minecraft.displayHeight > 0) {
                 GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
                 GL11.glViewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
@@ -468,14 +591,70 @@ public final class WorldLoadingProgress {
             GL11.glDisable(GL11.GL_FOG);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glMatrixMode(GL11.GL_PROJECTION);
+            GL11.glPushMatrix();
+            projection.projectionPushed = true;
             GL11.glLoadIdentity();
             GL11.glOrtho(0.0D, width, height, 0.0D, 100.0D, 300.0D);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPushMatrix();
+            projection.modelViewPushed = true;
             GL11.glLoadIdentity();
             GL11.glTranslatef(0.0F, 0.0F, -200.0F);
             resetGuiColor();
+            return projection;
+        } catch (Throwable ignored) {
+            endFullScreenProjection(projection);
+            return null;
+        }
+    }
+
+    private static void endFullScreenProjection(RenderProjection projection) {
+        if (projection == null) {
+            return;
+        }
+        try {
+            if (projection.modelViewPushed) {
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);
+                GL11.glPopMatrix();
+            }
+            if (projection.projectionPushed) {
+                GL11.glMatrixMode(GL11.GL_PROJECTION);
+                GL11.glPopMatrix();
+            }
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            resetGuiColor();
         } catch (Throwable ignored) {
         }
+    }
+
+    private static void bindMainFramebuffer(Minecraft minecraft) {
+        if (minecraft == null) {
+            return;
+        }
+        try {
+            Method getFramebufferMethod = minecraftGetFramebufferMethod;
+            if (getFramebufferMethod == null) {
+                getFramebufferMethod = findMethod(Minecraft.class, new Class<?>[0], "func_147110_a", "getFramebuffer");
+                minecraftGetFramebufferMethod = getFramebufferMethod;
+            }
+            Object framebuffer = getFramebufferMethod.invoke(minecraft);
+            if (framebuffer == null) {
+                return;
+            }
+
+            Method bindMethod = framebufferBindFramebufferMethod;
+            if (bindMethod == null) {
+                bindMethod = findMethod(framebuffer.getClass(), new Class<?>[]{boolean.class}, "func_147610_a", "bindFramebuffer");
+                framebufferBindFramebufferMethod = bindMethod;
+            }
+            bindMethod.invoke(framebuffer, false);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static final class RenderProjection {
+        private boolean projectionPushed;
+        private boolean modelViewPushed;
     }
 
     private static boolean drawGuiScreenDirtBackground(Minecraft minecraft, int width, int height) {
@@ -757,6 +936,18 @@ public final class WorldLoadingProgress {
         } catch (Throwable ignored) {
             return null;
         }
+    }
+
+    private static String currentScreenName() {
+        try {
+            return screenName(currentScreen(currentMinecraft()));
+        } catch (Throwable ignored) {
+            return "<unavailable>";
+        }
+    }
+
+    private static String screenName(GuiScreen screen) {
+        return screen == null ? "<none>" : screen.getClass().getName();
     }
 
     private static int[] currentScaledDimensions(Minecraft minecraft) {

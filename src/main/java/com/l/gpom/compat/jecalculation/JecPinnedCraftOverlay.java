@@ -67,6 +67,12 @@ public final class JecPinnedCraftOverlay {
     private static final ResourceLocation MINI_RESOURCES = new ResourceLocation("gpom", "textures/gui/jec_mini_overlay.png");
     private static final Gui TEXTURE_GUI = new Gui();
     private static final long REFRESH_INTERVAL_NANOS = 500_000_000L;
+    private static final Field GUI_LEFT_FIELD = findField(GuiContainer.class, "field_147003_i", "guiLeft");
+    private static final Field GUI_TOP_FIELD = findField(GuiContainer.class, "field_147009_r", "guiTop");
+    private static final Field GUI_WIDTH_FIELD = findField(GuiContainer.class, "field_146999_f", "xSize");
+    private static final Field GUI_HEIGHT_FIELD = findField(GuiContainer.class, "field_147000_g", "ySize");
+    private static final Field SCREEN_WIDTH_FIELD = findField(GuiScreen.class, "field_146294_l", "width");
+    private static final Field SCREEN_HEIGHT_FIELD = findField(GuiScreen.class, "field_146295_m", "height");
 
     private static final JecPinnedCraftOverlay INSTANCE = new JecPinnedCraftOverlay();
 
@@ -702,27 +708,27 @@ public final class JecPinnedCraftOverlay {
     }
 
     private static int guiLeft(Object screen) {
-        return intField(screen, GuiFields.GUI_LEFT, 0);
+        return intField(screen, GUI_LEFT_FIELD, 0);
     }
 
     private static int guiTop(Object screen) {
-        return intField(screen, GuiFields.GUI_TOP, 0);
+        return intField(screen, GUI_TOP_FIELD, 0);
     }
 
     private static int guiWidth(Object screen) {
-        return Math.max(CRAFT_ROOT_WIDTH, intField(screen, GuiFields.GUI_WIDTH, CRAFT_ROOT_WIDTH));
+        return Math.max(CRAFT_ROOT_WIDTH, intField(screen, GUI_WIDTH_FIELD, CRAFT_ROOT_WIDTH));
     }
 
     private static int guiHeight(Object screen) {
-        return Math.max(CRAFT_ROOT_HEIGHT, intField(screen, GuiFields.GUI_HEIGHT, CRAFT_ROOT_HEIGHT));
+        return Math.max(CRAFT_ROOT_HEIGHT, intField(screen, GUI_HEIGHT_FIELD, CRAFT_ROOT_HEIGHT));
     }
 
     private static int screenWidth(Object screen) {
-        return intField(screen, GuiFields.SCREEN_WIDTH, 0);
+        return intField(screen, SCREEN_WIDTH_FIELD, 0);
     }
 
     private static int screenHeight(Object screen) {
-        return intField(screen, GuiFields.SCREEN_HEIGHT, 0);
+        return intField(screen, SCREEN_HEIGHT_FIELD, 0);
     }
 
     private static int intField(Object owner, Field field, int fallback) {
@@ -844,15 +850,6 @@ public final class JecPinnedCraftOverlay {
             }
         }
         return Class.forName(name, false, JecPinnedCraftOverlay.class.getClassLoader());
-    }
-
-    private static final class GuiFields {
-        private static final Field GUI_LEFT = findField(GuiContainer.class, "field_147003_i", "guiLeft");
-        private static final Field GUI_TOP = findField(GuiContainer.class, "field_147009_r", "guiTop");
-        private static final Field GUI_WIDTH = findField(GuiContainer.class, "field_146999_f", "xSize");
-        private static final Field GUI_HEIGHT = findField(GuiContainer.class, "field_147000_g", "ySize");
-        private static final Field SCREEN_WIDTH = findField(GuiScreen.class, "field_146294_l", "width");
-        private static final Field SCREEN_HEIGHT = findField(GuiScreen.class, "field_146295_m", "height");
     }
 
     private static final class JecAccess {
@@ -1213,11 +1210,11 @@ public final class JecPinnedCraftOverlay {
                 lastWidth = width;
                 lastHeight = height;
             }
-            if (GuiFields.GUI_LEFT != null) {
-                GuiFields.GUI_LEFT.setInt(gui, left);
+            if (GUI_LEFT_FIELD != null) {
+                GUI_LEFT_FIELD.setInt(gui, left);
             }
-            if (GuiFields.GUI_TOP != null) {
-                GuiFields.GUI_TOP.setInt(gui, top);
+            if (GUI_TOP_FIELD != null) {
+                GUI_TOP_FIELD.setInt(gui, top);
             }
         }
 
