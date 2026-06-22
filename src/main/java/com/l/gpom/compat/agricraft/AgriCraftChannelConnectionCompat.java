@@ -1,8 +1,10 @@
 package com.l.gpom.compat.agricraft;
 
+import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -56,9 +58,21 @@ public final class AgriCraftChannelConnectionCompat {
             return null;
         }
 
-        Object registryName = invokeNamed(block, new String[]{"getRegistryName"}, new Class<?>[0]);
-        if (registryName != null) {
-            return registryName;
+        if (block instanceof Block) {
+            try {
+                ResourceLocation registryName = ((Block) block).getRegistryName();
+                if (registryName != null) {
+                    return registryName;
+                }
+            } catch (RuntimeException | LinkageError ignored) {
+            }
+            try {
+                ResourceLocation registryName = Block.REGISTRY.getNameForObject((Block) block);
+                if (registryName != null) {
+                    return registryName;
+                }
+            } catch (RuntimeException | LinkageError ignored) {
+            }
         }
 
         try {
@@ -165,7 +179,7 @@ public final class AgriCraftChannelConnectionCompat {
             method.setAccessible(true);
             REFRESH_CONNECTIONS_METHODS.put(tileClass, method);
             return method;
-        } catch (NoSuchMethodException | SecurityException ignored) {
+        } catch (NoSuchMethodException | SecurityException | LinkageError ignored) {
             return null;
         }
     }
@@ -180,7 +194,7 @@ public final class AgriCraftChannelConnectionCompat {
         }
         try {
             return method.invoke(target, args);
-        } catch (IllegalAccessException | InvocationTargetException | RuntimeException ignored) {
+        } catch (IllegalAccessException | InvocationTargetException | RuntimeException | LinkageError ignored) {
             return null;
         }
     }
@@ -209,12 +223,17 @@ public final class AgriCraftChannelConnectionCompat {
                 return type.getDeclaredMethod(name, parameterTypes);
             } catch (NoSuchMethodException ignored) {
                 type = type.getSuperclass();
+            } catch (LinkageError ignored) {
+                type = type.getSuperclass();
             }
         }
-        for (Method method : owner.getMethods()) {
-            if (method.getName().equals(name) && parameterTypesMatch(method.getParameterTypes(), parameterTypes)) {
-                return method;
+        try {
+            for (Method method : owner.getMethods()) {
+                if (method.getName().equals(name) && parameterTypesMatch(method.getParameterTypes(), parameterTypes)) {
+                    return method;
+                }
             }
+        } catch (LinkageError ignored) {
         }
         return null;
     }

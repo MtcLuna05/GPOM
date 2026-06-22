@@ -8,6 +8,7 @@ import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanup;
 import com.l.gpom.profiling.RuntimeSinkProfiler;
 import com.l.gpom.profiling.WorldLifecycleProfiler;
+import net.minecraft.client.LoadingScreenRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiDownloadTerrain;
 import net.minecraft.client.gui.GuiMainMenu;
@@ -21,12 +22,16 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 @Mixin(value = Minecraft.class, remap = false)
 public abstract class MixinMinecraftWorldLoadingScreen {
+    private static Field gpom$loadingScreenField;
     private static Field gpom$worldField;
     private static Field gpom$playerField;
     private static Field gpom$currentScreenField;
+    private static Method gpom$displaySavingStringMethod;
+    private static Method gpom$displayLoadingStringMethod;
     private long gpom$loadWorldStartedAt;
     private long gpom$loadRenderersStartedAt;
     private long gpom$createPlayerStartedAt;
@@ -76,11 +81,107 @@ public abstract class MixinMinecraftWorldLoadingScreen {
                     "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
                     "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
             },
+            at = @At(value = "INVOKE", target = "Lnet/minecraftforge/fml/client/FMLClientHandler;startIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$startedForgeIntegratedHandshake(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Loading world", "Preparing client handoff", 12);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;loadWorld(Lnet/minecraft/client/multiplayer/WorldClient;)V"),
+            require = 0
+    )
+    private void gpom$beforeIntegratedClearsPreviousWorld(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Closing previous world", "Clearing old client world", 16);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;loadWorld(Lnet/minecraft/client/multiplayer/WorldClient;)V", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$afterIntegratedClearsPreviousWorld(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Loading world", "Previous client world cleared", 20);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Ljava/lang/System;gc()V"),
+            require = 0
+    )
+    private void gpom$beforeIntegratedGc(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Loading world", "Reclaiming memory before opening save", 22);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Ljava/lang/System;gc()V", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$afterIntegratedGc(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Opening save", "Reading world metadata", 24);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/world/storage/ISaveHandler;loadWorldInfo()Lnet/minecraft/world/storage/WorldInfo;"),
+            require = 0
+    )
+    private void gpom$beforeIntegratedWorldInfo(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Opening save", "Loading world info", 26);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/integrated/IntegratedServer;<init>(Lnet/minecraft/client/Minecraft;Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;Lcom/mojang/authlib/yggdrasil/YggdrasilAuthenticationService;Lcom/mojang/authlib/minecraft/MinecraftSessionService;Lcom/mojang/authlib/GameProfileRepository;Lnet/minecraft/server/management/PlayerProfileCache;)V"),
+            require = 0
+    )
+    private void gpom$beforeIntegratedServerConstruct(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Building integrated server", "Creating server world container", 30);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
             at = @At(value = "INVOKE", target = "Lnet/minecraft/server/integrated/IntegratedServer;startServerThread()V"),
             require = 0
     )
     private void gpom$startingIntegratedServer(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
-        gpom$drawImmediate("Starting integrated server", "Launching server thread", 28);
+        gpom$drawImmediate("Starting integrated server", "Launching server thread", 34);
+    }
+
+    @Inject(
+            method = {
+                    "launchIntegratedServer(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V",
+                    "func_71371_a(Ljava/lang/String;Ljava/lang/String;Lnet/minecraft/world/WorldSettings;)V"
+            },
+            at = @At(value = "INVOKE", target = "Lnet/minecraft/server/integrated/IntegratedServer;startServerThread()V", shift = At.Shift.AFTER),
+            require = 0
+    )
+    private void gpom$startedIntegratedServerThread(String folderName, String worldName, WorldSettings settings, CallbackInfo ci) {
+        gpom$drawImmediate("Starting integrated server", "Waiting for server thread", 36);
     }
 
     @Inject(
@@ -316,7 +417,10 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return;
         }
         WorldLoadingProgress.update(stage, detail, progress);
-        WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
+        LoadingScreenRenderer renderer = gpom$getLoadingScreen();
+        if (renderer == null || !gpom$callLoadingScreen(renderer, stage, detail)) {
+            WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
+        }
     }
 
     private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {
@@ -328,6 +432,43 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return true;
         }
         return screen != null && screen.getClass().getName().equals("lumien.custommainmenu.gui.GuiCustom");
+    }
+
+    private static boolean gpom$callLoadingScreen(LoadingScreenRenderer renderer, String title, String detail) {
+        try {
+            Method method = gpom$displaySavingStringMethod;
+            if (method == null) {
+                method = gpom$findMethod(renderer.getClass(), new Class<?>[]{String.class}, "func_73720_a", "displaySavingString");
+                gpom$displaySavingStringMethod = method;
+            }
+            method.invoke(renderer, title);
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Method method = gpom$displayLoadingStringMethod;
+            if (method == null) {
+                method = gpom$findMethod(renderer.getClass(), new Class<?>[]{String.class}, "func_73719_c", "displayLoadingString");
+                gpom$displayLoadingStringMethod = method;
+            }
+            method.invoke(renderer, detail);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private LoadingScreenRenderer gpom$getLoadingScreen() {
+        try {
+            Field field = gpom$loadingScreenField;
+            if (field == null) {
+                field = gpom$findMinecraftField("field_71461_s", "loadingScreen");
+                gpom$loadingScreenField = field;
+            }
+            return (LoadingScreenRenderer) field.get(this);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private WorldClient gpom$getWorld() {
@@ -402,5 +543,23 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             }
         }
         throw new NoSuchFieldException(String.join("/", names));
+    }
+
+    private static Method gpom$findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) throws NoSuchMethodException {
+        for (String name : names) {
+            try {
+                Method method = owner.getDeclaredMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (NoSuchMethodException ignored) {
+            }
+            try {
+                Method method = owner.getMethod(name, parameterTypes);
+                method.setAccessible(true);
+                return method;
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        throw new NoSuchMethodException(owner.getName() + "#" + String.join("/", names));
     }
 }

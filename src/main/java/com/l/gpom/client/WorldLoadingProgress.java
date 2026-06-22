@@ -46,8 +46,6 @@ public final class WorldLoadingProgress {
     private static volatile Method minecraftGetTextureManagerMethod;
     private static volatile Method textureManagerBindTextureMethod;
     private static volatile Method minecraftUpdateDisplayMethod;
-    private static volatile Method minecraftGetFramebufferMethod;
-    private static volatile Method framebufferBindFramebufferMethod;
     private static volatile Method scaledResolutionGetWidthMethod;
     private static volatile Method scaledResolutionGetHeightMethod;
     private static volatile Field minecraftCurrentScreenField;
@@ -378,19 +376,13 @@ public final class WorldLoadingProgress {
         width = dimensions[0];
         height = dimensions[1];
         int effectiveProgress = effectiveProgress(progressOverride);
-        RenderProjection projection = null;
         rendering = true;
         try {
-            projection = beginFullScreenProjection(minecraft, width, height);
-            if (projection == null) {
-                logRenderSkipDiagnostic("projection setup failed");
-                return false;
-            }
+            setupFullScreenProjection(minecraft, width, height);
             drawFullWindow(minecraft, font, width, height, effectiveProgress);
             logRenderSuccessDiagnostic(width, height, effectiveProgress);
             return true;
         } finally {
-            endFullScreenProjection(projection);
             rendering = false;
         }
     }
@@ -577,10 +569,8 @@ public final class WorldLoadingProgress {
         }
     }
 
-    private static RenderProjection beginFullScreenProjection(Minecraft minecraft, int width, int height) {
-        RenderProjection projection = new RenderProjection();
+    private static void setupFullScreenProjection(Minecraft minecraft, int width, int height) {
         try {
-            bindMainFramebuffer(minecraft);
             if (minecraft != null && minecraft.displayWidth > 0 && minecraft.displayHeight > 0) {
                 GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
                 GL11.glViewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
@@ -591,70 +581,14 @@ public final class WorldLoadingProgress {
             GL11.glDisable(GL11.GL_FOG);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glMatrixMode(GL11.GL_PROJECTION);
-            GL11.glPushMatrix();
-            projection.projectionPushed = true;
             GL11.glLoadIdentity();
             GL11.glOrtho(0.0D, width, height, 0.0D, 100.0D, 300.0D);
             GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPushMatrix();
-            projection.modelViewPushed = true;
             GL11.glLoadIdentity();
             GL11.glTranslatef(0.0F, 0.0F, -200.0F);
             resetGuiColor();
-            return projection;
-        } catch (Throwable ignored) {
-            endFullScreenProjection(projection);
-            return null;
-        }
-    }
-
-    private static void endFullScreenProjection(RenderProjection projection) {
-        if (projection == null) {
-            return;
-        }
-        try {
-            if (projection.modelViewPushed) {
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);
-                GL11.glPopMatrix();
-            }
-            if (projection.projectionPushed) {
-                GL11.glMatrixMode(GL11.GL_PROJECTION);
-                GL11.glPopMatrix();
-            }
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            resetGuiColor();
         } catch (Throwable ignored) {
         }
-    }
-
-    private static void bindMainFramebuffer(Minecraft minecraft) {
-        if (minecraft == null) {
-            return;
-        }
-        try {
-            Method getFramebufferMethod = minecraftGetFramebufferMethod;
-            if (getFramebufferMethod == null) {
-                getFramebufferMethod = findMethod(Minecraft.class, new Class<?>[0], "func_147110_a", "getFramebuffer");
-                minecraftGetFramebufferMethod = getFramebufferMethod;
-            }
-            Object framebuffer = getFramebufferMethod.invoke(minecraft);
-            if (framebuffer == null) {
-                return;
-            }
-
-            Method bindMethod = framebufferBindFramebufferMethod;
-            if (bindMethod == null) {
-                bindMethod = findMethod(framebuffer.getClass(), new Class<?>[]{boolean.class}, "func_147610_a", "bindFramebuffer");
-                framebufferBindFramebufferMethod = bindMethod;
-            }
-            bindMethod.invoke(framebuffer, false);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static final class RenderProjection {
-        private boolean projectionPushed;
-        private boolean modelViewPushed;
     }
 
     private static boolean drawGuiScreenDirtBackground(Minecraft minecraft, int width, int height) {
