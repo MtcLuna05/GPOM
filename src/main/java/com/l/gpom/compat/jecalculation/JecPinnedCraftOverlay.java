@@ -99,7 +99,7 @@ public final class JecPinnedCraftOverlay {
     }
 
     public static void register() {
-        if (registered || !GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled()) {
+        if (registered || !GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled() || !classPresent(JECA_GUI)) {
             return;
         }
         registered = true;
@@ -850,6 +850,15 @@ public final class JecPinnedCraftOverlay {
             }
         }
         return Class.forName(name, false, JecPinnedCraftOverlay.class.getClassLoader());
+    }
+
+    private static boolean classPresent(String name) {
+        try {
+            loadClass(name);
+            return true;
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            return false;
+        }
     }
 
     private static final class JecAccess {

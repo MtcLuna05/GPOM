@@ -18,7 +18,8 @@
     "fml.MixinLoadControllerStartupProfiler",
     "agricraft.MixinWorldAgriCraftChannelBulkPlacement",
     "baubles.MixinContainerPlayerSideSlots",
-    "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard"
+    "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard",
+    "betterportals.MixinServerWorldsManagerMissingTransferRepair"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
@@ -30,6 +31,7 @@
     "client.MixinGuiMainMenuStartupOverlay",
     "client.MixinMinecraftMouseFocus",
     "client.MixinMouseHelperFocusDelta",
+    "client.MixinIntegratedServerShutdownLogoutCleanup",
     "astralsorcery.MixinAstralSorceryClientConnectionEventHandler",
     "betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup",
     "betterportals.MixinClientWorldsManagerImplDestroyMainViewGuard",

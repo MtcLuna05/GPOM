@@ -1,5 +1,6 @@
 package com.l.gpom.core;
 
+import com.l.gpom.util.GpomSide;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
@@ -105,7 +106,8 @@ public final class InitPhaseDeepProfilerTransformer implements IClassTransformer
             return basicClass;
         }
 
-        if (AOA_FAST_CLIENT_EVENT_REGISTRATION
+        if (!GpomSide.isDedicatedServerLaunch()
+                && AOA_FAST_CLIENT_EVENT_REGISTRATION
                 && "net.tslat.aoa3.common.ClientProxy".equals(className)
                 && TargetedModVersions.isAdventOfAscensionClass(className)) {
             basicClass = patchAoAClientProxyEvents(basicClass);

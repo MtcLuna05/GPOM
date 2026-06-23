@@ -4,6 +4,7 @@ import com.l.gpom.GPOM;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.WorldEvent;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.EventPriority;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
@@ -28,7 +29,7 @@ public final class BloodMagicWorldMapRecoveryEvents {
     }
 
     public static void register() {
-        if (registered) {
+        if (registered || !Loader.isModLoaded("bloodmagic")) {
             return;
         }
         registered = true;

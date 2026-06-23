@@ -2,12 +2,13 @@
 
 This catalog tracks GPOM features, not only startup optimizations. It is intended as the high-level inventory for maintainers and pack operators. Use `docs/FEATURE_LOG.md` for measured run history, validation notes, crashes, and active decisions.
 
-Current live context, 2026-06-21:
+Current live context, 2026-06-23:
 
 - Target pack: MeatballCraft, Dimensional Ascension on Minecraft 1.12.2 Cleanroom/Forge.
 - GPOM jar in the tested Prism instance was rebuilt and installed with every non-probe feature switch enabled and probes/profilers/verbose logs/deep diagnostics left disabled, with SHA-256 `c2556d08f0faeb1322feba2a79ad6dfa367195ce24fee72921af91fd9d016149`.
 - Probe, deep HEI profiler, runtime sink profiler, and coarse startup-summary output are disabled in the live config for speed. The main-menu startup timer remains enabled.
 - `docs/gpom-early.properties`, the live MeatballCraft instance config, and `GpomEarlyConfig` source defaults are aligned to the current all-non-probe speed profile.
+- Dedicated-server and optional-integration hardening now requires optional mod hooks to detect their target mod/classes before registration, mixin application, or bytecode transformation. Missing optional mods should skip GPOM integration instead of failing modpack load.
 - The baseline from the earlier Celeritas-switch status was `263.251 s` average (`242.169 s`, `290.494 s`, `257.090 s`), so the current average saving is about `77.501 s` or `29.4%`.
 - HEI search tree concurrency is intentionally conservative now: `gpom.hei.searchWorkers=1`, `gpom.hei.deferSearchBlock=false` by default, and `gpom.hei.parallelSearchBuild=false` by default. This avoids the HEI `ObjectOpenHashSet`/`StringUtil.intern` race seen on 2026-06-20.
 - Active validation intentionally enables all non-probe HEI feature switches, including plugin discovery/registration parallelism, `RecipeRegistry` bulk/visible-cache paths, and `RecipeMap` ingredient caching. Probes, profilers, verbose logs, and deep diagnostics remain disabled.
@@ -540,6 +541,7 @@ Capabilities:
 - Rewrites old two-argument Guava `Futures.addCallback(...)` calls to the executor-taking overload with `MoreExecutors.directExecutor()`.
 - Remaps BetterPortals' optional legacy Aether bridge from `com.legacy.aether` to the installed `com.gildedgames.the_aether` package when present.
 - Skips the legacy Aether bridge if no compatible Aether classes are present.
+- Repairs a missed BetterPortals server view-world manager transfer when the player dimension changes but the manager map has not been populated yet.
 - Makes Aether Skyroot-water portal activation temporarily scan as air while BetterPortals links the glowstone frame.
 - Suppresses Aether's immediate Skyroot-bucket water placement after a successful BetterPortals portal link so water cannot overwrite the new portal.
 - Supports JourneyMap waypoint teleport transitions through BetterPortals where active view requirements are met.
@@ -577,6 +579,7 @@ Capabilities:
 - Optional Aether Legacy accessory slots can be appended to the same rail using Aether's native slot validation and icons.
 - Optional CosmeticArmorReworked armor slots can be appended to the same rail with server-routed slot writes to avoid ghost stacks.
 - CosmeticArmorReworked per-bauble visibility toggles are synced to rail positions and hidden when the rail closes.
+- Common-side network registration first checks `Loader.isModLoaded("baubles")` and then invokes the Baubles bridge reflectively so packs without Baubles can still load GPOM.
 
 Risk level: medium. Container slot count and packet symmetry are critical; keep this disabled by default for broad packs.
 
@@ -616,10 +619,11 @@ gpom.journeymap.cleanupLeaksOnDimensionHandoff=false
 Capabilities:
 
 - Replaces the waypoint manager's dimension cycling button with a scrollable dropup selector.
+- Right-clicking a dimension row pins or unpins it directly under All Dimensions and keeps the pin across game restarts.
 - Writes JourneyMap's existing selected-dimension field and refreshes through JourneyMap's own filtering path.
 - Cleans retained JourneyMap client world references on unload/disconnect/loadWorld handoffs.
 
-Risk level: low to medium. Reflection-only optional integration.
+Risk level: low to medium. Reflection-only optional integration; registration checks JourneyMap classes before subscribing events.
 
 ## Framed Block and Rendering Compatibility
 
@@ -663,6 +667,7 @@ Capabilities:
 - Thaumcraft HEI research-click bridge can open the relevant recipe/category path from required-research hints where possible.
 - Salis Mundus HEI recipe support is provided through the GPOM HEI QoL plugin path.
 - Thaumcraft aspect cache investigation added safer refresh behavior around itemstack aspect lookup where values were stale.
+- Research recovery and client probes check `Loader.isModLoaded("thaumcraft")` before event registration.
 
 Operational note:
 
@@ -687,7 +692,7 @@ Capabilities:
 - Replaces or defers Super Factory Manager's heavy search cache path with a lightweight cache builder.
 - Can seed from HEI ingredients when available.
 - Uses bounded worker threads for cache construction.
-- Mixins/transformers no-op when SFM classes are absent.
+- Mixins/transformers no-op when SFM classes are absent or the launch side is a dedicated server.
 
 Known past issue:
 
@@ -712,6 +717,7 @@ Capabilities:
 
 - Logs AE2 pattern diagnostic failures up to a configured cap.
 - Can log mismatched outputs and skip recipe function paths during diagnostics.
+- Common startup registers diagnostics reflectively only when `appliedenergistics2` is loaded.
 - AE2 Mouse Tweaks terminal compatibility was removed from GPOM after it proved unnecessary/fragile.
 
 Risk level: low when diagnostics are disabled; medium when probing recipe function paths.
@@ -819,6 +825,7 @@ Risk level: varies by feature. Exact-version ASM should verify jar/class shape a
 - Runtime caches use primitive/NBT-style data, not Java object serialization.
 - Client-only classes must not load from common or dedicated-server paths.
 - Optional integrations should detect mod classes/resources before transforming or registering.
+- Common startup paths must not directly link optional mod APIs; use mod-id/class checks plus reflection or resource-gated mixin plugins.
 - Exact-version patches should check target class/jar/bytecode shape and fail closed.
 - Minecraft runtime names must be handled with try/fallback logic instead of direct-only MCP or SRG names.
 - Broad threading and registry parallelism are pack-specific experiments, not universal safe defaults.

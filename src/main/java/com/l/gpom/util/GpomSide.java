@@ -20,4 +20,18 @@ public final class GpomSide {
             return false;
         }
     }
+
+    public static boolean isDedicatedServerLaunch() {
+        try {
+            return FMLLaunchHandler.side().isServer();
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Object side = Launch.blackboard.get("fml.side");
+            return side != null && "SERVER".equalsIgnoreCase(side.toString());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
 }

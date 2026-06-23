@@ -2,6 +2,7 @@ package com.l.gpom.core;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomSide;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -21,7 +22,7 @@ public final class SfmLightweightSearchCacheTransformer implements IClassTransfo
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
-        if (basicClass == null || !GpomEarlyConfig.sfmLightweightSearchCacheEnabled()) {
+        if (basicClass == null || GpomSide.isDedicatedServerLaunch() || !GpomEarlyConfig.sfmLightweightSearchCacheEnabled()) {
             return basicClass;
         }
 

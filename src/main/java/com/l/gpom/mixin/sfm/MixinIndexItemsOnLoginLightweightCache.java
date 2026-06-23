@@ -1,6 +1,7 @@
 package com.l.gpom.mixin.sfm;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.client.ClientAccess;
 import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.launchwrapper.Launch;
@@ -45,10 +46,8 @@ public abstract class MixinIndexItemsOnLoginLightweightCache {
             }
         };
 
-        Minecraft minecraft = Minecraft.getMinecraft();
-        if (minecraft != null) {
-            minecraft.addScheduledTask(task);
-        } else {
+        Minecraft minecraft = ClientAccess.minecraft();
+        if (!ClientAccess.schedule(minecraft, task)) {
             task.run();
         }
     }

@@ -126,7 +126,7 @@ public final class BetterPortalsWaypointCrashGuard {
     private static WorldServer playerChunkMapWorld(Object playerChunkMap) throws ReflectiveOperationException {
         Field field = playerChunkMapWorldField;
         if (field == null) {
-            field = findField(playerChunkMap.getClass(), "world", "field_72701_a");
+            field = findField(playerChunkMap.getClass(), "field_72701_a", "world");
             playerChunkMapWorldField = field;
         }
         Object value = field.get(playerChunkMap);
@@ -160,7 +160,7 @@ public final class BetterPortalsWaypointCrashGuard {
         }
         Method method = serverGetWorldMethod;
         if (method == null) {
-            method = findMethod(server.getClass(), new Class<?>[]{Integer.TYPE}, "getWorld", "func_71218_a");
+            method = findMethod(server.getClass(), new Class<?>[]{Integer.TYPE}, "func_71218_a", "getWorld");
             serverGetWorldMethod = method;
         }
         Object world = method.invoke(server, dimension);
@@ -170,7 +170,7 @@ public final class BetterPortalsWaypointCrashGuard {
     private static Object invokePlayerGetServer(EntityPlayerMP player) throws ReflectiveOperationException {
         Method method = playerGetServerMethod;
         if (method == null) {
-            method = findMethodOrNull(player.getClass(), "getServer", "func_184102_h");
+            method = findMethodOrNull(player.getClass(), "func_184102_h", "getServer");
             playerGetServerMethod = method;
         }
         if (method != null) {
@@ -179,7 +179,7 @@ public final class BetterPortalsWaypointCrashGuard {
 
         Field field = playerServerField;
         if (field == null) {
-            field = findField(player.getClass(), "mcServer", "field_71133_b");
+            field = findField(player.getClass(), "field_71133_b", "mcServer");
             playerServerField = field;
         }
         return field.get(player);

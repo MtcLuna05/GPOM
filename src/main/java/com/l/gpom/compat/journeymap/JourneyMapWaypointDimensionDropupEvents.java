@@ -15,7 +15,9 @@ public final class JourneyMapWaypointDimensionDropupEvents {
     }
 
     public static void register() {
-        if (registered || !GpomEarlyConfig.journeyMapWaypointDimensionDropupEnabled()) {
+        if (registered
+                || !GpomEarlyConfig.journeyMapWaypointDimensionDropupEnabled()
+                || !classPresent("journeymap.client.ui.waypoint.WaypointManager")) {
             return;
         }
         registered = true;
@@ -54,6 +56,15 @@ public final class JourneyMapWaypointDimensionDropupEvents {
                 event.setCanceled(true);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    private static boolean classPresent(String className) {
+        try {
+            Class.forName(className, false, JourneyMapWaypointDimensionDropupEvents.class.getClassLoader());
+            return true;
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            return false;
         }
     }
 }

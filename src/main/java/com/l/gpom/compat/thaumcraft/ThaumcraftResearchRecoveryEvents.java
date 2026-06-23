@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingEvent;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
 import java.lang.reflect.Field;
@@ -56,7 +57,7 @@ public final class ThaumcraftResearchRecoveryEvents {
     }
 
     public static void register() {
-        if (registered) {
+        if (registered || !Loader.isModLoaded("thaumcraft")) {
             return;
         }
         registered = true;

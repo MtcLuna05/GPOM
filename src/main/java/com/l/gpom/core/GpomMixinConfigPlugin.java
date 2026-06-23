@@ -2,6 +2,7 @@ package com.l.gpom.core;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomSide;
 import net.minecraft.launchwrapper.Launch;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
@@ -27,6 +28,14 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "de/johni0702/minecraft/view/impl/ViewAPIImplKt.class",
             "de/johni0702/minecraft/view/impl/mixin/MixinPlayerChunkMap.class"
     };
+    private static final String[] BETTER_PORTALS_SERVER_MANAGER_TARGETS = {
+            "de/johni0702/minecraft/view/impl/server/ServerWorldsManagerImpl.class",
+            "de/johni0702/minecraft/view/impl/server/ServerWorldManager.class"
+    };
+    private static final String[] INTEGRATED_SERVER_SHUTDOWN_TARGETS = {
+            "net/minecraft/client/Minecraft.class",
+            "net/minecraft/server/integrated/IntegratedServer$3.class"
+    };
     private static final String[] AGRICRAFT_CHANNEL_TARGETS = {
             "com/infinityraider/agricraft/blocks/irrigation/AbstractBlockWaterChannel.class",
             "com/infinityraider/agricraft/api/v1/misc/IAgriConnectable.class"
@@ -50,6 +59,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (mixinClassName.contains(".baubles.")) {
+            if (isClientOnlyMixin(mixinClassName) && GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "client-only Baubles mixin on dedicated server");
+                return false;
+            }
             boolean enabled = GpomEarlyConfig.baublesSideSlotsEnabled();
             boolean present = enabled && allResourcesPresent(BAUBLES_TARGETS);
             if (LOGGED.add(mixinClassName)) {
@@ -59,6 +72,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             return present;
         }
         if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDimensionHandoffCleanup")) {
+            if (GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "client-only BetterPortals mixin on dedicated server");
+                return false;
+            }
             boolean present = allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
             if (LOGGED.add(mixinClassName)) {
                 GPOM.LOGGER.info("[GPOM BetterPortals Handoff Cleanup] mixin={} targetsPresent={} aggressiveClientWorldCleanup={}",
@@ -67,6 +84,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             return present;
         }
         if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinClientWorldsManagerImplDestroyMainViewGuard")) {
+            if (GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "client-only BetterPortals mixin on dedicated server");
+                return false;
+            }
             boolean present = allResourcesPresent(BETTER_PORTALS_CLIENT_WORLD_TARGETS);
             if (LOGGED.add(mixinClassName)) {
                 GPOM.LOGGER.info("[GPOM BetterPortals Guard] mixin={} targetsPresent={}",
@@ -78,6 +99,26 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             boolean present = allResourcesPresent(BETTER_PORTALS_SERVER_WORLD_TARGETS);
             if (LOGGED.add(mixinClassName)) {
                 GPOM.LOGGER.info("[GPOM BetterPortals Guard] mixin={} targetsPresent={}",
+                        mixinClassName, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.betterportals.MixinServerWorldsManagerMissingTransferRepair")) {
+            boolean present = allResourcesPresent(BETTER_PORTALS_SERVER_MANAGER_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM BetterPortals Guard] mixin={} targetsPresent={}",
+                        mixinClassName, present);
+            }
+            return present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.client.MixinIntegratedServerShutdownLogoutCleanup")) {
+            if (GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "integrated-client-only mixin on dedicated server");
+                return false;
+            }
+            boolean present = allResourcesPresent(INTEGRATED_SERVER_SHUTDOWN_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM IntegratedServer Cleanup] mixin={} targetsPresent={}",
                         mixinClassName, present);
             }
             return present;
@@ -101,6 +142,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             return present;
         }
         if (mixinClassName.equals("com.l.gpom.mixin.sfm.MixinIndexItemsOnLoginLightweightCache")) {
+            if (GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "client-only SFM login mixin on dedicated server");
+                return false;
+            }
             boolean enabled = GpomEarlyConfig.sfmLightweightSearchCacheEnabled();
             boolean present = enabled && allResourcesPresent(SFM_LOGIN_TARGETS);
             if (LOGGED.add(mixinClassName)) {
@@ -110,6 +155,18 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             return present;
         }
         return true;
+    }
+
+    private static boolean isClientOnlyMixin(String mixinClassName) {
+        return mixinClassName.startsWith("com.l.gpom.mixin.client.")
+                || mixinClassName.equals("com.l.gpom.mixin.baubles.MixinGuiInventoryBaublesSideSlots")
+                || mixinClassName.equals("com.l.gpom.mixin.baubles.MixinGuiContainerBaublesQuickEquip");
+    }
+
+    private static void logSideSkip(String mixinClassName, String reason) {
+        if (LOGGED.add(mixinClassName + ":side-skip")) {
+            GPOM.LOGGER.info("[GPOM Mixin] Skipping {}: {}", mixinClassName, reason);
+        }
     }
 
     private static boolean allResourcesPresent(String[] resources) {

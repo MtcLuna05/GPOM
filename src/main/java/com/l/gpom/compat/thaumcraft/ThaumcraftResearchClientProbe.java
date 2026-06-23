@@ -2,6 +2,7 @@ package com.l.gpom.compat.thaumcraft;
 
 import com.l.gpom.GPOM;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
@@ -41,7 +42,7 @@ public final class ThaumcraftResearchClientProbe {
     }
 
     public static void register() {
-        if (registered) {
+        if (registered || !Loader.isModLoaded("thaumcraft")) {
             return;
         }
         registered = true;

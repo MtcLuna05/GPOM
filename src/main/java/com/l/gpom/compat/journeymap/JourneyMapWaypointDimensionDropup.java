@@ -7,6 +7,11 @@ import net.minecraft.client.gui.GuiButton;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -14,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -35,6 +41,11 @@ public final class JourneyMapWaypointDimensionDropup {
     private static final ConcurrentHashMap<String, Field> FIELD_CACHE = new ConcurrentHashMap<String, Field>();
     private static final ConcurrentHashMap<String, Method> METHOD_CACHE = new ConcurrentHashMap<String, Method>();
     private static final Map<Object, DropupState> STATES = Collections.synchronizedMap(new WeakHashMap<Object, DropupState>());
+    private static final Object PIN_FILE_LOCK = new Object();
+    private static final String PIN_FILE_NAME = "gpom-journeymap-waypoint-pins.properties";
+    private static final String PIN_KEY = "pinnedProviderKey";
+    private static volatile String pinnedProviderKey;
+    private static volatile boolean pinnedProviderLoaded;
 
     private JourneyMapWaypointDimensionDropup() {
     }
@@ -90,7 +101,7 @@ public final class JourneyMapWaypointDimensionDropup {
                 state.scroll = clamp(layout.scroll + (wheel < 0 ? 1 : -1), 0, layout.maxScroll());
                 return true;
             }
-            if (mouseButton != 0 || !Mouse.getEventButtonState()) {
+            if ((mouseButton != 0 && mouseButton != 1) || !Mouse.getEventButtonState()) {
                 return false;
             }
             if (state.open) {
@@ -100,7 +111,12 @@ public final class JourneyMapWaypointDimensionDropup {
                 if (layout.contains(mouseX, mouseY)) {
                     int index = layout.entryIndexAt(mouseY);
                     if (index >= 0 && index < layout.entries.size()) {
-                        selectEntry(screen, button, state, layout.entries.get(index));
+                        Entry entry = layout.entries.get(index);
+                        if (mouseButton == 1) {
+                            togglePinnedEntry(state, entry);
+                        } else {
+                            selectEntry(screen, button, state, entry);
+                        }
                     }
                     return true;
                 }
@@ -176,6 +192,19 @@ public final class JourneyMapWaypointDimensionDropup {
         close(state);
     }
 
+    private static void togglePinnedEntry(DropupState state, Entry entry) {
+        loadPinnedProviderKey();
+        if (entry.provider == null || entry.key == null) {
+            pinnedProviderKey = null;
+        } else if (entry.key.equals(pinnedProviderKey)) {
+            pinnedProviderKey = null;
+        } else {
+            pinnedProviderKey = entry.key;
+        }
+        savePinnedProviderKey();
+        state.scroll = 0;
+    }
+
     private static Layout layout(Object waypointManager, Object button, Object fontRenderer, int requestedScroll) throws ReflectiveOperationException {
         List<Entry> entries = entries(button);
         int visibleRows = Math.min(MAX_VISIBLE_ROWS, Math.max(1, entries.size()));
@@ -211,7 +240,7 @@ public final class JourneyMapWaypointDimensionDropup {
             boolean hovered = mouseX >= layout.x + 1 && mouseX < rowRight && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
             int color = entry.selected ? ROW_SELECTED : (hovered ? ROW_HOVER : ROW_BG);
             drawRect(layout.x + 1, rowY, rowRight, rowY + ROW_HEIGHT, color);
-            drawString(fontRenderer, entry.label, layout.x + 6, rowY + 3, entry.selected ? TEXT : TEXT_DIM);
+            drawString(fontRenderer, entry.drawLabel(), layout.x + 6, rowY + 3, entry.selected ? TEXT : TEXT_DIM);
         }
 
         if (layout.maxScroll() > 0) {
@@ -227,17 +256,111 @@ public final class JourneyMapWaypointDimensionDropup {
 
     private static List<Entry> entries(Object button) throws ReflectiveOperationException {
         Object current = staticField(button.getClass(), "currentWorldProvider");
+        loadPinnedProviderKey();
+        String pinnedKey = pinnedProviderKey;
         List<Entry> entries = new ArrayList<Entry>();
-        entries.add(new Entry(null, "All Dimensions", sameProvider(null, current)));
+        entries.add(new Entry(null, "All Dimensions", null, false, sameProvider(null, current)));
+        Entry pinned = null;
         Object providers = fieldValue(button, "dimensionProviders");
         if (providers instanceof Iterable) {
             for (Object provider : (Iterable<?>) providers) {
                 if (provider != null) {
-                    entries.add(new Entry(provider, providerLabel(provider), sameProvider(provider, current)));
+                    String key = providerKey(provider);
+                    boolean pinnedEntry = key != null && key.equals(pinnedKey);
+                    Entry entry = new Entry(provider, providerLabel(provider), key, pinnedEntry, sameProvider(provider, current));
+                    if (pinnedEntry && pinned == null) {
+                        pinned = entry;
+                    } else {
+                        entries.add(entry);
+                    }
                 }
             }
         }
+        if (pinned != null) {
+            entries.add(1, pinned);
+        } else if (pinnedKey != null) {
+            pinnedProviderKey = null;
+            savePinnedProviderKey();
+        }
         return entries;
+    }
+
+    private static void loadPinnedProviderKey() {
+        if (pinnedProviderLoaded) {
+            return;
+        }
+        synchronized (PIN_FILE_LOCK) {
+            if (pinnedProviderLoaded) {
+                return;
+            }
+            pinnedProviderLoaded = true;
+            File file = pinFile();
+            if (!file.isFile()) {
+                return;
+            }
+            Properties properties = new Properties();
+            try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file))) {
+                properties.load(input);
+                String value = properties.getProperty(PIN_KEY);
+                if (value != null) {
+                    value = value.trim();
+                }
+                pinnedProviderKey = value == null || value.isEmpty() ? null : value;
+            } catch (Throwable throwable) {
+                logFailure("loadPinnedProviderKey", throwable);
+            }
+        }
+    }
+
+    private static void savePinnedProviderKey() {
+        synchronized (PIN_FILE_LOCK) {
+            File file = pinFile();
+            File parent = file.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                logFailure("savePinnedProviderKey", new IllegalStateException("Unable to create " + parent));
+                return;
+            }
+
+            File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
+            try {
+                String key = pinnedProviderKey;
+                if (key == null || key.trim().isEmpty()) {
+                    if (file.isFile() && !file.delete()) {
+                        throw new IllegalStateException("Unable to delete " + file);
+                    }
+                    if (tmp.isFile() && !tmp.delete()) {
+                        throw new IllegalStateException("Unable to delete " + tmp);
+                    }
+                    return;
+                }
+
+                Properties properties = new Properties();
+                properties.setProperty(PIN_KEY, key);
+                try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(tmp))) {
+                    properties.store(output, "GPOM JourneyMap waypoint dimension dropup pins");
+                }
+                if (file.isFile() && !file.delete()) {
+                    throw new IllegalStateException("Unable to replace " + file);
+                }
+                if (!tmp.renameTo(file)) {
+                    throw new IllegalStateException("Unable to move " + tmp + " to " + file);
+                }
+            } catch (Throwable throwable) {
+                logFailure("savePinnedProviderKey", throwable);
+            }
+        }
+    }
+
+    private static File pinFile() {
+        return new File(new File(instanceDirectory(), "config"), PIN_FILE_NAME);
+    }
+
+    private static File instanceDirectory() {
+        try {
+            return new File(System.getProperty("user.dir", ".")).getCanonicalFile();
+        } catch (Throwable ignored) {
+            return new File(System.getProperty("user.dir", ".")).getAbsoluteFile();
+        }
     }
 
     private static String providerLabel(Object provider) {
@@ -272,6 +395,15 @@ public final class JourneyMapWaypointDimensionDropup {
         return value instanceof Number ? Integer.valueOf(((Number) value).intValue()) : null;
     }
 
+    private static String providerKey(Object provider) {
+        Integer dimension = dimension(provider);
+        if (dimension != null) {
+            return "dimension:" + dimension.intValue();
+        }
+        String name = stringValue(invokeNullable(provider, "getName"));
+        return name == null || name.trim().isEmpty() ? null : provider.getClass().getName() + ':' + name;
+    }
+
     private static Object dimensionButton(Object waypointManager) throws ReflectiveOperationException {
         return fieldValue(waypointManager, "buttonDimensions");
     }
@@ -287,7 +419,7 @@ public final class JourneyMapWaypointDimensionDropup {
     private static int widestEntry(Object fontRenderer, List<Entry> entries) {
         int width = 0;
         for (Entry entry : entries) {
-            width = Math.max(width, stringWidth(fontRenderer, entry.label));
+            width = Math.max(width, stringWidth(fontRenderer, entry.drawLabel()));
         }
         return width;
     }
@@ -522,12 +654,20 @@ public final class JourneyMapWaypointDimensionDropup {
     private static final class Entry {
         private final Object provider;
         private final String label;
+        private final String key;
+        private final boolean pinned;
         private final boolean selected;
 
-        private Entry(Object provider, String label, boolean selected) {
+        private Entry(Object provider, String label, String key, boolean pinned, boolean selected) {
             this.provider = provider;
             this.label = label;
+            this.key = key;
+            this.pinned = pinned;
             this.selected = selected;
+        }
+
+        private String drawLabel() {
+            return pinned ? "[Pinned] " + label : label;
         }
     }
 

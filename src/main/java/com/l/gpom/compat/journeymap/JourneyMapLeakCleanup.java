@@ -97,7 +97,7 @@ public final class JourneyMapLeakCleanup {
         }
     }
 
-    private static boolean isJourneyMapPresent() {
+    static boolean isJourneyMapPresent() {
         Boolean cached = journeyMapPresent;
         if (cached != null) {
             return cached.booleanValue();

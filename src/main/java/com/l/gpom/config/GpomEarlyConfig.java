@@ -1087,7 +1087,7 @@ public final class GpomEarlyConfig {
             case "gpom.blockcraftery.modelRenderLayerCompat":
                 return "Rewrites Blockcraftery copied-block model layer checks to use Forge canRenderInLayer. Automatically skipped when AUSM is installed, because AUSM owns shader render-layer routing.";
             case "gpom.journeymap.waypointDimensionDropup.enabled":
-                return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector. No-op when JourneyMap is absent.";
+                return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector; right-click a dimension row to pin or unpin it near the top across game restarts. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaks":
                 return "Reflectively clears JourneyMap client world/task/chunk/render caches on client world unload, disconnect, and Minecraft loadWorld boundaries. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaksOnDimensionHandoff":

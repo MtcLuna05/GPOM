@@ -16,7 +16,7 @@ public final class JourneyMapLeakCleanupEvents {
     }
 
     public static void register() {
-        if (registered || !GpomEarlyConfig.journeyMapCleanupLeaksEnabled()) {
+        if (registered || !GpomEarlyConfig.journeyMapCleanupLeaksEnabled() || !JourneyMapLeakCleanup.isJourneyMapPresent()) {
             return;
         }
         registered = true;
