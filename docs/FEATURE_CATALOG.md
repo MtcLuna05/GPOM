@@ -815,7 +815,7 @@ Implemented or configured mod-specific paths include:
 - NuclearCraft manufactory/log-crafting result caches and optional fast metal recipes.
 - OpenComputers settings cache, fast Lua architecture selection, and optional call/integration profilers.
 - Railcraft lazy item conditions, module-container deferral controls, and lazy cart config.
-- Scannable redundant config ore-cache rebuild skip.
+- Scannable redundant config ore-cache rebuild skip and negative ore-cache id guard.
 - LoliASM thread-safe crash-state registry replacement.
 
 Representative keys:
@@ -839,6 +839,7 @@ gpom.railcraft.deferModuleContainers=false
 gpom.railcraft.deferSelectedModuleContainers=false
 gpom.railcraft.lazyCartConfig=false
 gpom.scannable.skipRedundantConfigOreCacheRebuilds=true
+gpom.scannable.skipNegativeOreCacheIds=true
 gpom.loliasm.threadSafeStatefulRegistry=true
 ```
 

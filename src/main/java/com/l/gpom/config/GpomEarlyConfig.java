@@ -185,6 +185,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaksOnDimensionHandoff", "true");
         DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
+        DEFAULTS.setProperty("gpom.scannable.skipNegativeOreCacheIds", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.registry.repairThaumicWondersMissingMappings", "true");
         DEFAULTS.setProperty("gpom.registry.ignoreMissingBlockItemNamespaces", "railcraft,ae2fc,packagedfluidcrafting");
@@ -700,6 +701,7 @@ public final class GpomEarlyConfig {
                 "gpom.journeymap.cleanupLeaks",
                 "gpom.journeymap.cleanupLeaksOnDimensionHandoff",
                 "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
+                "gpom.scannable.skipNegativeOreCacheIds",
                 "gpom.enderio.repairMissingTileEntityMappings",
                 "gpom.registry.repairThaumicWondersMissingMappings",
                 "gpom.registry.ignoreMissingBlockItemNamespaces",
@@ -1096,6 +1098,8 @@ public final class GpomEarlyConfig {
                 return "Also runs JourneyMap's full reflective leak cleanup during ordinary client dimension handoffs. Disabled by default because the purge is synchronous and can stall death/respawn dimension switches.";
             case "gpom.scannable.skipRedundantConfigOreCacheRebuilds":
                 return "Skips Scannable's expensive ore lookup rebuild when the server sends settings identical to the client settings already applied.";
+            case "gpom.scannable.skipNegativeOreCacheIds":
+                return "Skips negative Scannable ore-cache block state ids before they reach BitSet.set, avoiding client disconnect crashes during cache rebuilds. No-op when Scannable is absent.";
             case "gpom.enderio.repairMissingTileEntityMappings":
                 return "After EnderIO load, re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. No-op when EnderIO is absent or mappings are already present.";
             case "gpom.registry.repairThaumicWondersMissingMappings":
@@ -1487,6 +1491,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaksOnDimensionHandoff");
         copySystemPropertyIfAbsent("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
+        copySystemPropertyIfAbsent("gpom.scannable.skipNegativeOreCacheIds");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.registry.repairThaumicWondersMissingMappings");
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingBlockItemNamespaces");
@@ -1855,6 +1860,10 @@ public final class GpomEarlyConfig {
 
     public static boolean scannableSkipRedundantConfigOreCacheRebuildsEnabled() {
         return booleanValue("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
+    }
+
+    public static boolean scannableSkipNegativeOreCacheIdsEnabled() {
+        return booleanValue("gpom.scannable.skipNegativeOreCacheIds");
     }
 
     public static boolean journeyMapWaypointDimensionDropupEnabled() {
