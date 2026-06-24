@@ -505,7 +505,7 @@ Capabilities:
 - Client world-load, unload, and dimension-switch snapshots for memory/state debugging.
 - JourneyMap cleanup on client world unload, disconnect, and Minecraft `loadWorld` handoffs.
 - BetterPortals client view-world cleanup through BetterPortals' own reset path when enabled.
-- Client-world-only `World.notifyBlockUpdate` listener snapshot so listeners that remove themselves during chunk data handling cannot shrink the live listener list mid-loop; server worlds keep vanilla dispatch.
+- Client-side `World.notifyBlockUpdate` listener snapshot so listeners that remove themselves during chunk data handling cannot shrink the live listener list mid-loop.
 
 JourneyMap cleanup details:
 
