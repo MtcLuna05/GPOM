@@ -707,7 +707,7 @@ Feature area: world/save compatibility.
 Key config:
 
 ```properties
-gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled=true
+gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled=false
 ```
 
 Source finding:
@@ -719,12 +719,11 @@ Source finding:
 
 Capabilities:
 
-- Suppresses TeslaCoreLib addon partial sync/dirtying only while a Mob Crusher tile is inside `readFromNBT`.
-- Defers TeslaCoreLib speed/energy upgrade work-energy recalculation during that same Mob Crusher load window.
-- Refreshes the deferred upgrade-derived work-energy state on the first normal Mob Crusher `protectedUpdate`.
-- Mixins are resource-gated on Industrial Foregoing's Mob Crusher class and TeslaCoreLib tile classes, so the patch is a no-op when either mod is absent.
+- Disabled by default after the 2026-06-24 startup crash where Industrial Foregoing's generator superclass was marked invalid during early loading.
+- The implementation remains in source for retargeting, but its mixins are not currently listed in `gpom.mod.mixin.json`.
+- Industrial Foregoing is forced onto main-thread PreInit by the default `fml.parallel.preInit.denylist` profile.
 
-Risk level: medium-low. The patch is narrow and optional, but the disappearance report is source-inferred rather than reproduced locally.
+Risk level: disabled. Do not re-enable until the installed-runtime class targets and startup behavior are validated.
 
 ## AE2 and Pattern Diagnostics
 
