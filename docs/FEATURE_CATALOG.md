@@ -700,6 +700,32 @@ Known past issue:
 
 Risk level: medium. Item-search cache speedups must not lose items or build from incomplete ingredient lists.
 
+## Industrial Foregoing And TeslaCoreLib Mob Crusher Load Guard
+
+Feature area: world/save compatibility.
+
+Key config:
+
+```properties
+gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled=true
+```
+
+Source finding:
+
+- Industrial Foregoing's Mob Crusher is `com.buuz135.industrial.tile.mob.MobRelocatorTile`.
+- TeslaCoreLib deserializes its addon `ItemStackHandler` from the tile NBT sync part, and the handler's load path replays addon `onAdded`/`onRemoved` callbacks.
+- TeslaCoreLib speed and energy upgrades recalculate ElectricMachine work-energy state from those callbacks.
+- The addon load path also calls `partialSync("addonItems")`, which can mark the chunk dirty while the tile is still being read from NBT.
+
+Capabilities:
+
+- Suppresses TeslaCoreLib addon partial sync/dirtying only while a Mob Crusher tile is inside `readFromNBT`.
+- Defers TeslaCoreLib speed/energy upgrade work-energy recalculation during that same Mob Crusher load window.
+- Refreshes the deferred upgrade-derived work-energy state on the first normal Mob Crusher `protectedUpdate`.
+- Mixins are resource-gated on Industrial Foregoing's Mob Crusher class and TeslaCoreLib tile classes, so the patch is a no-op when either mod is absent.
+
+Risk level: medium-low. The patch is narrow and optional, but the disappearance report is source-inferred rather than reproduced locally.
+
 ## AE2 and Pattern Diagnostics
 
 Feature area: diagnostics and compatibility.

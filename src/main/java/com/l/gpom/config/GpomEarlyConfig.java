@@ -191,6 +191,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.registry.ignoreMissingAetherEnchantmentNamespaces", "contenttweaker");
         DEFAULTS.setProperty("gpom.registry.ignoreMissingSoundEventNamespaces", "");
         DEFAULTS.setProperty("gpom.registry.failMissingBlockItemNamespaces", "");
+        DEFAULTS.setProperty("gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled", "true");
         DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.enabled", "true");
         DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.useHeiIngredients", "true");
         DEFAULTS.setProperty("gpom.sfm.lightweightSearchCache.workers", "0");
@@ -705,6 +706,7 @@ public final class GpomEarlyConfig {
                 "gpom.registry.ignoreMissingAetherEnchantmentNamespaces",
                 "gpom.registry.ignoreMissingSoundEventNamespaces",
                 "gpom.registry.failMissingBlockItemNamespaces",
+                "gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled",
                 "gpom.sfm.lightweightSearchCache.enabled",
                 "gpom.sfm.lightweightSearchCache.useHeiIngredients",
                 "gpom.sfm.lightweightSearchCache.workers"
@@ -1106,6 +1108,8 @@ public final class GpomEarlyConfig {
                 return "Comma-separated namespaces whose stale missing SoundEvent world mappings are ignored instead of opening Forge's missing-mapping confirmation gate.";
             case "gpom.registry.failMissingBlockItemNamespaces":
                 return "Comma-separated namespaces whose missing Block or Item mappings must hard-fail world load instead of allowing Forge to continue and risk saving stripped chunks.";
+            case "gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled":
+                return "Defers TeslaCoreLib addon sync and work-energy recalculation while Industrial Foregoing's Mob Crusher is reading NBT, then refreshes upgrade state on the first stable tile tick. No-op when either mod is absent.";
             case "gpom.sfm.lightweightSearchCache.enabled":
                 return "Replaces SFM's login-time advanced-tooltip search index with a faster name/id/ore dictionary index for item filter search.";
             case "gpom.sfm.lightweightSearchCache.useHeiIngredients":
@@ -1489,6 +1493,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingAetherEnchantmentNamespaces");
         copySystemPropertyIfAbsent("gpom.registry.ignoreMissingSoundEventNamespaces");
         copySystemPropertyIfAbsent("gpom.registry.failMissingBlockItemNamespaces");
+        copySystemPropertyIfAbsent("gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled");
         copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.enabled");
         copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.useHeiIngredients");
         copySystemPropertyIfAbsent("gpom.sfm.lightweightSearchCache.workers");
@@ -1714,6 +1719,10 @@ public final class GpomEarlyConfig {
 
     public static int sfmLightweightSearchCacheWorkers() {
         return Math.max(0, intValue("gpom.sfm.lightweightSearchCache.workers", 0));
+    }
+
+    public static boolean industrialForegoingMobCrusherTeslaUpgradeLoadGuardEnabled() {
+        return booleanValue("gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled");
     }
 
     public static boolean ae2PatternDiagnosticsEnabled() {

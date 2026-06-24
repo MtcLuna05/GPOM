@@ -19,7 +19,10 @@
     "agricraft.MixinWorldAgriCraftChannelBulkPlacement",
     "baubles.MixinContainerPlayerSideSlots",
     "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard",
-    "betterportals.MixinServerWorldsManagerMissingTransferRepair"
+    "betterportals.MixinServerWorldsManagerMissingTransferRepair",
+    "industrialforegoing.MixinMobRelocatorTileTeslaUpgradeLoadGuard",
+    "teslacorelib.MixinElectricMachineMobCrusherLoadGuard",
+    "teslacorelib.MixinSyncTileEntityMobCrusherLoadGuard"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",

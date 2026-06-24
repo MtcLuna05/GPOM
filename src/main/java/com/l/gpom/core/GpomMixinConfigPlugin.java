@@ -47,6 +47,11 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "vswe/superfactory/client/IndexItemsOnLogin.class",
             "vswe/superfactory/util/SearchUtil.class"
     };
+    private static final String[] IF_MOB_CRUSHER_TESLA_LOAD_GUARD_TARGETS = {
+            "com/buuz135/industrial/tile/mob/MobRelocatorTile.class",
+            "net/ndrei/teslacorelib/tileentities/SyncTileEntity.class",
+            "net/ndrei/teslacorelib/tileentities/ElectricMachine.class"
+    };
     @Override
     public void onLoad(String mixinPackage) {
     }
@@ -154,7 +159,22 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             return present;
         }
+        if (isIndustrialForegoingMobCrusherTeslaLoadGuardMixin(mixinClassName)) {
+            boolean enabled = GpomEarlyConfig.industrialForegoingMobCrusherTeslaUpgradeLoadGuardEnabled();
+            boolean present = enabled && allResourcesPresent(IF_MOB_CRUSHER_TESLA_LOAD_GUARD_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM Industrial Foregoing] mixin={} enabled={} targetsPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return present;
+        }
         return true;
+    }
+
+    private static boolean isIndustrialForegoingMobCrusherTeslaLoadGuardMixin(String mixinClassName) {
+        return mixinClassName.equals("com.l.gpom.mixin.industrialforegoing.MixinMobRelocatorTileTeslaUpgradeLoadGuard")
+                || mixinClassName.equals("com.l.gpom.mixin.teslacorelib.MixinElectricMachineMobCrusherLoadGuard")
+                || mixinClassName.equals("com.l.gpom.mixin.teslacorelib.MixinSyncTileEntityMobCrusherLoadGuard");
     }
 
     private static boolean isClientOnlyMixin(String mixinClassName) {
