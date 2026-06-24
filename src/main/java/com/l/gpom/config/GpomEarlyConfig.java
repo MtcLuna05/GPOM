@@ -1021,7 +1021,7 @@ public final class GpomEarlyConfig {
             case "gpom.runtimeSinkProfiler.forgeEvents.profileAll":
                 return "Profiles every Forge event post and handler instead of only tick, world, chunk, render, and GUI events. High volume.";
             case "gpom.client.fastNotifyBlockUpdate.enabled":
-                return "Uses a cached MethodHandle and reusable listener snapshot for World.notifyBlockUpdate dispatch instead of reflective per-listener calls.";
+                return "Uses a cached MethodHandle and reusable listener snapshot for client World.notifyBlockUpdate dispatch. Server worlds always use vanilla dispatch.";
             case "gpom.client.dedupeRenderSectionUpdates.enabled":
                 return "Suppresses duplicate same-tick RenderGlobal dirty marks for the same 16x16x16 render section. Unique section updates still pass through immediately.";
             case "gpom.ae2.patternDiagnostics.enabled":

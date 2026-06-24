@@ -43,6 +43,11 @@ public abstract class MixinWorldNotifyBlockUpdateSnapshot {
             return;
         }
 
+        World world = (World) (Object) this;
+        if (!world.isRemote) {
+            return;
+        }
+
         MethodHandle notifyHandle = gpom$listenerNotifyBlockUpdateHandle();
         if (notifyHandle == null) {
             return;
@@ -66,7 +71,7 @@ public abstract class MixinWorldNotifyBlockUpdateSnapshot {
         for (int i = 0; i < size; i++) {
             IWorldEventListener listener = snapshot[i];
             if (listener != null) {
-                gpom$notifyBlockUpdate(notifyHandle, listener, (World) (Object) this, pos, oldState, newState, flags);
+                gpom$notifyBlockUpdate(notifyHandle, listener, world, pos, oldState, newState, flags);
                 snapshot[i] = null;
             }
         }
