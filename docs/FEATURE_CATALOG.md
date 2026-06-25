@@ -111,6 +111,7 @@ Behavior details:
 Live MeatballCraft posture:
 
 - Broad lifecycle threading is enabled in the live profile with `allowlist=*` and empirical phase denylists.
+- Blockcraftery and Mystical Lib stay on main-thread PreInit because Mystical Lib uses global active-mod state while Blockcraftery creates namespaced content through that library.
 
 Risk level: high when broad allowlists are used. Deny failing mods by phase first; patch only stable, high-value failures.
 
@@ -194,6 +195,7 @@ Live MeatballCraft posture:
 
 - Registry parallelism is enabled with `workers=6`, broad `allowlist=*`, and a large empirical denylist.
 - `minecraft:recipes` parallelism remains disabled by `gpom.registry.parallelRegisterEvents.recipes.enabled=false` even if recipes appear in the registry list.
+- Blockcraftery and Mystical Lib registry listeners stay serial after a run registered Blockcraftery blocks under `mysticallib:*`, causing model lookups such as `mysticallib:blockstates/editable_door.json`.
 
 Risk level: high. Add narrow `modid@registry` denylists for failures rather than disabling the whole dispatcher unless the failure is systemic.
 
@@ -646,6 +648,7 @@ Capabilities:
 - ArchitectureCraft accurate hitboxes and optional parent-material occlusion.
 - Blockcraftery baked-model render-layer compatibility when AUSM is absent.
 - ArchitectureCraft fast shape lighting when AUSM is absent.
+- Blockcraftery/Mystical Lib startup ownership is handled by lifecycle/registry denylists, not by the model-layer patch; the model patch remains optional and no-ops when Blockcraftery is absent.
 - GPOM detects AUSM through classpath resource checks without a hard dependency.
 
 Ownership split with AUSM:
