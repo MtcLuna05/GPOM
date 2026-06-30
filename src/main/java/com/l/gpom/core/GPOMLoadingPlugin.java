@@ -45,6 +45,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         return new String[] {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
                 "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
+                "com.l.gpom.core.CodeChickenLibModelStateTransformer",
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
                 "com.l.gpom.core.ForestryRecipeManagerSerializationTransformer",
                 "com.l.gpom.core.HammerCoreConstructionTransformer",

@@ -15,6 +15,7 @@ import java.lang.reflect.Method;
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         registerBaublesSideSlotsNetwork();
+        registerDankStoragePickupSync();
         HeiQuickCraftNetwork.registerIfNeeded();
         MissingMappingRepairs.register();
         BloodMagicWorldMapRecoveryEvents.register();
@@ -32,6 +33,13 @@ public class CommonProxy {
             return;
         }
         invokeOptional("baubles", "com.l.gpom.compat.baubles.BaublesSideSlotsNetwork", "registerIfEnabled");
+    }
+
+    private static void registerDankStoragePickupSync() {
+        if (!GpomEarlyConfig.dankStoragePortablePickupSyncEnabled() || !Loader.isModLoaded("dankstorage")) {
+            return;
+        }
+        invokeOptional("dankstorage", "com.l.gpom.compat.dankstorage.DankStoragePortablePickupSync", "registerIfEnabled");
     }
 
     private static void registerAe2PatternDiagnostics() {

@@ -238,6 +238,17 @@ public final class ForgeConstructionAnnotationOptimizations {
                 Class<?> subscriberClass;
                 try {
                     subscriberClass = Class.forName(className, false, loader);
+                } catch (ClassNotFoundException | NoClassDefFoundError throwable) {
+                    if (injected == 0) {
+                        GPOM.LOGGER.warn(
+                                "[ForgeConstructionAnnotationOptimizations] Could not load automatic subscriber {} for {}; falling back to Forge",
+                                className,
+                                mod.getModId(),
+                                throwable
+                        );
+                        return false;
+                    }
+                    throw throwable;
                 } finally {
                     StartupProfiler.endAutomaticSubscriberClassLoad(mod.getModId(), className, loadStartedAt);
                 }

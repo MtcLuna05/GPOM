@@ -63,6 +63,8 @@ public final class MissingMappingRepairs {
             GpomEarlyConfig.registryIgnoredMissingBlockItemNamespaces();
     private static final Set<String> IGNORED_MISSING_AETHER_ENCHANTMENT_NAMESPACES =
             GpomEarlyConfig.registryIgnoredMissingAetherEnchantmentNamespaces();
+    private static final Set<String> IGNORED_MISSING_POTION_TYPE_NAMESPACES =
+            GpomEarlyConfig.registryIgnoredMissingPotionTypeNamespaces();
     private static final Set<String> FAIL_MISSING_BLOCK_ITEM_NAMESPACES =
             GpomEarlyConfig.registryFailMissingBlockItemNamespaces();
 
@@ -88,6 +90,13 @@ public final class MissingMappingRepairs {
                 remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("modularmachinery", "blockfactorycontroller"), "block");
             } else if (isMysticalLibAoAGrass(key)) {
                 remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("aoa3", path(key)), "block");
+            } else if (isMysticalLibBlockcrafteryEditableBlock(key)) {
+                mapping.ignore();
+                GPOM.LOGGER.warn(
+                        "[MissingMappingRepairs] Ignored stale duplicate Blockcraftery/MysticalLib block mapping {}; live blockcraftery:{} entry already exists",
+                        key,
+                        path(key)
+                );
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
             } else if (isIgnoredMissingBlockItemNamespace(key)) {
@@ -131,14 +140,19 @@ public final class MissingMappingRepairs {
 
     @SubscribeEvent
     public static void onMissingPotionTypeMappings(RegistryEvent.MissingMappings<PotionType> event) {
+        IgnoreSummary ignored = new IgnoreSummary("potion type", IGNORED_MISSING_POTION_TYPE_NAMESPACES);
         for (RegistryEvent.MissingMappings.Mapping<PotionType> mapping : event.getAllMappings()) {
             if (isCoFHCore(mapping.key)) {
                 if (!remapSameKey(mapping, ForgeRegistries.POTION_TYPES, "potion type")) {
                     mapping.ignore();
                     GPOM.LOGGER.warn("[MissingMappingRepairs] Ignored legacy CoFHCore potion type mapping {}; no live target exists", mapping.key);
                 }
+            } else if (isIgnoredMissingPotionTypeNamespace(mapping.key)) {
+                mapping.ignore();
+                ignored.add(mapping.key);
             }
         }
+        ignored.log();
     }
 
     @SubscribeEvent
@@ -198,6 +212,10 @@ public final class MissingMappingRepairs {
 
     private static boolean isMysticalLibAoAGrass(ResourceLocation key) {
         return key != null && "mysticallib".equals(namespace(key)) && AOA_GRASS_BLOCKS.contains(path(key));
+    }
+
+    private static boolean isMysticalLibBlockcrafteryEditableBlock(ResourceLocation key) {
+        return key != null && "mysticallib".equals(namespace(key)) && BLOCKCRAFTERY_EDITABLE_BLOCKS.contains(path(key));
     }
 
     private static boolean isBlockcrafteryEditableBlock(ResourceLocation key) {
@@ -293,6 +311,10 @@ public final class MissingMappingRepairs {
 
     private static boolean isIgnoredMissingAetherEnchantmentNamespace(ResourceLocation key) {
         return key != null && IGNORED_MISSING_AETHER_ENCHANTMENT_NAMESPACES.contains(namespace(key));
+    }
+
+    private static boolean isIgnoredMissingPotionTypeNamespace(ResourceLocation key) {
+        return key != null && IGNORED_MISSING_POTION_TYPE_NAMESPACES.contains(namespace(key));
     }
 
     private static boolean isAetherEnchantmentRegistry(RegistryEvent.MissingMappings<?> event) {

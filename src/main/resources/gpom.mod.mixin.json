@@ -19,7 +19,8 @@
     "agricraft.MixinWorldAgriCraftChannelBulkPlacement",
     "baubles.MixinContainerPlayerSideSlots",
     "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard",
-    "betterportals.MixinServerWorldsManagerMissingTransferRepair"
+    "betterportals.MixinServerWorldsManagerMissingTransferRepair",
+    "tileentity.MixinTileEntityMissingMappingSaveGuard"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",

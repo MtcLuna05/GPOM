@@ -8,6 +8,7 @@ import com.l.gpom.util.EarlySplashBridge;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.core.ChickenAsmConcurrencyTransformer;
 import com.l.gpom.profiling.StartupProfiler;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.LoaderState;
 import net.minecraftforge.fml.common.ModContainer;
 import net.minecraftforge.fml.common.ProgressManager;
@@ -1336,7 +1337,14 @@ public final class FmlParallelLoadingScheduler {
                 StartupProfiler.endProbe("FML dispatch " + eventType(phaseEvent) + " applyModContainer", applyStartedAt);
             }
             ThreadContext.put("mod", modId);
-            FmlParallelLoadingContext.setActiveContainer(mod);
+            Loader loader = mainThread ? Loader.instance() : null;
+            ModContainer previousActiveContainer = null;
+            if (mainThread) {
+                previousActiveContainer = loader.activeModContainer();
+                loader.setActiveModContainer(mod);
+            } else {
+                FmlParallelLoadingContext.setActiveContainer(mod);
+            }
             try {
                 long lookupStartedAt = StartupProfiler.beginProbe();
                 EventBus eventBus = eventChannels.get(modId);
@@ -1351,7 +1359,11 @@ public final class FmlParallelLoadingScheduler {
                     StartupProfiler.endProbe("FML dispatch " + eventType(phaseEvent) + " eventBusPost " + modId, postStartedAt);
                 }
             } finally {
-                FmlParallelLoadingContext.clearActiveContainer();
+                if (mainThread) {
+                    loader.setActiveModContainer(previousActiveContainer);
+                } else {
+                    FmlParallelLoadingContext.clearActiveContainer();
+                }
                 ThreadContext.remove("mod");
             }
 

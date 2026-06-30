@@ -4,6 +4,7 @@ import com.l.gpom.util.ReflectionFields;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.World;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
@@ -37,7 +38,7 @@ public final class ClientDimensionHandoffCleanup {
     }
 
     private static void clearMinecraftParticles(Minecraft minecraft) {
-        Object effectRenderer = ReflectionFields.get(minecraft, "effectRenderer", "field_71452_i", "effectRenderer");
+        Object effectRenderer = ReflectionFields.get(minecraft, "effectRenderer", "effectRenderer", "field_71452_i", "j");
         if (effectRenderer == null) {
             return;
         }
@@ -53,10 +54,13 @@ public final class ClientDimensionHandoffCleanup {
             }
         } catch (Throwable ignored) {
         }
+
+        clearCollectionArray(effectRenderer, "fxLayers", "fxLayers", "field_78876_b", "b");
+        clearCollection(effectRenderer, "particleEmitters", "particleEmitters", "field_178933_d", "d");
     }
 
     private static Object currentWorld(Minecraft minecraft) {
-        return ReflectionFields.get(minecraft, "world", "field_71441_e", "world");
+        return ReflectionFields.get(minecraft, "world", "world", "field_71441_e", "f");
     }
 
     private static void cleanupAstralEffects() {
@@ -79,31 +83,78 @@ public final class ClientDimensionHandoffCleanup {
             if (method != null) {
                 method.invoke(null);
             }
-            clearAstralStaticEffectCollections(effectHandler);
+            clearAstralEffectCollections(effectHandler);
         } catch (Throwable ignored) {
         }
     }
 
-    private static void clearAstralStaticEffectCollections(Class<?> effectHandler) {
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "complexEffects", "complexEffects"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "toAddBuffer", "toAddBuffer"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "fastRenderDepthParticles", "fastRenderDepthParticles"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "fastRenderParticles", "fastRenderParticles"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "fastRenderGatewayParticles", "fastRenderGatewayParticles"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "fastRenderLightnings", "fastRenderLightnings"));
-        clearNestedCollections(ReflectionFields.getStatic(effectHandler, "objects", "objects"));
+    private static void clearAstralEffectCollections(Class<?> effectHandler) {
+        clearStaticCollection(effectHandler, "toAddBuffer");
+        clearStaticCollection(effectHandler, "fastRenderDepthParticles");
+        clearStaticCollection(effectHandler, "fastRenderParticles");
+        clearStaticCollection(effectHandler, "fastRenderGatewayParticles");
+        clearStaticCollection(effectHandler, "fastRenderLightnings");
+
+        // Preserve the render target/depth maps; AUSM expects those buckets to keep existing.
+        Object complexEffects = ReflectionFields.getStatic(effectHandler, "complexEffects", "complexEffects");
+        if (complexEffects instanceof Map) {
+            for (Object byLayer : ((Map<?, ?>) complexEffects).values()) {
+                clearNestedCollections(byLayer);
+            }
+        }
+
+        Object objects = ReflectionFields.getStatic(effectHandler, "objects", "objects");
+        if (objects instanceof Map) {
+            ((Map<?, ?>) objects).clear();
+        }
+
+        Object instance = ReflectionFields.getStatic(effectHandler, "instance", "instance");
+        if (instance != null) {
+            ReflectionFields.set(instance, null, "uiGateway", "uiGateway");
+            ReflectionFields.set(instance, null, "structurePreview", "structurePreview");
+            ReflectionFields.set(instance, null, "influenceSizePreview", "influenceSizePreview");
+        }
+    }
+
+    private static void clearStaticCollection(Class<?> owner, String name) {
+        Object value = ReflectionFields.getStatic(owner, name, name);
+        if (value instanceof Collection) {
+            ((Collection<?>) value).clear();
+        }
+    }
+
+    private static void clearCollection(Object owner, String purpose, String... names) {
+        Object value = ReflectionFields.get(owner, purpose, names);
+        if (value instanceof Collection) {
+            ((Collection<?>) value).clear();
+        }
+    }
+
+    private static void clearCollectionArray(Object owner, String purpose, String... names) {
+        clearNestedCollections(ReflectionFields.get(owner, purpose, names));
     }
 
     private static void clearNestedCollections(Object value) {
-        if (value instanceof Map) {
-            for (Object nested : ((Map<?, ?>) value).values()) {
-                clearNestedCollections(nested);
-            }
-            ((Map<?, ?>) value).clear();
+        if (value == null) {
             return;
         }
         if (value instanceof Collection) {
             ((Collection<?>) value).clear();
+            return;
+        }
+        if (value instanceof Map) {
+            for (Object nested : ((Map<?, ?>) value).values()) {
+                clearNestedCollections(nested);
+            }
+            return;
+        }
+        Class<?> type = value.getClass();
+        if (!type.isArray()) {
+            return;
+        }
+        int length = Array.getLength(value);
+        for (int i = 0; i < length; i++) {
+            clearNestedCollections(Array.get(value, i));
         }
     }
 

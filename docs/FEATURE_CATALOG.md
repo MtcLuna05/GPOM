@@ -170,7 +170,7 @@ gpom.registry.parallelRegisterEvents.recipes.enabled=false
 gpom.registry.parallelRegisterEvents.workers=0
 gpom.registry.parallelRegisterEvents.queuedCommit=true
 gpom.registry.parallelRegisterEvents.proxyEventRegistry=true
-gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist=moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes
+gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist=moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes,draconicevolution@minecraft:recipes
 gpom.registry.parallelRegisterEvents.immediateCommitRegistries=minecraft:items,minecraft:entities
 gpom.registry.parallelRegisterEvents.proxyImmediateRegistries=false
 gpom.registry.parallelRegisterEvents.orderedWaveRegistries=minecraft:items
@@ -196,6 +196,8 @@ Live MeatballCraft posture:
 - Registry parallelism is enabled with `workers=6`, broad `allowlist=*`, and a large empirical denylist.
 - `minecraft:recipes` parallelism remains disabled by `gpom.registry.parallelRegisterEvents.recipes.enabled=false` even if recipes appear in the registry list.
 - Blockcraftery and Mystical Lib registry listeners stay serial after a run registered Blockcraftery blocks under `mysticallib:*`, causing model lookups such as `mysticallib:blockstates/editable_door.json`.
+- Main-thread FML lifecycle dispatch uses Forge's real active mod container instead of GPOM's worker thread-local override, so MysticalLib's explicit `LibRegistry.setActiveMod("blockcraftery", ...)` can affect one-argument `setRegistryName(name)` calls.
+- Draconic Evolution `minecraft:recipes` stays serial and proxy-denied because its recipe helper registers shaped/fusion recipes through direct Forge registry writes, and the particle-generator block uses metadata-sensitive variants such as Particle Generator and Energy Core Stabilizer.
 
 Risk level: high. Add narrow `modid@registry` denylists for failures rather than disabling the whole dispatcher unless the failure is systemic.
 
@@ -505,9 +507,12 @@ gpom.betterPortals.cleanupClientWorlds=false
 Capabilities:
 
 - Client world-load, unload, and dimension-switch snapshots for memory/state debugging.
-- JourneyMap cleanup on client world unload, disconnect, and Minecraft `loadWorld` handoffs.
-- BetterPortals client view-world cleanup through BetterPortals' own reset path when enabled.
+- JourneyMap cleanup on client world unload and disconnect; Minecraft `loadWorld` handoffs are suppressed by default and require opt-in cleanup.
+- BetterPortals client view-world cleanup through BetterPortals' own reset path when explicitly enabled.
 - Client-side `World.notifyBlockUpdate` listener snapshot so listeners that remove themselves during chunk data handling cannot shrink the live listener list mid-loop.
+- Scoped dimension-handoff visual cleanup clears vanilla Minecraft particles and Astral Sorcery dynamic effect lists. It deliberately does not clear generic `RenderGlobal` update queues during BetterPortals/main-view handoffs, because those queues may contain pending Nothirium/AUSM chunk rebuild work.
+- Render-section update dedupe is disabled by default. Suppressing repeated same-section `RenderGlobal.markBlockRangeForRenderUpdate` calls is not safe in the current Nothirium/AUSM/CodeChickenLib profile.
+- CodeChickenLib bakery state repair is enabled by default. It normalizes null `ccl_model_error_state` values to CCL `ErrorState.OK` before CCL's bakery returns the missing model, preventing Nothirium/AUSM chunk rebuilds from breaking CCL-controlled models such as AE2 cover/facade render paths.
 
 JourneyMap cleanup details:
 
@@ -580,6 +585,7 @@ Capabilities:
 - Shift-left quick-equip runs only while the rail is open and only from normal inventory/hotbar slots.
 - Optional Aether Legacy accessory slots can be appended to the same rail using Aether's native slot validation and icons.
 - Optional CosmeticArmorReworked armor slots can be appended to the same rail with server-routed slot writes to avoid ghost stacks.
+- Side-rail normal pickup is server-authoritative. The client sends only GPOM's side-rail packet tagged with the original empty-cursor/occupied-slot intent; the server validates the side-rail slot, performs explicit cursor pickup, clears the source slot, and syncs the cursor. This avoids vanilla `windowClick` races that snap custom side-rail pickups back into the slot. Shift-click extraction remains on the same server packet path.
 - CosmeticArmorReworked per-bauble visibility toggles are synced to rail positions and hidden when the rail closes.
 - Common-side network registration first checks `Loader.isModLoaded("baubles")` and then invokes the Baubles bridge reflectively so packs without Baubles can still load GPOM.
 
@@ -621,9 +627,9 @@ gpom.journeymap.cleanupLeaksOnDimensionHandoff=false
 Capabilities:
 
 - Replaces the waypoint manager's dimension cycling button with a scrollable dropup selector.
-- Right-clicking a dimension row pins or unpins it directly under All Dimensions and keeps the pin across game restarts.
+- Right-clicking a dimension row pins or unpins it directly under All Dimensions and keeps the ordered pin list across game restarts. Right-clicking All Dimensions clears the list.
 - Writes JourneyMap's existing selected-dimension field and refreshes through JourneyMap's own filtering path.
-- Cleans retained JourneyMap client world references on unload/disconnect/loadWorld handoffs.
+- Cleans retained JourneyMap client world references on unload/disconnect; `loadWorld` handoff cleanup is opt-in and suppressed by default for death/respawn safety.
 
 Risk level: low to medium. Reflection-only optional integration; registration checks JourneyMap classes before subscribing events.
 
@@ -710,6 +716,7 @@ Feature area: world/save compatibility.
 Key config:
 
 ```properties
+gpom.industrialForegoing.repairMissingTileEntityMappings=true
 gpom.industrialForegoing.mobCrusherTeslaUpgradeLoadGuard.enabled=false
 ```
 
@@ -719,14 +726,18 @@ Source finding:
 - TeslaCoreLib deserializes its addon `ItemStackHandler` from the tile NBT sync part, and the handler's load path replays addon `onAdded`/`onRemoved` callbacks.
 - TeslaCoreLib speed and energy upgrades recalculate ElectricMachine work-energy state from those callbacks.
 - The addon load path also calls `partialSync("addonItems")`, which can mark the chunk dirty while the tile is still being read from NBT.
+- TeslaCoreLib's `OrientedBlock.registerBlock()` registers machine tile entities as `<block registry name>_tile`; this is a global `TileEntity` registry mutation during block registration.
+- A 2026-06-27 crash showed `MobRelocatorTile` missing its tile mapping during `SyncTileEntity.testSync()` serialization, which can also affect chunk/save writes and leave a save in a risky state after the crash.
 
 Capabilities:
 
+- `gpom.industrialForegoing.repairMissingTileEntityMappings=true` reflects over Industrial Foregoing's block list after load complete and re-registers missing TeslaCoreLib machine tile mappings without hard-linking IF/Tesla classes.
+- Industrial Foregoing block registration is denylisted from GPOM registry-event worker execution by default with `industrialforegoing@minecraft:blocks`, because tile registration is a side effect of that block listener.
 - Disabled by default after the 2026-06-24 startup crash where Industrial Foregoing's generator superclass was marked invalid during early loading.
 - The implementation remains in source for retargeting, but its mixins are not currently listed in `gpom.mod.mixin.json`.
 - Industrial Foregoing is forced onto main-thread PreInit by the default `fml.parallel.preInit.denylist` profile.
 
-Risk level: disabled. Do not re-enable until the installed-runtime class targets and startup behavior are validated.
+Risk level: medium for the disabled Mob Crusher load guard; low to medium for tile mapping repair. Do not re-enable the mixin guard until the installed-runtime class targets and startup behavior are validated.
 
 ## AE2 and Pattern Diagnostics
 
@@ -757,25 +768,42 @@ Feature area: world/save compatibility.
 Key config:
 
 ```properties
+gpom.tileEntity.missingMappingSaveGuard.enabled=true
+gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds=true
+gpom.actuallyAdditions.repairMissingTileEntityMappings=true
 gpom.enderio.repairMissingTileEntityMappings=true
+gpom.industrialForegoing.repairMissingTileEntityMappings=true
 gpom.registry.repairThaumicWondersMissingMappings=false
 gpom.registry.ignoreMissingBlockItemNamespaces=railcraft,ae2fc,packagedfluidcrafting
 gpom.registry.ignoreMissingAetherEnchantmentNamespaces=contenttweaker
-gpom.registry.ignoreMissingSoundEventNamespaces=erebus
+gpom.registry.ignoreMissingPotionTypeNamespaces=thermalfoundation
+gpom.registry.ignoreMissingSoundEventNamespaces=
 gpom.registry.failMissingBlockItemNamespaces=
 ```
 
 Capabilities:
 
+- Intercepts vanilla `TileEntity.writeInternal` when the tile class has no registered id, runs known mapping repair hooks, and prevents chunk send/save paths from crashing once a mapping is restored.
+- Can write exact known fallback tile ids for recognized classes when repair still cannot restore the registry. The current fallback is limited to Actually Additions tiles because `TileEntityBase.name` is the same metadata AA uses for `actuallyadditions:<name>`.
+- Repairs missing Actually Additions tile entity class-to-id mappings from Actually Additions' own tile metadata during late startup.
 - Repairs missing EnderIO tile entity class-to-id mappings from EnderIO's own metadata during late startup.
+- Repairs missing Industrial Foregoing/TeslaCoreLib tile mappings from IF's block list during late startup.
 - Ignores stale missing block/item mappings only for configured intentionally removed namespaces. Current pack defaults cover Railcraft decorative blocks disabled by config and stale AE2FC/PackagedFluidCrafting IDs from removed jars.
 - Ignores stale Aether API enchantment mappings only for configured namespaces in `aetherapi:enchantments`. Current pack default covers the old ContentTweaker `infinity_fruit_meta_0` entry.
+- Ignores stale PotionType mappings only for configured namespaces. Current pack default covers stale `thermalfoundation:*` potion types that have no live registry targets.
 - The missing-mapping repair listener is explicitly registered from GPOM preInit instead of relying on Forge automatic subscriber discovery, so stale-namespace ignores do not depend on annotation-subscriber optimization behavior.
-- Can ignore stale missing sound events for configured namespaces, currently `erebus`, to avoid hidden Forge confirmation gates for removed sounds.
+- Can ignore stale missing sound events for configured namespaces to avoid hidden Forge confirmation gates for removed sounds.
+- Ignores stale duplicate `mysticallib:editable_*` Blockcraftery block mappings after the live `blockcraftery:*` entries exist. Forge 1.12 cannot safely remap these old IDs onto the already-registered live Block objects in the same snapshot.
 - Can fail hard on missing block/item namespaces when configured for diagnostics.
 - Thaumic Wonders missing mapping repair remains disabled by default because prior testing showed those missing registries were intentionally disabled and not the cause of the observed issue.
+- Actually Additions is forced onto main-thread PreInit/Init and `actuallyadditions@minecraft:blocks` stays off registry-event workers because AA tile registration mutates the global vanilla `TileEntity` registry from lifecycle/block registration adjacent code.
 
 Risk level: medium to high. Block/item mapping behavior can affect existing worlds; sound-event ignores are lower risk.
+
+Save-guard boundary:
+
+- GPOM does not invent fallback ids for arbitrary tile classes. Unknown missing tile mappings still throw because writing a guessed id can reload as the wrong tile and damage the save more subtly.
+- Known repair hooks remain the preferred path. The fallback writer is a last-resort persistence guard for exact metadata-derived IDs.
 
 ## Log and Error Spam Suppression
 

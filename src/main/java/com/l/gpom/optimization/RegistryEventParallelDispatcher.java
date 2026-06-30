@@ -495,10 +495,21 @@ public final class RegistryEventParallelDispatcher {
             if (event instanceof IContextSetter) {
                 ((IContextSetter) event).setModContainer(owner);
             }
+        } else if (event instanceof IContextSetter) {
+            ((IContextSetter) event).setModContainer(owner);
         }
+        Loader loader = workerContext ? null : Loader.instance();
+        ModContainer previousActiveContainer = null;
         try {
+            if (!workerContext) {
+                previousActiveContainer = loader.activeModContainer();
+                loader.setActiveModContainer(owner);
+            }
             listener.invoke(event);
         } finally {
+            if (!workerContext) {
+                loader.setActiveModContainer(previousActiveContainer);
+            }
             if (workerContext) {
                 FmlParallelLoadingContext.clearActiveContainer();
                 ThreadContext.remove("mod");

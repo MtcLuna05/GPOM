@@ -29,6 +29,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public final class BaublesSideSlotsNetwork {
+    public static final int RAIL_TYPE_UNKNOWN = 0;
+    public static final int RAIL_TYPE_BAUBLE = 1;
+    public static final int RAIL_TYPE_AETHER = 2;
+    public static final int RAIL_TYPE_COSMETIC_ARMOR = 3;
     private static final SimpleNetworkWrapper NETWORK = NetworkRegistry.INSTANCE.newSimpleChannel(Reference.MOD_ID + "_baubles");
     private static volatile Field serverHandlerPlayerField;
     private static volatile Field playerOpenContainerField;
@@ -40,6 +44,7 @@ public final class BaublesSideSlotsNetwork {
     private static volatile Method sendContainerToPlayerMethod;
     private static volatile Method updateHeldItemMethod;
     private static volatile Method inventoryCarriedStackMethod;
+    private static volatile Method inventorySetCarriedStackMethod;
     private static volatile Method sendPacketMethod;
     private static boolean registered;
 
@@ -63,10 +68,34 @@ public final class BaublesSideSlotsNetwork {
     }
 
     public static void sendCosmeticSlotClick(int windowId, int slotNumber, int mouseButton, ClickType clickType) {
+        sendSideRailSlotClick(windowId, slotNumber, RAIL_TYPE_UNKNOWN, -1, mouseButton, clickType, false);
+    }
+
+    public static void sendSideRailSlotClick(int windowId, int slotNumber, int mouseButton, ClickType clickType) {
+        sendSideRailSlotClick(windowId, slotNumber, RAIL_TYPE_UNKNOWN, -1, mouseButton, clickType, false);
+    }
+
+    public static void sendSideRailSlotClick(int windowId, int slotNumber, int mouseButton, ClickType clickType, boolean emptyCursorPickup) {
+        sendSideRailSlotClick(windowId, slotNumber, RAIL_TYPE_UNKNOWN, -1, mouseButton, clickType, emptyCursorPickup);
+    }
+
+    public static void sendSideRailSlotClick(int windowId,
+                                             int slotNumber,
+                                             int railType,
+                                             int railIndex,
+                                             int mouseButton,
+                                             ClickType clickType,
+                                             boolean emptyCursorPickup) {
         if (!registered || clickType == null) {
             return;
         }
-        NETWORK.sendToServer(new CosmeticSlotClickMessage(windowId, slotNumber, mouseButton, clickType.ordinal()));
+        NETWORK.sendToServer(new CosmeticSlotClickMessage(windowId,
+                slotNumber,
+                railType,
+                railIndex,
+                mouseButton,
+                clickType.ordinal(),
+                emptyCursorPickup));
     }
 
     public static final class QuickEquipMessage implements IMessage {
@@ -108,33 +137,51 @@ public final class BaublesSideSlotsNetwork {
     public static final class CosmeticSlotClickMessage implements IMessage {
         private int windowId;
         private int slotNumber;
+        private int railType;
+        private int railIndex;
         private int mouseButton;
         private int clickType;
+        private boolean emptyCursorPickup;
 
         public CosmeticSlotClickMessage() {
         }
 
-        private CosmeticSlotClickMessage(int windowId, int slotNumber, int mouseButton, int clickType) {
+        private CosmeticSlotClickMessage(int windowId,
+                                         int slotNumber,
+                                         int railType,
+                                         int railIndex,
+                                         int mouseButton,
+                                         int clickType,
+                                         boolean emptyCursorPickup) {
             this.windowId = windowId;
             this.slotNumber = slotNumber;
+            this.railType = railType;
+            this.railIndex = railIndex;
             this.mouseButton = mouseButton;
             this.clickType = clickType;
+            this.emptyCursorPickup = emptyCursorPickup;
         }
 
         @Override
         public void fromBytes(ByteBuf buffer) {
             this.windowId = buffer.readInt();
             this.slotNumber = buffer.readInt();
+            this.railType = buffer.readInt();
+            this.railIndex = buffer.readInt();
             this.mouseButton = buffer.readInt();
             this.clickType = buffer.readInt();
+            this.emptyCursorPickup = buffer.readBoolean();
         }
 
         @Override
         public void toBytes(ByteBuf buffer) {
             buffer.writeInt(windowId);
             buffer.writeInt(slotNumber);
+            buffer.writeInt(railType);
+            buffer.writeInt(railIndex);
             buffer.writeInt(mouseButton);
             buffer.writeInt(clickType);
+            buffer.writeBoolean(emptyCursorPickup);
         }
     }
 
@@ -143,11 +190,14 @@ public final class BaublesSideSlotsNetwork {
         public IMessage onMessage(CosmeticSlotClickMessage message, MessageContext context) {
             EntityPlayerMP player = serverPlayer(context);
             if (player != null) {
-                scheduleOnServer(() -> clickCosmeticSlot(player,
+                scheduleOnServer(() -> clickSideRailSlot(player,
                         message.windowId,
                         message.slotNumber,
+                        message.railType,
+                        message.railIndex,
                         message.mouseButton,
-                        message.clickType));
+                        message.clickType,
+                        message.emptyCursorPickup));
             }
             return null;
         }
@@ -214,27 +264,28 @@ public final class BaublesSideSlotsNetwork {
         return target != null && BaublesSideSlotsCommon.moveOneItemToSlot(source, target, sourceStack);
     }
 
-    private static void clickCosmeticSlot(EntityPlayerMP player, int windowId, int slotNumber, int mouseButton, int clickTypeOrdinal) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !GpomEarlyConfig.baublesSideSlotsCosmeticArmorEnabled()) {
+    private static void clickSideRailSlot(EntityPlayerMP player,
+                                          int windowId,
+                                          int slotNumber,
+                                          int railType,
+                                          int railIndex,
+                                          int mouseButton,
+                                          int clickTypeOrdinal,
+                                          boolean emptyCursorPickup) {
+        if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
             return;
         }
 
         Container container = openContainer(player);
         if (container == null
                 || BaublesSideSlotsCommon.windowId(container) != windowId
-                || slotNumber < 0
                 || mouseButton != 0) {
             return;
         }
 
         java.util.List<Slot> slots = BaublesSideSlotsCommon.slots(container);
-        if (slotNumber >= slots.size()) {
-            return;
-        }
-
-        Slot slot = slots.get(slotNumber);
-        if (!CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)
-                || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
+        Slot slot = findSideRailSlot(slots, slotNumber, railType, railIndex);
+        if (!BaublesSideSlotsCommon.isSideRailSlot(slot) || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
             return;
         }
 
@@ -246,14 +297,129 @@ public final class BaublesSideSlotsNetwork {
         if (clickType == ClickType.QUICK_MOVE) {
             if (moveSideRailSlotToPlayerInventory(container, slot, player)) {
                 syncAfterMutation(player, container);
-                CosmeticArmorSideSlotsBridge.syncSlot(player, CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot));
+                syncCosmeticSlotIfNeeded(player, slot);
             }
             return;
         }
 
-        slotClick(container, slotNumber, mouseButton, clickType, player);
+        if (clickPickupSideRailSlot(slot, player)) {
+            syncAfterMutation(player, container);
+            syncCosmeticSlotIfNeeded(player, slot);
+            return;
+        }
         syncAfterMutation(player, container);
-        CosmeticArmorSideSlotsBridge.syncSlot(player, CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot));
+        syncCosmeticSlotIfNeeded(player, slot);
+    }
+
+    private static Slot findSideRailSlot(java.util.List<Slot> slots, int slotNumber, int railType, int railIndex) {
+        if (slots == null || slots.isEmpty()) {
+            return null;
+        }
+
+        if (railType != RAIL_TYPE_UNKNOWN && railIndex >= 0) {
+            for (Slot candidate : slots) {
+                if (candidate != null
+                        && BaublesSideSlotsCommon.isSideRailSlot(candidate)
+                        && railType(candidate) == railType
+                        && railIndex(candidate) == railIndex) {
+                    return candidate;
+                }
+            }
+        }
+
+        if (slotNumber >= 0 && slotNumber < slots.size()) {
+            Slot candidate = slots.get(slotNumber);
+            if (BaublesSideSlotsCommon.isSideRailSlot(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static int railType(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return RAIL_TYPE_BAUBLE;
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return RAIL_TYPE_AETHER;
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return RAIL_TYPE_COSMETIC_ARMOR;
+        }
+        return RAIL_TYPE_UNKNOWN;
+    }
+
+    private static int railIndex(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return BaublesSideSlotsCommon.baubleSlotIndex(slot);
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return AetherSideSlotsBridge.accessorySlotIndex(slot);
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot);
+        }
+        return -1;
+    }
+
+    private static void syncCosmeticSlotIfNeeded(EntityPlayerMP player, Slot slot) {
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            CosmeticArmorSideSlotsBridge.syncSlot(player, CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot));
+        }
+    }
+
+    private static boolean pickupSideRailSlot(Slot slot, EntityPlayerMP player) {
+        if (slot == null
+                || player == null
+                || !BaublesSideSlotsCommon.canTakeSlotStack(slot, player)
+                || !BaublesSideSlotsCommon.slotHasStack(slot)) {
+            return false;
+        }
+
+        ItemStack stack = BaublesSideSlotsCommon.slotStack(slot);
+        if (BaublesSideSlotsCommon.isEmptyStack(stack)) {
+            return false;
+        }
+
+        setCarriedStack(player, BaublesSideSlotsCommon.copyStack(stack));
+        BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.emptyStack());
+        BaublesSideSlotsCommon.slotChanged(slot);
+        return true;
+    }
+
+    private static boolean clickPickupSideRailSlot(Slot slot, EntityPlayerMP player) {
+        if (slot == null || player == null) {
+            return false;
+        }
+
+        ItemStack carried = carriedStack(player);
+        ItemStack slotStack = BaublesSideSlotsCommon.slotStack(slot);
+        boolean carriedEmpty = BaublesSideSlotsCommon.isEmptyStack(carried);
+        boolean slotEmpty = BaublesSideSlotsCommon.isEmptyStack(slotStack);
+
+        if (carriedEmpty && slotEmpty) {
+            return false;
+        }
+        if (carriedEmpty) {
+            return pickupSideRailSlot(slot, player);
+        }
+        if (!BaublesSideSlotsCommon.isSlotItemValid(slot, carried)) {
+            return false;
+        }
+        if (slotEmpty) {
+            BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.copyStack(carried));
+            setCarriedStack(player, BaublesSideSlotsCommon.emptyStack());
+            BaublesSideSlotsCommon.slotChanged(slot);
+            return true;
+        }
+        if (!BaublesSideSlotsCommon.canTakeSlotStack(slot, player)) {
+            return false;
+        }
+
+        BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.copyStack(carried));
+        setCarriedStack(player, BaublesSideSlotsCommon.copyStack(slotStack));
+        BaublesSideSlotsCommon.slotChanged(slot);
+        return true;
     }
 
     private static boolean moveSideRailSlotToPlayerInventory(Container container, Slot source, EntityPlayerMP player) {
@@ -511,6 +677,27 @@ public final class BaublesSideSlotsNetwork {
             return value instanceof ItemStack ? (ItemStack) value : BaublesSideSlotsCommon.emptyStack();
         } catch (Throwable ignored) {
             return BaublesSideSlotsCommon.emptyStack();
+        }
+    }
+
+    private static void setCarriedStack(EntityPlayerMP player, ItemStack stack) {
+        InventoryPlayer inventory = inventory(player);
+        if (inventory == null) {
+            return;
+        }
+
+        try {
+            Method method = inventorySetCarriedStackMethod;
+            if (method == null || !method.getDeclaringClass().isAssignableFrom(inventory.getClass())) {
+                method = findMethod(inventory.getClass(), new Class<?>[] {ItemStack.class},
+                        "func_70437_b",
+                        "setItemStack");
+                inventorySetCarriedStackMethod = method;
+            }
+            if (method != null) {
+                method.invoke(inventory, stack == null ? BaublesSideSlotsCommon.emptyStack() : stack);
+            }
+        } catch (Throwable ignored) {
         }
     }
 

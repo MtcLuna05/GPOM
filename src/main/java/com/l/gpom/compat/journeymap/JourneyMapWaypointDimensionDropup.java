@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -43,8 +44,9 @@ public final class JourneyMapWaypointDimensionDropup {
     private static final Map<Object, DropupState> STATES = Collections.synchronizedMap(new WeakHashMap<Object, DropupState>());
     private static final Object PIN_FILE_LOCK = new Object();
     private static final String PIN_FILE_NAME = "gpom-journeymap-waypoint-pins.properties";
-    private static final String PIN_KEY = "pinnedProviderKey";
-    private static volatile String pinnedProviderKey;
+    private static final String PIN_KEYS = "pinnedProviderKeys";
+    private static final String LEGACY_PIN_KEY = "pinnedProviderKey";
+    private static volatile List<String> pinnedProviderKeys = Collections.emptyList();
     private static volatile boolean pinnedProviderLoaded;
 
     private JourneyMapWaypointDimensionDropup() {
@@ -193,15 +195,15 @@ public final class JourneyMapWaypointDimensionDropup {
     }
 
     private static void togglePinnedEntry(DropupState state, Entry entry) {
-        loadPinnedProviderKey();
+        loadPinnedProviderKeys();
         if (entry.provider == null || entry.key == null) {
-            pinnedProviderKey = null;
-        } else if (entry.key.equals(pinnedProviderKey)) {
-            pinnedProviderKey = null;
+            pinnedProviderKeys = Collections.emptyList();
+        } else if (pinnedProviderKeys.contains(entry.key)) {
+            pinnedProviderKeys = withoutPinnedKey(entry.key);
         } else {
-            pinnedProviderKey = entry.key;
+            pinnedProviderKeys = withPinnedKey(entry.key);
         }
-        savePinnedProviderKey();
+        savePinnedProviderKeys();
         state.scroll = 0;
     }
 
@@ -256,36 +258,58 @@ public final class JourneyMapWaypointDimensionDropup {
 
     private static List<Entry> entries(Object button) throws ReflectiveOperationException {
         Object current = staticField(button.getClass(), "currentWorldProvider");
-        loadPinnedProviderKey();
-        String pinnedKey = pinnedProviderKey;
+        loadPinnedProviderKeys();
+        List<String> pinnedKeys = pinnedProviderKeys;
         List<Entry> entries = new ArrayList<Entry>();
         entries.add(new Entry(null, "All Dimensions", null, false, sameProvider(null, current)));
-        Entry pinned = null;
+        List<Entry> unpinned = new ArrayList<Entry>();
+        Map<String, Entry> pinnedByKey = new LinkedHashMap<String, Entry>();
         Object providers = fieldValue(button, "dimensionProviders");
         if (providers instanceof Iterable) {
             for (Object provider : (Iterable<?>) providers) {
                 if (provider != null) {
                     String key = providerKey(provider);
-                    boolean pinnedEntry = key != null && key.equals(pinnedKey);
+                    boolean pinnedEntry = key != null && pinnedKeys.contains(key);
                     Entry entry = new Entry(provider, providerLabel(provider), key, pinnedEntry, sameProvider(provider, current));
-                    if (pinnedEntry && pinned == null) {
-                        pinned = entry;
+                    if (pinnedEntry && !pinnedByKey.containsKey(key)) {
+                        pinnedByKey.put(key, entry);
                     } else {
-                        entries.add(entry);
+                        unpinned.add(entry);
                     }
                 }
             }
         }
-        if (pinned != null) {
-            entries.add(1, pinned);
-        } else if (pinnedKey != null) {
-            pinnedProviderKey = null;
-            savePinnedProviderKey();
+        for (String key : pinnedKeys) {
+            Entry entry = pinnedByKey.get(key);
+            if (entry != null) {
+                entries.add(entry);
+            }
         }
+        entries.addAll(unpinned);
         return entries;
     }
 
-    private static void loadPinnedProviderKey() {
+    private static List<String> withPinnedKey(String key) {
+        List<String> current = pinnedProviderKeys;
+        if (current.contains(key)) {
+            return current;
+        }
+        List<String> next = new ArrayList<String>(current);
+        next.add(key);
+        return Collections.unmodifiableList(next);
+    }
+
+    private static List<String> withoutPinnedKey(String key) {
+        List<String> current = pinnedProviderKeys;
+        if (!current.contains(key)) {
+            return current;
+        }
+        List<String> next = new ArrayList<String>(current);
+        next.remove(key);
+        return next.isEmpty() ? Collections.<String>emptyList() : Collections.unmodifiableList(next);
+    }
+
+    private static void loadPinnedProviderKeys() {
         if (pinnedProviderLoaded) {
             return;
         }
@@ -301,30 +325,44 @@ public final class JourneyMapWaypointDimensionDropup {
             Properties properties = new Properties();
             try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file))) {
                 properties.load(input);
-                String value = properties.getProperty(PIN_KEY);
-                if (value != null) {
-                    value = value.trim();
-                }
-                pinnedProviderKey = value == null || value.isEmpty() ? null : value;
+                pinnedProviderKeys = parsePinnedKeys(properties);
             } catch (Throwable throwable) {
-                logFailure("loadPinnedProviderKey", throwable);
+                logFailure("loadPinnedProviderKeys", throwable);
             }
         }
     }
 
-    private static void savePinnedProviderKey() {
+    private static List<String> parsePinnedKeys(Properties properties) {
+        String value = properties.getProperty(PIN_KEYS);
+        if (value == null || value.trim().isEmpty()) {
+            value = properties.getProperty(LEGACY_PIN_KEY);
+        }
+        List<String> keys = new ArrayList<String>();
+        if (value != null) {
+            String[] parts = value.split(",");
+            for (String part : parts) {
+                String key = part == null ? "" : part.trim();
+                if (!key.isEmpty() && !keys.contains(key)) {
+                    keys.add(key);
+                }
+            }
+        }
+        return keys.isEmpty() ? Collections.<String>emptyList() : Collections.unmodifiableList(keys);
+    }
+
+    private static void savePinnedProviderKeys() {
         synchronized (PIN_FILE_LOCK) {
             File file = pinFile();
             File parent = file.getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-                logFailure("savePinnedProviderKey", new IllegalStateException("Unable to create " + parent));
+                logFailure("savePinnedProviderKeys", new IllegalStateException("Unable to create " + parent));
                 return;
             }
 
             File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
             try {
-                String key = pinnedProviderKey;
-                if (key == null || key.trim().isEmpty()) {
+                List<String> keys = pinnedProviderKeys;
+                if (keys.isEmpty()) {
                     if (file.isFile() && !file.delete()) {
                         throw new IllegalStateException("Unable to delete " + file);
                     }
@@ -335,7 +373,7 @@ public final class JourneyMapWaypointDimensionDropup {
                 }
 
                 Properties properties = new Properties();
-                properties.setProperty(PIN_KEY, key);
+                properties.setProperty(PIN_KEYS, joinCsv(keys));
                 try (BufferedOutputStream output = new BufferedOutputStream(new FileOutputStream(tmp))) {
                     properties.store(output, "GPOM JourneyMap waypoint dimension dropup pins");
                 }
@@ -346,9 +384,20 @@ public final class JourneyMapWaypointDimensionDropup {
                     throw new IllegalStateException("Unable to move " + tmp + " to " + file);
                 }
             } catch (Throwable throwable) {
-                logFailure("savePinnedProviderKey", throwable);
+                logFailure("savePinnedProviderKeys", throwable);
             }
         }
+    }
+
+    private static String joinCsv(List<String> values) {
+        StringBuilder builder = new StringBuilder();
+        for (String value : values) {
+            if (builder.length() > 0) {
+                builder.append(',');
+            }
+            builder.append(value);
+        }
+        return builder.toString();
     }
 
     private static File pinFile() {

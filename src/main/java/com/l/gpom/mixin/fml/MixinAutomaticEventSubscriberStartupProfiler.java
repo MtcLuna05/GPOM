@@ -21,7 +21,13 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
     private static final String GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE = "thaumcraft.client.fx.ParticleEngine";
 
     @Unique
+    private static final String GPOM_DANK_STORAGE_EVENT_HANDLER = "com.tfar.dankstorage.event.DankEventHandler";
+
+    @Unique
     private static boolean gpom$loggedThaumcraftParticleEngineSkip;
+
+    @Unique
+    private static boolean gpom$loggedDankStorageEventHandlerSkip;
 
     @Unique
     private static final ThreadLocal<String> gpom$currentModId = new ThreadLocal<>();
@@ -57,7 +63,7 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
         long startedAt = StartupProfiler.beginAutomaticSubscriberProbe();
         try {
             if (gpom$shouldSkipMissingSubscriber(className)) {
-                gpom$logThaumcraftParticleEngineSkip();
+                gpom$logMissingSubscriberSkip(className);
                 return GpomSkippedAutomaticSubscriber.class;
             }
             try {
@@ -99,19 +105,28 @@ public abstract class MixinAutomaticEventSubscriberStartupProfiler {
 
     @Unique
     private static boolean gpom$shouldSkipMissingSubscriber(String className) {
-        return GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE.equals(className)
-                && "thaumcraft".equals(gpom$currentModId.get());
+        String modId = gpom$currentModId.get();
+        return (GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE.equals(className) && "thaumcraft".equals(modId))
+                || (GPOM_DANK_STORAGE_EVENT_HANDLER.equals(className) && "dankstorage".equals(modId));
     }
 
     @Unique
-    private static void gpom$logThaumcraftParticleEngineSkip() {
-        if (gpom$loggedThaumcraftParticleEngineSkip) {
-            return;
+    private static void gpom$logMissingSubscriberSkip(String className) {
+        if (GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE.equals(className)) {
+            if (gpom$loggedThaumcraftParticleEngineSkip) {
+                return;
+            }
+            gpom$loggedThaumcraftParticleEngineSkip = true;
+        } else if (GPOM_DANK_STORAGE_EVENT_HANDLER.equals(className)) {
+            if (gpom$loggedDankStorageEventHandlerSkip) {
+                return;
+            }
+            gpom$loggedDankStorageEventHandlerSkip = true;
         }
-        gpom$loggedThaumcraftParticleEngineSkip = true;
         com.l.gpom.GPOM.LOGGER.warn(
-                "[ForgeConstructionAnnotationOptimizations] Skipping missing Thaumcraft automatic subscriber {}",
-                GPOM_THAUMCRAFT_MISSING_PARTICLE_ENGINE
+                "[ForgeConstructionAnnotationOptimizations] Skipping missing automatic subscriber {} for {}",
+                className,
+                gpom$currentModId.get()
         );
     }
 

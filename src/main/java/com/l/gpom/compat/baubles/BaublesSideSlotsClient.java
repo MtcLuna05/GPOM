@@ -290,16 +290,41 @@ public final class BaublesSideSlotsClient {
             return false;
         }
 
-        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
-            BaublesSideSlotsNetwork.sendCosmeticSlotClick(windowId, slotNumber, mouseButton, clickType);
-            return true;
-        }
+        boolean emptyCursorPickup = clickType == ClickType.PICKUP
+                && BaublesSideSlotsCommon.isEmptyStack(ClientAccess.carriedStack(ClientAccess.minecraft()))
+                && BaublesSideSlotsCommon.slotHasStack(slot);
+        int railType = sideRailType(slot);
+        int railIndex = sideRailIndex(slot);
+        // Side-rail slots are server-authoritative. A local vanilla windowClick races
+        // the GPOM packet and makes normal pickups snap back into the slot.
+        BaublesSideSlotsNetwork.sendSideRailSlotClick(windowId, slotNumber, railType, railIndex, mouseButton, clickType, emptyCursorPickup);
+        return true;
+    }
 
-        boolean clicked = ClientAccess.windowClick(ClientAccess.minecraft(), windowId, slotNumber, mouseButton, clickType);
-        if (clicked) {
-            syncCosmeticArmorBaubleToggleButtons(gui);
+    private static int sideRailType(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return BaublesSideSlotsNetwork.RAIL_TYPE_BAUBLE;
         }
-        return clicked;
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return BaublesSideSlotsNetwork.RAIL_TYPE_AETHER;
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return BaublesSideSlotsNetwork.RAIL_TYPE_COSMETIC_ARMOR;
+        }
+        return BaublesSideSlotsNetwork.RAIL_TYPE_UNKNOWN;
+    }
+
+    private static int sideRailIndex(Slot slot) {
+        if (slot instanceof SlotBauble) {
+            return BaublesSideSlotsCommon.baubleSlotIndex(slot);
+        }
+        if (AetherSideSlotsBridge.isAccessorySlot(slot)) {
+            return AetherSideSlotsBridge.accessorySlotIndex(slot);
+        }
+        if (CosmeticArmorSideSlotsBridge.isCosmeticArmorSlot(slot)) {
+            return CosmeticArmorSideSlotsBridge.cosmeticArmorSlotIndex(slot);
+        }
+        return -1;
     }
 
     public static boolean handleCosmeticArmorBaubleToggleClick(GuiContainer gui, int mouseX, int mouseY, int mouseButton) {

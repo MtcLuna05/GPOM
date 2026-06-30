@@ -1,7 +1,9 @@
 package com.l.gpom;
 
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.compat.actuallyadditions.ActuallyAdditionsTileEntityMappingFix;
 import com.l.gpom.compat.enderio.EnderIOTileEntityMappingFix;
+import com.l.gpom.compat.industrialforegoing.IndustrialForegoingTileEntityMappingFix;
 import com.l.gpom.proxy.CommonProxy;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.SidedProxy;
@@ -41,7 +43,9 @@ public final class GPOM {
 
     @Mod.EventHandler
     public void onLoadComplete(FMLLoadCompleteEvent event) {
+        ActuallyAdditionsTileEntityMappingFix.repairIfEnabled();
         EnderIOTileEntityMappingFix.repairIfEnabled();
+        IndustrialForegoingTileEntityMappingFix.repairIfEnabled();
     }
 
 }

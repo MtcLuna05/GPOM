@@ -598,7 +598,9 @@ public final class PreInitClassPrewarmer {
 
     private static Set<String> forceNoInitMods() {
         return new HashSet<String>(Arrays.asList(
-                "deepmoblearning"
+                "deepmoblearning",
+                // XU2 client/font classes create FontRenderer instances in static initializers.
+                "extrautils2"
         ));
     }
 
