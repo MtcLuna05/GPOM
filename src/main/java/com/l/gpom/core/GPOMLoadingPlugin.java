@@ -49,6 +49,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
                 "com.l.gpom.core.ForestryRecipeManagerSerializationTransformer",
                 "com.l.gpom.core.HammerCoreConstructionTransformer",
+                "com.l.gpom.core.HeiRegistrationThreadSafetyTransformer",
                 "com.l.gpom.core.HeiStartupProfilerTransformer",
                 "com.l.gpom.core.ModularMachineryStartupProfilerTransformer",
                 "com.l.gpom.core.ThaumcraftStartupProfilerTransformer",

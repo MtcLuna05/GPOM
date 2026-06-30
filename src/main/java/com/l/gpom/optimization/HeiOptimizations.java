@@ -2885,6 +2885,12 @@ public final class HeiOptimizations {
         if (allowlist.isEmpty()) {
             return false;
         }
+        if (allowlist.contains("*")) {
+            GPOM.LOGGER.warn(
+                    "[HEI Optimizations] Refusing wildcard HEI plugin registration threading; JEI plugin register mutates shared registries and must use an exact tested allowlist"
+            );
+            return false;
+        }
 
         int workers = configuredHeiPluginWorkers();
         if (workers <= 1) {

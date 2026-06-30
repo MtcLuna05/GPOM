@@ -279,7 +279,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.workers", "4");
         DEFAULTS.setProperty("gpom.hei.fastPreInitPluginDiscovery.deepProbes", "false");
-        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.registrationThreadSafety.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.enabled", "false");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.workers", "6");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.overlapSerial", "true");
         DEFAULTS.setProperty("gpom.hei.parallelPluginRegistration.allowlist", "*");
@@ -811,6 +812,7 @@ public final class GpomEarlyConfig {
                 "gpom.hei.fastPreInitPluginDiscovery.enabled",
                 "gpom.hei.fastPreInitPluginDiscovery.workers",
                 "gpom.hei.fastPreInitPluginDiscovery.deepProbes",
+                "gpom.hei.registrationThreadSafety.enabled",
                 "gpom.hei.parallelPluginRegistration.enabled",
                 "gpom.hei.parallelPluginRegistration.workers",
                 "gpom.hei.parallelPluginRegistration.overlapSerial",
@@ -1300,6 +1302,8 @@ public final class GpomEarlyConfig {
                 return "Worker count for HEI PreInit plugin class loading. 0 lets GPOM choose a conservative bounded value.";
             case "gpom.hei.fastPreInitPluginDiscovery.deepProbes":
                 return "Logs aggregate timing for HEI PreInit plugin annotation scan, class loading, and plugin construction.";
+            case "gpom.hei.registrationThreadSafety.enabled":
+                return "Serializes HEI registration-facing shared mutable state, including ingredient blacklists and recipe transfer registration, so allowlisted off-thread plugin registration cannot corrupt JEI collections.";
             case "gpom.hei.parallelPluginRegistration.enabled":
                 return "Enables experimental worker dispatch for HEI IModPlugin.register calls that match the allowlist.";
             case "gpom.hei.parallelPluginRegistration.workers":
@@ -1307,7 +1311,7 @@ public final class GpomEarlyConfig {
             case "gpom.hei.parallelPluginRegistration.overlapSerial":
                 return "Starts allowlisted threaded HEI plugins before running non-allowlisted plugins on the client thread, letting tested worker work overlap conservative serial work.";
             case "gpom.hei.parallelPluginRegistration.allowlist":
-                return "Comma-separated HEI plugin class names allowed to register off-thread; '*' allows all before denylist filtering.";
+                return "Comma-separated exact HEI plugin class names allowed to register off-thread; wildcard '*' is rejected at runtime because JEI plugin registration mutates shared registries.";
             case "gpom.hei.parallelPluginRegistration.denylist":
                 return "Comma-separated HEI plugin class names forced to register on the main thread; entries override the allowlist.";
             case "gpom.hei.jerVillagerTradeCache.enabled":
@@ -1453,6 +1457,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.enabled");
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.workers");
         copySystemPropertyIfAbsent("gpom.hei.fastPreInitPluginDiscovery.deepProbes");
+        copySystemPropertyIfAbsent("gpom.hei.registrationThreadSafety.enabled");
         copySystemPropertyIfAbsent("gpom.hei.recipeRegistryFastPaths.enabled");
         copySystemPropertyIfAbsent("gpom.hei.recipeRegistryBulkProgress.enabled");
         copySystemPropertyIfAbsent("gpom.hei.recipeRegistryDeferVisibleCache.enabled");
