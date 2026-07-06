@@ -1,6 +1,7 @@
 package com.l.gpom.compat.thaumcraft;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -450,48 +451,16 @@ public final class ThaumcraftResearchRecoveryEvents {
     }
 
     private static Method findMethod(Class<?> type, String... names) throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredMethod(name);
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchMethodException(String.join("/", names));
+        return ReflectionLookup.findMethod(type, names);
     }
 
     private static Method findMethodWithParameters(Class<?> type, String firstName, String secondName, Class<?>... parameterTypes)
             throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            try {
-                return current.getDeclaredMethod(firstName, parameterTypes);
-            } catch (NoSuchMethodException ignored) {
-            }
-            try {
-                return current.getDeclaredMethod(secondName, parameterTypes);
-            } catch (NoSuchMethodException ignored) {
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchMethodException(firstName + "/" + secondName);
+        return ReflectionLookup.findMethod(type, new String[] {firstName, secondName}, parameterTypes);
     }
 
     private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredField(name);
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchFieldException(String.join("/", names));
+        return ReflectionLookup.findField(type, names);
     }
 
     private static void debug(String message, Object... args) {

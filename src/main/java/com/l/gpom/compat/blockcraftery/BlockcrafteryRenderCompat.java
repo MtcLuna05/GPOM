@@ -1,8 +1,10 @@
 package com.l.gpom.compat.blockcraftery;
 
+import com.l.gpom.client.ClientAccess;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.IBakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -12,6 +14,7 @@ import net.minecraft.util.EnumFacing;
 import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.common.property.IExtendedBlockState;
 import net.minecraftforge.common.property.IUnlistedProperty;
+import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -126,20 +129,24 @@ public final class BlockcrafteryRenderCompat {
         boolean useFallbackTexture = true;
 
         Block copiedBlock = copied == null ? null : copied.getBlock();
-        if (copiedBlock != null && copiedBlock != Blocks.AIR) {
-            IBakedModel copiedModel = Minecraft.getMinecraft().getBlockRendererDispatcher().getModelForState(copied);
-            sprites[0] = copiedModel.getParticleTexture();
-            List<BakedQuad> copiedQuads = copiedModel.getQuads(copied, side, rand);
-            if (!copiedQuads.isEmpty()) {
-                sprites = new TextureAtlasSprite[copiedQuads.size()];
-                tints = new int[copiedQuads.size()];
-                for (int index = 0; index < copiedQuads.size(); index++) {
-                    BakedQuad quad = copiedQuads.get(index);
-                    tints[index] = quad.hasTintIndex() ? quad.getTintIndex() : -1;
-                    sprites[index] = quad.getSprite();
+        Object airValue = MinecraftMappingCompat.staticFieldValue(Blocks.class, "blocks.air", "field_150350_a", "AIR");
+        Block air = airValue instanceof Block ? (Block) airValue : ForgeRegistries.BLOCKS.getValue(new net.minecraft.util.ResourceLocation("minecraft", "air"));
+        if (copiedBlock != null && copiedBlock != air) {
+            IBakedModel copiedModel = ClientAccess.modelForState(ClientAccess.minecraft(), copied);
+            if (copiedModel != null) {
+                sprites[0] = copiedModel.getParticleTexture();
+                List<BakedQuad> copiedQuads = copiedModel.getQuads(copied, side, rand);
+                if (!copiedQuads.isEmpty()) {
+                    sprites = new TextureAtlasSprite[copiedQuads.size()];
+                    tints = new int[copiedQuads.size()];
+                    for (int index = 0; index < copiedQuads.size(); index++) {
+                        BakedQuad quad = copiedQuads.get(index);
+                        tints[index] = quad.hasTintIndex() ? quad.getTintIndex() : -1;
+                        sprites[index] = quad.getSprite();
+                    }
                 }
+                useFallbackTexture = false;
             }
-            useFallbackTexture = false;
         }
 
         BlockRenderLayer layer = MinecraftForgeClient.getRenderLayer();
@@ -204,7 +211,7 @@ public final class BlockcrafteryRenderCompat {
             try {
                 return (TextureAtlasSprite) model.getClass().getMethod("func_177554_e").invoke(model);
             } catch (ReflectiveOperationException | RuntimeException | LinkageError ignoredAgain) {
-                return Minecraft.getMinecraft().getTextureMapBlocks().getMissingSprite();
+                return ClientAccess.missingSprite(ClientAccess.minecraft());
             }
         }
     }
@@ -272,28 +279,9 @@ public final class BlockcrafteryRenderCompat {
             return method;
         }
 
-        Method resolved = findMethod(type, name, parameterTypes);
+        Method resolved = ReflectionLookup.findMethod(type, new String[] {name}, parameterTypes);
         Method previous = cache.putIfAbsent(type, resolved);
         return previous == null ? resolved : previous;
-    }
-
-    private static Method findMethod(Class<?> type, String name, Class<?>... parameterTypes) throws NoSuchMethodException {
-        try {
-            Method method = type.getMethod(name, parameterTypes);
-            method.setAccessible(true);
-            return method;
-        } catch (NoSuchMethodException ignored) {
-        }
-
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            try {
-                Method method = current.getDeclaredMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        throw new NoSuchMethodException(name);
     }
 
     private static Field cachedField(ConcurrentMap<Class<?>, Field> cache, Class<?> type, String name)
@@ -303,27 +291,8 @@ public final class BlockcrafteryRenderCompat {
             return field;
         }
 
-        Field resolved = findField(type, name);
+        Field resolved = ReflectionLookup.findField(type, new String[] {name});
         Field previous = cache.putIfAbsent(type, resolved);
         return previous == null ? resolved : previous;
-    }
-
-    private static Field findField(Class<?> type, String name) throws NoSuchFieldException {
-        try {
-            Field field = type.getField(name);
-            field.setAccessible(true);
-            return field;
-        } catch (NoSuchFieldException ignored) {
-        }
-
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            try {
-                Field field = current.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-            }
-        }
-        throw new NoSuchFieldException(name);
     }
 }

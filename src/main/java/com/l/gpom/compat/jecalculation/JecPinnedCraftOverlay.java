@@ -20,11 +20,18 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
 public final class JecPinnedCraftOverlay {
     private static final String JECA_GUI = "me.towdium.jecalculation.gui.JecaGui";
@@ -64,6 +71,7 @@ public final class JecPinnedCraftOverlay {
     private static final int UV_CLOSE_HOVER_X = 21;
     private static final int UV_TOP_ROW_Y = 0;
     private static final int UV_CONTROL_ROW_Y = 20;
+    private static final String STATE_FILE_NAME = "gpom-jecalculation-overlay.properties";
     private static final ResourceLocation MINI_RESOURCES = new ResourceLocation("gpom", "textures/gui/jec_mini_overlay.png");
     private static final Gui TEXTURE_GUI = new Gui();
     private static final long REFRESH_INTERVAL_NANOS = 500_000_000L;
@@ -84,6 +92,8 @@ public final class JecPinnedCraftOverlay {
     private static int overlayY;
     private static boolean dragging;
     private static boolean overlayKeyboardFocused;
+    private static boolean stateLoaded;
+    private static boolean loggedStateFailure;
     private static int dragOffsetX;
     private static int dragOffsetY;
     private static Object lastHostScreen;
@@ -103,6 +113,7 @@ public final class JecPinnedCraftOverlay {
             return;
         }
         registered = true;
+        loadStateIfNeeded();
         MinecraftForge.EVENT_BUS.register(INSTANCE);
     }
 
@@ -111,6 +122,7 @@ public final class JecPinnedCraftOverlay {
         if (!GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled()) {
             return;
         }
+        loadStateIfNeeded();
 
         GuiScreen screen = event.getGui();
         if (isJecCraftScreen(screen)) {
@@ -144,6 +156,7 @@ public final class JecPinnedCraftOverlay {
                 clampToScreen(screen);
             } else {
                 dragging = false;
+                saveState();
             }
         }
 
@@ -173,6 +186,7 @@ public final class JecPinnedCraftOverlay {
         if (!GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled()) {
             return;
         }
+        loadStateIfNeeded();
 
         GuiScreen screen = event.getGui();
         int mouseX = mouseX(screen);
@@ -181,7 +195,7 @@ public final class JecPinnedCraftOverlay {
 
         if (isJecCraftScreen(screen)) {
             if (button == 0 && Mouse.getEventButtonState() && isInsidePinButton(screen, mouseX, mouseY)) {
-                pinned = !pinned;
+                setPinned(!pinned);
                 resetHiddenCraft();
                 cancel(event);
             }
@@ -203,6 +217,7 @@ public final class JecPinnedCraftOverlay {
 
         if (button == 0 && !Mouse.getEventButtonState() && dragging) {
             dragging = false;
+            saveState();
             cancel(event);
             return;
         }
@@ -214,7 +229,7 @@ public final class JecPinnedCraftOverlay {
 
         if (button == 0 && Mouse.getEventButtonState()) {
             if (isInsideCloseButton(mouseX, mouseY)) {
-                pinned = false;
+                setPinned(false);
                 dragging = false;
                 clearOverlayKeyboardFocus();
                 resetHiddenCraft();
@@ -267,7 +282,11 @@ public final class JecPinnedCraftOverlay {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
     public void onKeyboard(GuiScreenEvent.KeyboardInputEvent.Pre event) {
-        if (!GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled() || !pinned || !(event.getGui() instanceof GuiContainer) || isJecGui(event.getGui())) {
+        if (!GpomEarlyConfig.jecalculationPinnedCraftOverlayEnabled()) {
+            return;
+        }
+        loadStateIfNeeded();
+        if (!pinned || !(event.getGui() instanceof GuiContainer) || isJecGui(event.getGui())) {
             return;
         }
         if (!overlayKeyboardFocused) {
@@ -329,6 +348,107 @@ public final class JecPinnedCraftOverlay {
         if (now >= nextRefreshAt) {
             craft.refresh();
             nextRefreshAt = now + REFRESH_INTERVAL_NANOS;
+        }
+    }
+
+    private static void loadStateIfNeeded() {
+        if (stateLoaded) {
+            return;
+        }
+        File file = stateFile();
+        if (file == null) {
+            return;
+        }
+        stateLoaded = true;
+        if (!file.isFile()) {
+            return;
+        }
+
+        Properties properties = new Properties();
+        try (InputStreamReader reader = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
+            properties.load(reader);
+            pinned = parseBoolean(properties.getProperty("pinned"), pinned);
+            userPositioned = parseBoolean(properties.getProperty("userPositioned"), false);
+            if (userPositioned) {
+                overlayX = parseInt(properties.getProperty("overlayX"), overlayX);
+                overlayY = parseInt(properties.getProperty("overlayY"), overlayY);
+                positionInitialized = true;
+            }
+        } catch (Throwable throwable) {
+            logStateFailure("load", file, throwable);
+        }
+    }
+
+    private static void setPinned(boolean value) {
+        if (pinned == value) {
+            return;
+        }
+        pinned = value;
+        saveState();
+    }
+
+    private static void saveState() {
+        if (!stateLoaded) {
+            return;
+        }
+        File file = stateFile();
+        if (file == null) {
+            return;
+        }
+        File parent = file.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            logStateFailure("create parent directory for", file, null);
+            return;
+        }
+
+        Properties properties = new Properties();
+        properties.setProperty("pinned", Boolean.toString(pinned));
+        properties.setProperty("userPositioned", Boolean.toString(userPositioned));
+        properties.setProperty("overlayX", Integer.toString(overlayX));
+        properties.setProperty("overlayY", Integer.toString(overlayY));
+
+        try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
+            properties.store(writer, "GPOM Just Enough Calculation pinned craft overlay state");
+        } catch (Throwable throwable) {
+            logStateFailure("save", file, throwable);
+        }
+    }
+
+    private static File stateFile() {
+        File gameDir = new File(System.getProperty("user.dir", "."));
+        return new File(new File(gameDir, "config"), STATE_FILE_NAME);
+    }
+
+    private static boolean parseBoolean(String value, boolean fallback) {
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        return fallback;
+    }
+
+    private static int parseInt(String value, int fallback) {
+        if (value == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static void logStateFailure(String action, File file, Throwable throwable) {
+        if (loggedStateFailure) {
+            return;
+        }
+        loggedStateFailure = true;
+        if (throwable == null) {
+            GPOM.LOGGER.warn("Could not {} GPOM JEC pinned craft overlay state file {}", action, file);
+        } else {
+            GPOM.LOGGER.warn("Could not {} GPOM JEC pinned craft overlay state file {}", action, file, throwable);
         }
     }
 
@@ -602,6 +722,7 @@ public final class JecPinnedCraftOverlay {
         clampToScreen(screen);
         if (dragging && !Mouse.isButtonDown(0)) {
             dragging = false;
+            saveState();
         }
     }
 

@@ -1,6 +1,7 @@
 package com.l.gpom.compat.baubles;
 
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.inventory.GuiContainer;
@@ -16,14 +17,14 @@ public final class BaublesSideSlotsGuiEvents {
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void guiPostInit(GuiScreenEvent.InitGuiEvent.Post event) {
-        if (GpomEarlyConfig.baublesSideSlotsAetherEnabled()) {
+        if (GpomEarlyConfig.baublesSideSlotsAetherEnabled() && GpomRemoteEnvironment.serverFeaturesAllowed()) {
             event.getButtonList().removeIf(BaublesSideSlotsGuiEvents::isAetherAccessoryButton);
         }
         if (!(event.getGui() instanceof GuiInventory)) {
             return;
         }
         event.getButtonList().removeIf(BaublesSideSlotsGuiEvents::isManagedBaublesButton);
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
+        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
             return;
         }
         if (GpomEarlyConfig.baublesSideSlotsCosmeticArmorEnabled()) {

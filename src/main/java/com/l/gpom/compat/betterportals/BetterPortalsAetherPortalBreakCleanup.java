@@ -1,5 +1,6 @@
 package com.l.gpom.compat.betterportals;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
@@ -287,7 +288,7 @@ public final class BetterPortalsAetherPortalBreakCleanup {
     }
 
     private static boolean isRemoteWorld(World world) {
-        return booleanField(world, "field_72995_K", "isRemote");
+        return MinecraftMappingCompat.worldIsRemote(world);
     }
 
     private static Block blockFromState(IBlockState state) throws ReflectiveOperationException {

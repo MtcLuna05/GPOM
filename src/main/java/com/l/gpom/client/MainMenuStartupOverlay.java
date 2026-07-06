@@ -26,8 +26,8 @@ public final class MainMenuStartupOverlay {
         int height = screenIntField(screen, "field_146295_m", "height");
         if (width <= 0 || height <= 0) {
             Minecraft minecraft = ClientAccess.minecraft();
-            width = minecraft == null ? width : minecraft.displayWidth;
-            height = minecraft == null ? height : minecraft.displayHeight;
+            width = minecraft == null ? width : ClientAccess.displayWidth(minecraft);
+            height = minecraft == null ? height : ClientAccess.displayHeight(minecraft);
         }
         render(width, height, screenName);
     }

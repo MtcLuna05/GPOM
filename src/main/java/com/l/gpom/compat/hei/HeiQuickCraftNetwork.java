@@ -1,8 +1,11 @@
 package com.l.gpom.compat.hei;
 
 import com.l.gpom.Reference;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
 import io.netty.buffer.ByteBuf;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
@@ -49,7 +52,7 @@ public final class HeiQuickCraftNetwork {
     }
 
     static boolean sendDraconicFusionTransfer(int windowId, List<List<ItemStack>> inputs) {
-        if (!registered || inputs == null || inputs.isEmpty()) {
+        if (!registered || inputs == null || inputs.isEmpty() || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
             return false;
         }
         NETWORK.sendToServer(new DraconicFusionTransferMessage(windowId, inputs));
@@ -78,8 +81,8 @@ public final class HeiQuickCraftNetwork {
                 List<ItemStack> options = new ArrayList<>(optionCount);
                 for (int option = 0; option < optionCount; option++) {
                     ItemStack stack = ByteBufUtils.readItemStack(buffer);
-                    if (stack != null && !stack.isEmpty()) {
-                        stack.setCount(Math.max(1, stack.getCount()));
+                    if (!MinecraftMappingCompat.itemStackIsEmpty(stack)) {
+                        MinecraftMappingCompat.itemStackSetCount(stack, Math.max(1, MinecraftMappingCompat.itemStackCount(stack)));
                         options.add(stack);
                     }
                 }
@@ -98,7 +101,7 @@ public final class HeiQuickCraftNetwork {
                     continue;
                 }
                 for (ItemStack stack : options) {
-                    ByteBufUtils.writeItemStack(buffer, stack == null ? ItemStack.EMPTY : stack);
+                    ByteBufUtils.writeItemStack(buffer, MinecraftMappingCompat.itemStackIsEmpty(stack) ? MinecraftMappingCompat.emptyStack() : stack);
                 }
             }
         }
@@ -145,8 +148,8 @@ public final class HeiQuickCraftNetwork {
         }
 
         for (Move move : plan.moves) {
-            ItemStack placed = move.stack.copy();
-            placed.setCount(move.count);
+            ItemStack placed = MinecraftMappingCompat.itemStackCopy(move.stack);
+            MinecraftMappingCompat.itemStackSetCount(placed, move.count);
             consume(move.source, move.count);
             if (move.coreSlot) {
                 invoke(core, "setStackInCore", new Class<?>[] {int.class, ItemStack.class}, 0, placed);
@@ -179,7 +182,7 @@ public final class HeiQuickCraftNetwork {
 
         ItemStack coreCatalyst = stackMethod(core, "getStackInCore", new Class<?>[] {int.class}, 0);
         if (!matchesAnyWithEnough(coreCatalyst, catalystOptions)) {
-            if (coreCatalyst != null && !coreCatalyst.isEmpty()) {
+            if (!MinecraftMappingCompat.itemStackIsEmpty(coreCatalyst)) {
                 return null;
             }
             SourceChoice source = findSource(sources, plannedUse, catalystOptions);
@@ -226,8 +229,10 @@ public final class HeiQuickCraftNetwork {
         for (Slot slot : HeiReflection.containerSlots(container)) {
             if (slot != null
                     && HeiReflection.slotInventory(slot) instanceof InventoryPlayer
-                    && slot.getHasStack()
-                    && slot.canTakeStack(player)) {
+                    && Boolean.TRUE.equals(MinecraftMappingCompat.invoke(slot, "slot.getHasStack",
+                    MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS, "func_75216_d", "getHasStack"))
+                    && Boolean.TRUE.equals(MinecraftMappingCompat.invoke(slot, "slot.canTakeStack",
+                    new Class<?>[]{EntityPlayer.class}, new Object[]{player}, "func_82869_a", "canTakeStack"))) {
                 slots.add(slot);
             }
         }
@@ -252,7 +257,7 @@ public final class HeiQuickCraftNetwork {
                 continue;
             }
             ItemStack stack = stackMethod(injector, "getStackInPedestal");
-            if (stack == null || stack.isEmpty()) {
+            if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
                 return injector;
             }
         }
@@ -263,14 +268,16 @@ public final class HeiQuickCraftNetwork {
                                            Map<Slot, Integer> plannedUse,
                                            List<ItemStack> options) {
         for (Slot slot : sources) {
-            ItemStack source = slot.getStack();
-            if (source == null || source.isEmpty()) {
+            Object sourceValue = MinecraftMappingCompat.invoke(slot, "slot.getStack",
+                    MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS, "func_75211_c", "getStack");
+            ItemStack source = sourceValue instanceof ItemStack ? (ItemStack) sourceValue : null;
+            if (MinecraftMappingCompat.itemStackIsEmpty(source)) {
                 continue;
             }
             int alreadyPlanned = plannedUse.getOrDefault(slot, 0);
             for (ItemStack option : options) {
                 int required = requiredCount(option);
-                if (source.getCount() - alreadyPlanned >= required && matches(source, option)) {
+                if (MinecraftMappingCompat.itemStackCount(source) - alreadyPlanned >= required && matches(source, option)) {
                     return new SourceChoice(slot, option, required);
                 }
             }
@@ -279,11 +286,11 @@ public final class HeiQuickCraftNetwork {
     }
 
     private static boolean matchesAnyWithEnough(ItemStack stack, List<ItemStack> options) {
-        if (stack == null || stack.isEmpty()) {
+        if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
             return false;
         }
         for (ItemStack option : options) {
-            if (stack.getCount() >= requiredCount(option) && matches(stack, option)) {
+            if (MinecraftMappingCompat.itemStackCount(stack) >= requiredCount(option) && matches(stack, option)) {
                 return true;
             }
         }
@@ -291,29 +298,42 @@ public final class HeiQuickCraftNetwork {
     }
 
     private static boolean matches(ItemStack stack, ItemStack option) {
-        if (stack == null || option == null || stack.isEmpty() || option.isEmpty()) {
+        if (MinecraftMappingCompat.itemStackIsEmpty(stack) || MinecraftMappingCompat.itemStackIsEmpty(option)) {
             return false;
         }
         if (!OreDictionary.itemMatches(option, stack, false)) {
             return false;
         }
-        return option.getTagCompound() == null || ItemStack.areItemStackTagsEqual(stack, option);
+        Object sameItem = MinecraftMappingCompat.invokeStatic(ItemStack.class, "itemStack.areItemsEqual",
+                new Class<?>[]{ItemStack.class, ItemStack.class}, new Object[]{stack, option},
+                "func_179545_c", "areItemsEqual");
+        if (!Boolean.TRUE.equals(sameItem)) {
+            return false;
+        }
+        Object sameTags = MinecraftMappingCompat.invokeStatic(ItemStack.class, "itemStack.areItemStackTagsEqual",
+                new Class<?>[]{ItemStack.class, ItemStack.class}, new Object[]{stack, option},
+                "func_77970_a", "areItemStackTagsEqual");
+        return MinecraftMappingCompat.itemStackTagCompound(option) == null || Boolean.TRUE.equals(sameTags);
     }
 
     private static int requiredCount(ItemStack option) {
-        return option == null || option.isEmpty() ? 1 : Math.max(1, option.getCount());
+        return MinecraftMappingCompat.itemStackIsEmpty(option) ? 1 : Math.max(1, MinecraftMappingCompat.itemStackCount(option));
     }
 
     private static void consume(Slot slot, int count) {
-        ItemStack stack = slot.getStack();
-        if (stack == null || stack.isEmpty()) {
+        Object value = MinecraftMappingCompat.invoke(slot, "slot.getStack",
+                MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS, "func_75211_c", "getStack");
+        ItemStack stack = value instanceof ItemStack ? (ItemStack) value : null;
+        if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
             return;
         }
-        stack.shrink(count);
-        if (stack.isEmpty()) {
-            slot.putStack(ItemStack.EMPTY);
+        MinecraftMappingCompat.itemStackShrink(stack, count);
+        if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
+            MinecraftMappingCompat.invoke(slot, "slot.putStack", new Class<?>[]{ItemStack.class},
+                    new Object[]{MinecraftMappingCompat.emptyStack()}, "func_75215_d", "putStack");
         } else {
-            slot.onSlotChanged();
+            MinecraftMappingCompat.invoke(slot, "slot.onSlotChanged",
+                    MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS, "func_75218_e", "onSlotChanged");
         }
     }
 
@@ -325,7 +345,7 @@ public final class HeiQuickCraftNetwork {
 
     private static ItemStack stackMethod(Object target, String name, Class<?>[] parameterTypes, Object... args) {
         Object value = invoke(target, name, parameterTypes, args);
-        return value instanceof ItemStack ? (ItemStack) value : ItemStack.EMPTY;
+        return value instanceof ItemStack ? (ItemStack) value : MinecraftMappingCompat.emptyStack();
     }
 
     private static ItemStack stackMethod(Object target, String name) {

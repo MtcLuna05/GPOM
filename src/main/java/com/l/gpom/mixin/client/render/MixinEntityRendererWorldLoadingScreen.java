@@ -18,6 +18,7 @@ public abstract class MixinEntityRendererWorldLoadingScreen {
             require = 0
     )
     private void gpom$finishWorldLoadingAfterWorldRender(float partialTicks, long finishTimeNano, CallbackInfo ci) {
+        WorldLoadingProgress.safeRenderCurrentMinecraft(-1, false);
         WorldLoadingProgress.finishAfterFirstWorldRender("first world render completed");
     }
 }

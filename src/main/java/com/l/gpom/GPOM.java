@@ -2,6 +2,7 @@ package com.l.gpom;
 
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.compat.actuallyadditions.ActuallyAdditionsTileEntityMappingFix;
+import com.l.gpom.compat.architecturecraft.ArchitectureCraftTileEntityMappingFix;
 import com.l.gpom.compat.enderio.EnderIOTileEntityMappingFix;
 import com.l.gpom.compat.industrialforegoing.IndustrialForegoingTileEntityMappingFix;
 import com.l.gpom.proxy.CommonProxy;
@@ -17,6 +18,7 @@ import org.apache.logging.log4j.Logger;
         name = Reference.MOD_NAME,
         version = Reference.VERSION,
         acceptedMinecraftVersions = "[1.12.2]",
+        acceptableRemoteVersions = "*",
         dependencies = Reference.DEPENDENCIES
 )
 public final class GPOM {
@@ -44,6 +46,7 @@ public final class GPOM {
     @Mod.EventHandler
     public void onLoadComplete(FMLLoadCompleteEvent event) {
         ActuallyAdditionsTileEntityMappingFix.repairIfEnabled();
+        ArchitectureCraftTileEntityMappingFix.repairIfEnabled();
         EnderIOTileEntityMappingFix.repairIfEnabled();
         IndustrialForegoingTileEntityMappingFix.repairIfEnabled();
     }

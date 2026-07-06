@@ -1,5 +1,6 @@
 package com.l.gpom.compat.hei;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import mezz.jei.api.gui.IGuiIngredient;
 import mezz.jei.api.gui.IRecipeLayout;
 import mezz.jei.api.recipe.transfer.IRecipeTransferError;
@@ -93,11 +94,11 @@ final class DraconicFusionTransferHandler implements IRecipeTransferHandler<Cont
 
         List<ItemStack> options = new ArrayList<>(raw.size());
         for (ItemStack stack : raw) {
-            if (stack == null || stack.isEmpty()) {
+            if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
                 continue;
             }
-            ItemStack copy = stack.copy();
-            copy.setCount(Math.max(1, copy.getCount()));
+            ItemStack copy = MinecraftMappingCompat.itemStackCopy(stack);
+            MinecraftMappingCompat.itemStackSetCount(copy, Math.max(1, MinecraftMappingCompat.itemStackCount(copy)));
             options.add(copy);
         }
         return options;

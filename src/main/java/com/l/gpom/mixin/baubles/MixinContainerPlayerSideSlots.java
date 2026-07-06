@@ -4,6 +4,7 @@ import com.l.gpom.compat.baubles.AetherSideSlotsBridge;
 import com.l.gpom.compat.baubles.BaublesSideSlotsVanillaBridge;
 import com.l.gpom.compat.baubles.CosmeticArmorSideSlotsBridge;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
@@ -18,7 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinContainerPlayerSideSlots extends Container {
     @Inject(method = "<init>", at = @At("RETURN"))
     private void gpom$appendBaublesSideSlots(InventoryPlayer playerInventory, boolean localWorld, EntityPlayer player, CallbackInfo ci) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
+        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
             return;
         }
         // Keep the base player container slot count symmetric on client and server.

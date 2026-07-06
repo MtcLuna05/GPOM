@@ -1,13 +1,12 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.core.TargetedModVersions;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.inventory.InventoryCrafting;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.crafting.CraftingManager;
 import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.item.crafting.Ingredient;
 import net.minecraft.util.NonNullList;
@@ -31,22 +30,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class NuclearCraftRecipeOptimizations {
     private static final ConcurrentHashMap<String, ItemStack> MANUFACTORY_LOG_CRAFTING_RESULT_CACHE = new ConcurrentHashMap<>();
-    private static final Method CRAFTING_RESULT = findMethod(CraftingManager.class, "findMatchingResult", "func_82787_a", InventoryCrafting.class, World.class);
-    private static final Method RECIPE_CAN_FIT = findMethod(IRecipe.class, "canFit", "func_194133_a", int.class, int.class);
-    private static final Method RECIPE_MATCHES = findMethod(IRecipe.class, "matches", "func_77569_a", InventoryCrafting.class, World.class);
-    private static final Method RECIPE_RESULT = findMethod(IRecipe.class, "getCraftingResult", "func_77572_b", InventoryCrafting.class);
-    private static final Method RECIPE_INGREDIENTS = findMethod(IRecipe.class, "getIngredients", "func_192400_c");
-    private static final Method INGREDIENT_APPLY = findMethod(Ingredient.class, "apply", "apply", ItemStack.class);
-    private static final Method INGREDIENT_MATCHING_STACKS = findMethod(Ingredient.class, "getMatchingStacks", "func_193365_a");
-    private static final Method INVENTORY_GET_STACK = findMethod(InventoryCrafting.class, "getStackInSlot", "func_70301_a", int.class);
-    private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, "isEmpty", "func_190926_b");
-    private static final Method STACK_COPY = findMethod(ItemStack.class, "copy", "func_77946_l");
-    private static final Method STACK_GET_ITEM = findMethod(ItemStack.class, "getItem", "func_77973_b");
-    private static final Method STACK_GET_META = findMethod(ItemStack.class, "getMetadata", "func_77960_j");
-    private static final Method STACK_HAS_TAG = findMethod(ItemStack.class, "hasTagCompound", "func_77942_o");
-    private static final Method STACK_GET_TAG = findMethod(ItemStack.class, "getTagCompound", "func_77978_p");
-    private static final Method ITEM_ID_FROM_ITEM = findMethod(Item.class, "getIdFromItem", "func_150891_b", Item.class);
-    private static final ItemStack EMPTY_STACK = findEmptyStack();
+    private static final Method RECIPE_CAN_FIT = RecipeOptimizationHelper.findMappedMethod(IRecipe.class, "canFit", "func_194133_a", int.class, int.class);
+    private static final Method RECIPE_MATCHES = RecipeOptimizationHelper.findMappedMethod(IRecipe.class, "matches", "func_77569_a", InventoryCrafting.class, World.class);
+    private static final Method RECIPE_RESULT = RecipeOptimizationHelper.findMappedMethod(IRecipe.class, "getCraftingResult", "func_77572_b", InventoryCrafting.class);
     private static final Ingredient EMPTY_INGREDIENT = findEmptyIngredient();
     private static volatile Constructor<?> oreIngredientConstructor;
     private static volatile Method addRecipeMethod;
@@ -131,34 +117,34 @@ public final class NuclearCraftRecipeOptimizations {
 
         long startedAt = StartupProfiler.beginProbe();
         try {
-            ItemStack stack = inventoryStack(inventory, 0);
-            String key = key(stack);
+            ItemStack stack = RecipeOptimizationHelper.inventoryStack(inventory, 0);
+            String key = RecipeOptimizationHelper.stackCacheKey(stack);
             ItemStack cached = MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.get(key);
             if (cached != null) {
-                return isEmpty(cached) ? emptyStack() : copy(cached);
+                return RecipeOptimizationHelper.isEmpty(cached) ? RecipeOptimizationHelper.emptyStack() : RecipeOptimizationHelper.copy(cached);
             }
 
             SingleInputRecipeIndex index = singleInputRecipeIndex();
             ItemStack result = findMatchingSingleSlotResult(index, stack, inventory);
-            if (isEmpty(result)) {
+            if (RecipeOptimizationHelper.isEmpty(result)) {
                 if (canSkipEmptyManufactoryLogFallback(index, inventory)) {
                     long skipStartedAt = StartupProfiler.beginProbe();
                     StartupProfiler.endProbeAlways("POSTPRE NC Manufactory.addLogRecipes skipped empty stock fallback", skipStartedAt);
-                    MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, emptyStack());
-                    return emptyStack();
+                    MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, RecipeOptimizationHelper.emptyStack());
+                    return RecipeOptimizationHelper.emptyStack();
                 } else {
                     long fallbackStartedAt = StartupProfiler.beginProbe();
                     result = findMatchingResult(inventory, world);
                     StartupProfiler.endProbe(
-                            isEmpty(result)
+                            RecipeOptimizationHelper.isEmpty(result)
                                     ? "POSTPRE NC Manufactory.addLogRecipes empty stock fallback CraftingManager lookup"
                                     : "POSTPRE NC Manufactory.addLogRecipes non-empty stock fallback CraftingManager lookup",
                             fallbackStartedAt
                     );
                 }
             }
-            MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, isEmpty(result) ? emptyStack() : copy(result));
-            return isEmpty(result) ? emptyStack() : copy(result);
+            MANUFACTORY_LOG_CRAFTING_RESULT_CACHE.putIfAbsent(key, RecipeOptimizationHelper.isEmpty(result) ? RecipeOptimizationHelper.emptyStack() : RecipeOptimizationHelper.copy(result));
+            return RecipeOptimizationHelper.isEmpty(result) ? RecipeOptimizationHelper.emptyStack() : RecipeOptimizationHelper.copy(result);
         } catch (Throwable throwable) {
             logFallback("NuclearCraft Manufactory log crafting-result cache failed; falling back to CraftingManager", throwable);
             return findMatchingResult(inventory, world);
@@ -171,8 +157,8 @@ public final class NuclearCraftRecipeOptimizations {
         if (RECIPE_MATCHES == null || RECIPE_RESULT == null) {
             return findMatchingResult(inventory, null);
         }
-        if (isEmpty(stack)) {
-            return emptyStack();
+        if (RecipeOptimizationHelper.isEmpty(stack)) {
+            return RecipeOptimizationHelper.emptyStack();
         }
 
         long startedAt = StartupProfiler.beginProbe();
@@ -196,7 +182,7 @@ public final class NuclearCraftRecipeOptimizations {
             return false;
         }
         for (int slot = 1; slot < 9; slot++) {
-            if (!isEmpty(inventoryStack(inventory, slot))) {
+            if (!RecipeOptimizationHelper.isEmpty(RecipeOptimizationHelper.inventoryStack(inventory, slot))) {
                 return false;
             }
         }
@@ -205,16 +191,16 @@ public final class NuclearCraftRecipeOptimizations {
 
     private static ItemStack findMatchingIndexedSingleSlotResult(SingleInputRecipeIndex index, ItemStack stack, InventoryCrafting inventory) {
         if (index == null) {
-            return emptyStack();
+            return RecipeOptimizationHelper.emptyStack();
         }
 
         Set<SingleInputRecipe> seen = Collections.newSetFromMap(new IdentityHashMap<SingleInputRecipe, Boolean>());
-        ItemStack result = matchCandidates(index.exactCandidates.get(stackKey(stack)), stack, inventory, seen);
-        if (!isEmpty(result)) {
+        ItemStack result = matchCandidates(index.exactCandidates.get(RecipeOptimizationHelper.stackKey(stack)), stack, inventory, seen);
+        if (!RecipeOptimizationHelper.isEmpty(result)) {
             return result;
         }
-        result = matchCandidates(index.wildcardCandidates.get(Integer.valueOf(itemId(stack))), stack, inventory, seen);
-        if (!isEmpty(result)) {
+        result = matchCandidates(index.wildcardCandidates.get(Integer.valueOf(RecipeOptimizationHelper.itemId(stack))), stack, inventory, seen);
+        if (!RecipeOptimizationHelper.isEmpty(result)) {
             return result;
         }
         return matchCandidates(index.fallbackCandidates, stack, inventory, seen);
@@ -222,7 +208,7 @@ public final class NuclearCraftRecipeOptimizations {
 
     private static ItemStack matchCandidates(List<SingleInputRecipe> candidates, ItemStack stack, InventoryCrafting inventory, Set<SingleInputRecipe> seen) {
         if (candidates == null || candidates.isEmpty()) {
-            return emptyStack();
+            return RecipeOptimizationHelper.emptyStack();
         }
         for (SingleInputRecipe candidate : candidates) {
             if (!seen.add(candidate)) {
@@ -232,7 +218,7 @@ public final class NuclearCraftRecipeOptimizations {
                 return recipeCraftingResult(candidate.recipe, inventory);
             }
         }
-        return emptyStack();
+        return RecipeOptimizationHelper.emptyStack();
     }
 
     private static SingleInputRecipeIndex singleInputRecipeIndex() {
@@ -296,11 +282,11 @@ public final class NuclearCraftRecipeOptimizations {
         Set<Long> seenExactKeys = new HashSet<>();
         Set<Integer> seenWildcardItems = new HashSet<>();
         for (ItemStack stack : stacks) {
-            if (isEmpty(stack)) {
+            if (RecipeOptimizationHelper.isEmpty(stack)) {
                 continue;
             }
-            int itemId = itemId(stack);
-            int meta = meta(stack);
+            int itemId = RecipeOptimizationHelper.itemId(stack);
+            int meta = RecipeOptimizationHelper.meta(stack);
             if (meta == OreDictionary.WILDCARD_VALUE) {
                 Integer key = Integer.valueOf(itemId);
                 if (seenWildcardItems.add(key)) {
@@ -308,7 +294,7 @@ public final class NuclearCraftRecipeOptimizations {
                     indexed = true;
                 }
             } else {
-                Long key = Long.valueOf(stackKey(itemId, meta));
+                Long key = Long.valueOf(RecipeOptimizationHelper.stackKey(itemId, meta));
                 if (seenExactKeys.add(key)) {
                     addCandidate(exactCandidates, key, candidate);
                     indexed = true;
@@ -336,55 +322,39 @@ public final class NuclearCraftRecipeOptimizations {
     }
 
     private static ItemStack[] matchingStacks(Ingredient ingredient) {
-        if (ingredient == null || INGREDIENT_MATCHING_STACKS == null) {
+        if (ingredient == null) {
             return null;
         }
-        try {
-            Object value = INGREDIENT_MATCHING_STACKS.invoke(ingredient);
-            return value instanceof ItemStack[] ? (ItemStack[]) value : null;
-        } catch (Throwable throwable) {
-            logFallback("Ingredient.getMatchingStacks bridge failed", throwable);
-            return null;
-        }
+        ItemStack[] stacks = MinecraftMappingCompat.ingredientMatchingStacks(ingredient);
+        return stacks.length == 0 ? null : stacks;
     }
 
-    @SuppressWarnings("unchecked")
     private static Ingredient singleNonEmptyIngredient(IRecipe recipe) {
-        if (recipe == null || RECIPE_INGREDIENTS == null) {
+        if (recipe == null) {
             return null;
         }
-        try {
-            Object value = RECIPE_INGREDIENTS.invoke(recipe);
-            if (!(value instanceof NonNullList)) {
+        NonNullList<Ingredient> ingredients = MinecraftMappingCompat.recipeIngredients(recipe);
+        if (ingredients == null) {
+            return null;
+        }
+        Ingredient found = null;
+        for (Ingredient ingredient : ingredients) {
+            if (isEmptyIngredient(ingredient)) {
+                continue;
+            }
+            if (found != null) {
                 return null;
             }
-            Ingredient found = null;
-            for (Ingredient ingredient : (NonNullList<Ingredient>) value) {
-                if (isEmptyIngredient(ingredient)) {
-                    continue;
-                }
-                if (found != null) {
-                    return null;
-                }
-                found = ingredient;
-            }
-            return found;
-        } catch (Throwable throwable) {
-            logFallback("IRecipe.getIngredients bridge failed", throwable);
-            return null;
+            found = ingredient;
         }
+        return found;
     }
 
     private static boolean ingredientApplies(Ingredient ingredient, ItemStack stack) {
-        if (ingredient == null || isEmpty(stack) || INGREDIENT_APPLY == null) {
+        if (ingredient == null || RecipeOptimizationHelper.isEmpty(stack)) {
             return false;
         }
-        try {
-            return Boolean.TRUE.equals(INGREDIENT_APPLY.invoke(ingredient, stack));
-        } catch (Throwable throwable) {
-            logFallback("Ingredient.apply bridge failed", throwable);
-            return false;
-        }
+        return MinecraftMappingCompat.ingredientApply(ingredient, stack);
     }
 
     private static boolean isEmptyIngredient(Ingredient ingredient) {
@@ -394,16 +364,11 @@ public final class NuclearCraftRecipeOptimizations {
         if (EMPTY_INGREDIENT != null && ingredient == EMPTY_INGREDIENT) {
             return true;
         }
-        ItemStack empty = emptyStack();
-        if (empty == null || INGREDIENT_APPLY == null) {
+        ItemStack empty = RecipeOptimizationHelper.emptyStack();
+        if (empty == null) {
             return false;
         }
-        try {
-            return Boolean.TRUE.equals(INGREDIENT_APPLY.invoke(ingredient, empty));
-        } catch (Throwable throwable) {
-            logFallback("Ingredient.empty bridge failed", throwable);
-            return false;
-        }
+        return MinecraftMappingCompat.ingredientApply(ingredient, empty);
     }
 
     private static boolean recipeCanFit(IRecipe recipe, int width, int height) {
@@ -434,158 +399,14 @@ public final class NuclearCraftRecipeOptimizations {
     }
 
     private static ItemStack recipeCraftingResult(IRecipe recipe, InventoryCrafting inventory) {
-        if (recipe == null || inventory == null || RECIPE_RESULT == null) {
-            return emptyStack();
+        if (recipe == null || inventory == null) {
+            return RecipeOptimizationHelper.emptyStack();
         }
-        try {
-            Object result = RECIPE_RESULT.invoke(recipe, inventory);
-            return result instanceof ItemStack ? (ItemStack) result : emptyStack();
-        } catch (Throwable throwable) {
-            logFallback("IRecipe.getCraftingResult bridge failed", throwable);
-            return emptyStack();
-        }
+        return RecipeOptimizationHelper.recipeCraftingResult(recipe, inventory);
     }
 
     private static ItemStack findMatchingResult(InventoryCrafting inventory, World world) {
-        if (CRAFTING_RESULT == null) {
-            return emptyStack();
-        }
-        try {
-            Object result = CRAFTING_RESULT.invoke(null, inventory, world);
-            return result instanceof ItemStack ? (ItemStack) result : emptyStack();
-        } catch (Throwable throwable) {
-            logFallback("CraftingManager.findMatchingResult bridge failed", throwable);
-            return emptyStack();
-        }
-    }
-
-    private static ItemStack inventoryStack(InventoryCrafting inventory, int slot) {
-        if (inventory == null || INVENTORY_GET_STACK == null) {
-            return emptyStack();
-        }
-        try {
-            Object value = INVENTORY_GET_STACK.invoke(inventory, slot);
-            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
-        } catch (Throwable throwable) {
-            logFallback("InventoryCrafting.getStackInSlot bridge failed", throwable);
-            return emptyStack();
-        }
-    }
-
-    private static String key(ItemStack stack) {
-        if (isEmpty(stack)) {
-            return "empty";
-        }
-        StringBuilder builder = new StringBuilder(48);
-        builder.append(itemId(stack)).append(':').append(meta(stack));
-        if (hasTag(stack)) {
-            builder.append(':').append(tag(stack));
-        }
-        return builder.toString();
-    }
-
-    private static long stackKey(ItemStack stack) {
-        return stackKey(itemId(stack), meta(stack));
-    }
-
-    private static long stackKey(int itemId, int meta) {
-        return ((long) itemId << 32) ^ (meta & 0xFFFFFFFFL);
-    }
-
-    private static int itemId(ItemStack stack) {
-        if (ITEM_ID_FROM_ITEM == null || STACK_GET_ITEM == null) {
-            return System.identityHashCode(stack);
-        }
-        try {
-            Object item = STACK_GET_ITEM.invoke(stack);
-            Object id = ITEM_ID_FROM_ITEM.invoke(null, item);
-            return id instanceof Integer ? (Integer) id : System.identityHashCode(item);
-        } catch (Throwable throwable) {
-            logFallback("ItemStack item id bridge failed", throwable);
-            return System.identityHashCode(stack);
-        }
-    }
-
-    private static int meta(ItemStack stack) {
-        if (STACK_GET_META == null) {
-            return 0;
-        }
-        try {
-            Object value = STACK_GET_META.invoke(stack);
-            return value instanceof Integer ? (Integer) value : 0;
-        } catch (Throwable throwable) {
-            logFallback("ItemStack metadata bridge failed", throwable);
-            return 0;
-        }
-    }
-
-    private static boolean hasTag(ItemStack stack) {
-        if (STACK_HAS_TAG == null) {
-            return false;
-        }
-        try {
-            return Boolean.TRUE.equals(STACK_HAS_TAG.invoke(stack));
-        } catch (Throwable throwable) {
-            logFallback("ItemStack hasTag bridge failed", throwable);
-            return false;
-        }
-    }
-
-    private static Object tag(ItemStack stack) {
-        if (STACK_GET_TAG == null) {
-            return null;
-        }
-        try {
-            return STACK_GET_TAG.invoke(stack);
-        } catch (Throwable throwable) {
-            logFallback("ItemStack tag bridge failed", throwable);
-            return null;
-        }
-    }
-
-    private static boolean isEmpty(ItemStack stack) {
-        if (stack == null || stack == EMPTY_STACK) {
-            return true;
-        }
-        if (STACK_IS_EMPTY == null) {
-            return false;
-        }
-        try {
-            return Boolean.TRUE.equals(STACK_IS_EMPTY.invoke(stack));
-        } catch (Throwable throwable) {
-            logFallback("ItemStack.isEmpty bridge failed", throwable);
-            return false;
-        }
-    }
-
-    private static ItemStack copy(ItemStack stack) {
-        if (isEmpty(stack) || STACK_COPY == null) {
-            return emptyStack();
-        }
-        try {
-            Object value = STACK_COPY.invoke(stack);
-            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
-        } catch (Throwable throwable) {
-            logFallback("ItemStack.copy bridge failed", throwable);
-            return emptyStack();
-        }
-    }
-
-    private static ItemStack emptyStack() {
-        return EMPTY_STACK;
-    }
-
-    private static ItemStack findEmptyStack() {
-        Field field = findField(ItemStack.class, "EMPTY", "field_190927_a");
-        if (field == null) {
-            return null;
-        }
-        try {
-            Object value = field.get(null);
-            return value instanceof ItemStack ? (ItemStack) value : null;
-        } catch (Throwable ignored) {
-            return null;
-        }
+        return RecipeOptimizationHelper.findMatchingResult(inventory, world);
     }
 
     private static Ingredient findEmptyIngredient() {
@@ -597,25 +418,6 @@ public final class NuclearCraftRecipeOptimizations {
             Object value = field.get(null);
             return value instanceof Ingredient ? (Ingredient) value : null;
         } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static Method findMethod(Class<?> type, String mcpName, String srgName, Class<?>... parameterTypes) {
-        Method method = findMethod(type, mcpName, parameterTypes);
-        if (method == null) {
-            method = findMethod(type, srgName, parameterTypes);
-        }
-        if (method != null) {
-            method.setAccessible(true);
-        }
-        return method;
-    }
-
-    private static Method findMethod(Class<?> type, String name, Class<?>... parameterTypes) {
-        try {
-            return type.getDeclaredMethod(name, parameterTypes);
-        } catch (NoSuchMethodException ignored) {
             return null;
         }
     }

@@ -37,6 +37,7 @@ public final class WorldLoadingProgress {
     private static volatile boolean startDiagnosticLogged;
     private static volatile boolean renderSkipDiagnosticLogged;
     private static volatile boolean renderSuccessDiagnosticLogged;
+    private static volatile boolean suppressVanillaLoadingRenderer;
     private static volatile Field fontRendererField;
     private static volatile Method guiDrawRectMethod;
     private static volatile Method guiTexturedRectMethod;
@@ -80,6 +81,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
@@ -94,7 +96,7 @@ public final class WorldLoadingProgress {
         progress = 8;
         startedAt = System.nanoTime();
         firstFrameLogged = false;
-        GPOM.LOGGER.info("[WorldLoadingScreen] Started integrated world loading for {}", worldName.isEmpty() ? "<unnamed>" : worldName);
+        logInfo("[WorldLoadingScreen] Started integrated world loading for {}", worldName.isEmpty() ? "<unnamed>" : worldName);
         logStartDiagnostic("integrated", worldName);
     }
 
@@ -107,6 +109,7 @@ public final class WorldLoadingProgress {
                 return;
             }
             active = true;
+            suppressVanillaLoadingRenderer = false;
             suspendedForBlockingScreen = false;
             suppressTerrainStartUntilScreenClears = false;
             waitingForFirstWorldRender = false;
@@ -115,7 +118,7 @@ public final class WorldLoadingProgress {
             worldName = "";
             startedAt = System.nanoTime();
             firstFrameLogged = false;
-            GPOM.LOGGER.info("[WorldLoadingScreen] Started terrain loading");
+            logInfo("[WorldLoadingScreen] Started terrain loading");
             logStartDiagnostic("terrain", "");
         }
         update("Receiving terrain", "Waiting for initial chunks", 88);
@@ -129,6 +132,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
@@ -146,7 +150,7 @@ public final class WorldLoadingProgress {
         progress = newProgress;
         startedAt = System.nanoTime();
         firstFrameLogged = false;
-        GPOM.LOGGER.info("[WorldLoadingScreen] Started vanilla world loading overlay from {}", clean(source));
+        logInfo("[WorldLoadingScreen] Started vanilla world loading overlay from {}", clean(source));
         logStartDiagnostic("vanilla:" + clean(source), title);
     }
 
@@ -155,6 +159,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
@@ -169,7 +174,7 @@ public final class WorldLoadingProgress {
         progress = initialProgress;
         startedAt = System.nanoTime();
         firstFrameLogged = false;
-        GPOM.LOGGER.info("[WorldLoadingScreen] Started client world loading for {}", worldName.isEmpty() ? "<unknown>" : worldName);
+        logInfo("[WorldLoadingScreen] Started client world loading for {}", worldName.isEmpty() ? "<unknown>" : worldName);
         logStartDiagnostic("client-world", worldName);
     }
 
@@ -178,6 +183,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
@@ -189,7 +195,7 @@ public final class WorldLoadingProgress {
         progress = 48;
         startedAt = System.nanoTime();
         firstFrameLogged = false;
-        GPOM.LOGGER.info("[WorldLoadingScreen] Started dimension switch overlay ({})", worldName.isEmpty() ? "unknown target" : worldName);
+        logInfo("[WorldLoadingScreen] Started dimension switch overlay ({})", worldName.isEmpty() ? "unknown target" : worldName);
         logStartDiagnostic("dimension-switch", worldName);
     }
 
@@ -198,6 +204,7 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = true;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
@@ -212,8 +219,22 @@ public final class WorldLoadingProgress {
         progress = -1;
         startedAt = System.nanoTime();
         firstFrameLogged = false;
-        GPOM.LOGGER.info("[WorldLoadingScreen] Started world leave overlay ({})", detail);
+        logInfo("[WorldLoadingScreen] Started world leave overlay ({})", detail);
         logStartDiagnostic("leaving", detail);
+    }
+
+    public static void suppressVanillaLoadingRenderer(String reason) {
+        if (!enabled()) {
+            return;
+        }
+        if (!suppressVanillaLoadingRenderer) {
+            logInfo("[WorldLoadingScreen] Suppressing vanilla loading renderer during unsafe transition ({})", clean(reason));
+        }
+        suppressVanillaLoadingRenderer = true;
+    }
+
+    public static boolean shouldSuppressVanillaLoadingRenderer() {
+        return enabled() && suppressVanillaLoadingRenderer;
     }
 
     public static void update(String newStage, String newDetail, int newProgress) {
@@ -257,11 +278,12 @@ public final class WorldLoadingProgress {
         detail = "Handing control to the client";
         progress = 100;
         active = false;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
         suppressTerrainStartUntilScreenClears = true;
-        GPOM.LOGGER.info("[WorldLoadingScreen] World loading finished after {} ms ({})", elapsedMs, reason == null ? "unknown" : reason);
+        logInfo("[WorldLoadingScreen] World loading finished after {} ms ({})", elapsedMs, reason == null ? "unknown" : reason);
     }
 
     public static void suspendForBlockingScreen(String reason) {
@@ -270,11 +292,12 @@ public final class WorldLoadingProgress {
         }
         long elapsedMs = startedAt == 0L ? 0L : (System.nanoTime() - startedAt) / 1_000_000L;
         active = false;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = true;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
         suppressTerrainStartUntilScreenClears = false;
-        GPOM.LOGGER.info(
+        logInfo(
                 "[WorldLoadingScreen] Suspended GPOM world loading overlay after {} ms ({})",
                 elapsedMs,
                 reason == null ? "blocking GUI displayed" : reason
@@ -290,12 +313,13 @@ public final class WorldLoadingProgress {
             return;
         }
         active = true;
+        suppressVanillaLoadingRenderer = false;
         suspendedForBlockingScreen = false;
         suppressTerrainStartUntilScreenClears = false;
         waitingForFirstWorldRender = false;
         waitingForFirstWorldRenderAt = 0L;
         update(newStage, newDetail, newProgress);
-        GPOM.LOGGER.info("[WorldLoadingScreen] Resumed GPOM world loading overlay after Forge blocking screen closed");
+        logInfo("[WorldLoadingScreen] Resumed GPOM world loading overlay after Forge blocking screen closed");
     }
 
     public static void markWaitingForFirstWorldRender() {
@@ -305,7 +329,7 @@ public final class WorldLoadingProgress {
         if (!waitingForFirstWorldRender) {
             waitingForFirstWorldRender = true;
             waitingForFirstWorldRenderAt = System.nanoTime();
-            GPOM.LOGGER.info("[WorldLoadingScreen] Waiting for first rendered world frame");
+            logInfo("[WorldLoadingScreen] Waiting for first rendered world frame");
         }
         update("Rendering terrain", "Waiting for first terrain frame", 99);
     }
@@ -450,7 +474,7 @@ public final class WorldLoadingProgress {
     }
 
     private static void markFirstFrame(boolean displayUpdated) {
-        if (firstFrameLogged || !active || startedAt == 0L) {
+        if (firstFrameLogged || !active || startedAt == 0L || !GpomEarlyConfig.worldLoadingScreenDiagnosticLogsEnabled()) {
             return;
         }
         firstFrameLogged = true;
@@ -463,8 +487,14 @@ public final class WorldLoadingProgress {
         );
     }
 
+    private static void logInfo(String message, Object... args) {
+        if (GpomEarlyConfig.worldLoadingScreenDiagnosticLogsEnabled()) {
+            GPOM.LOGGER.info(message, args);
+        }
+    }
+
     private static void logStartDiagnostic(String source, String label) {
-        if (startDiagnosticLogged) {
+        if (startDiagnosticLogged || !GpomEarlyConfig.worldLoadingScreenDiagnosticLogsEnabled()) {
             return;
         }
         startDiagnosticLogged = true;
@@ -477,7 +507,7 @@ public final class WorldLoadingProgress {
     }
 
     private static void logRenderSkipDiagnostic(String reason) {
-        if (renderSkipDiagnosticLogged || renderSuccessDiagnosticLogged) {
+        if (renderSkipDiagnosticLogged || renderSuccessDiagnosticLogged || !GpomEarlyConfig.worldLoadingScreenDiagnosticLogsEnabled()) {
             return;
         }
         renderSkipDiagnosticLogged = true;
@@ -489,7 +519,7 @@ public final class WorldLoadingProgress {
     }
 
     private static void logRenderSuccessDiagnostic(int width, int height, int effectiveProgress) {
-        if (renderSuccessDiagnosticLogged) {
+        if (renderSuccessDiagnosticLogged || !GpomEarlyConfig.worldLoadingScreenDiagnosticLogsEnabled()) {
             return;
         }
         renderSuccessDiagnosticLogged = true;

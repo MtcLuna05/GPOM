@@ -3,9 +3,7 @@ package com.l.gpom.compat.journeymap;
 import com.l.gpom.GPOM;
 import com.l.gpom.client.ClientAccess;
 import com.l.gpom.config.GpomEarlyConfig;
-import net.minecraft.client.gui.GuiButton;
-import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
+import com.l.gpom.util.ReflectionLookup;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -86,8 +84,8 @@ public final class JourneyMapWaypointDimensionDropup {
         DropupState state = state(screen);
         int mouseX = mouseX(screen);
         int mouseY = mouseY(screen);
-        int wheel = Mouse.getEventDWheel();
-        int mouseButton = Mouse.getEventButton();
+        int wheel = mouseEventDWheel();
+        int mouseButton = mouseEventButton();
         try {
             Object button = dimensionButton(screen);
             if (button == null) {
@@ -103,7 +101,7 @@ public final class JourneyMapWaypointDimensionDropup {
                 state.scroll = clamp(layout.scroll + (wheel < 0 ? 1 : -1), 0, layout.maxScroll());
                 return true;
             }
-            if ((mouseButton != 0 && mouseButton != 1) || !Mouse.getEventButtonState()) {
+            if ((mouseButton != 0 && mouseButton != 1) || !mouseEventButtonState()) {
                 return false;
             }
             if (state.open) {
@@ -140,7 +138,7 @@ public final class JourneyMapWaypointDimensionDropup {
         return false;
     }
 
-    public static boolean actionPerformed(Object screen, GuiButton pressedButton) {
+    public static boolean actionPerformed(Object screen, Object pressedButton) {
         if (!enabled() || !isWaypointManager(screen) || pressedButton == null) {
             return false;
         }
@@ -167,7 +165,7 @@ public final class JourneyMapWaypointDimensionDropup {
             return false;
         }
         DropupState state = state(screen);
-        if (!state.open || !Keyboard.getEventKeyState() || Keyboard.getEventKey() != 1) {
+        if (!state.open || !keyboardEventKeyState() || keyboardEventKey() != 1) {
             return false;
         }
         close(state);
@@ -522,13 +520,41 @@ public final class JourneyMapWaypointDimensionDropup {
     private static int mouseX(Object screen) {
         int width = Math.max(1, screenInt(screen, "field_146294_l", "width"));
         int displayWidth = Math.max(1, ClientAccess.displayWidth(ClientAccess.minecraft()));
-        return Mouse.getEventX() * width / displayWidth;
+        return mouseEventX() * width / displayWidth;
     }
 
     private static int mouseY(Object screen) {
         int height = Math.max(1, screenInt(screen, "field_146295_m", "height"));
         int displayHeight = Math.max(1, ClientAccess.displayHeight(ClientAccess.minecraft()));
-        return height - Mouse.getEventY() * height / displayHeight - 1;
+        return height - mouseEventY() * height / displayHeight - 1;
+    }
+
+    private static int mouseEventDWheel() {
+        return intStaticNoArg("org.lwjgl.input.Mouse", "getEventDWheel");
+    }
+
+    private static int mouseEventButton() {
+        return intStaticNoArg("org.lwjgl.input.Mouse", "getEventButton");
+    }
+
+    private static boolean mouseEventButtonState() {
+        return booleanStaticNoArg("org.lwjgl.input.Mouse", "getEventButtonState");
+    }
+
+    private static int mouseEventX() {
+        return intStaticNoArg("org.lwjgl.input.Mouse", "getEventX");
+    }
+
+    private static int mouseEventY() {
+        return intStaticNoArg("org.lwjgl.input.Mouse", "getEventY");
+    }
+
+    private static int keyboardEventKey() {
+        return intStaticNoArg("org.lwjgl.input.Keyboard", "getEventKey");
+    }
+
+    private static boolean keyboardEventKeyState() {
+        return booleanStaticNoArg("org.lwjgl.input.Keyboard", "getEventKeyState");
     }
 
     private static boolean isWaypointManager(Object screen) {
@@ -603,6 +629,26 @@ public final class JourneyMapWaypointDimensionDropup {
         }
     }
 
+    private static int intStaticNoArg(String className, String methodName) {
+        Object value = invokeStaticNoArg(className, methodName);
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    private static boolean booleanStaticNoArg(String className, String methodName) {
+        Object value = invokeStaticNoArg(className, methodName);
+        return value instanceof Boolean ? (Boolean) value : false;
+    }
+
+    private static Object invokeStaticNoArg(String className, String methodName) {
+        try {
+            Class<?> type = Class.forName(className, false, JourneyMapWaypointDimensionDropup.class.getClassLoader());
+            Method method = findMethod(type, new Class<?>[0], methodName);
+            return method.invoke(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static String stringValue(Object value) {
         return value instanceof String ? (String) value : null;
     }
@@ -613,20 +659,13 @@ public final class JourneyMapWaypointDimensionDropup {
         if (cached != null) {
             return cached;
         }
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    FIELD_CACHE.putIfAbsent(key, field);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
+        try {
+            Field field = ReflectionLookup.findField(type, names);
+            FIELD_CACHE.putIfAbsent(key, field);
+            return field;
+        } catch (NoSuchFieldException exception) {
+            throw exception;
         }
-        throw new NoSuchFieldException(type.getName() + "#" + join(names));
     }
 
     private static Method findMethod(Class<?> type, Class<?>[] params, String... names) throws NoSuchMethodException {
@@ -635,20 +674,13 @@ public final class JourneyMapWaypointDimensionDropup {
         if (cached != null) {
             return cached;
         }
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Method method = current.getDeclaredMethod(name, params);
-                    method.setAccessible(true);
-                    METHOD_CACHE.putIfAbsent(key, method);
-                    return method;
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-            current = current.getSuperclass();
+        try {
+            Method method = ReflectionLookup.findMethod(type, names, params);
+            METHOD_CACHE.putIfAbsent(key, method);
+            return method;
+        } catch (NoSuchMethodException exception) {
+            throw exception;
         }
-        throw new NoSuchMethodException(type.getName() + "#" + join(names));
     }
 
     private static Method findCompatibleMethod(Class<?> type, String name, Object arg) {

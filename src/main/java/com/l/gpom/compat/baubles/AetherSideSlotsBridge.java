@@ -2,6 +2,7 @@ package com.l.gpom.compat.baubles;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.IInventory;
@@ -266,25 +267,11 @@ public final class AetherSideSlotsBridge {
         if (type == null || names == null) {
             return null;
         }
-        for (String name : names) {
-            try {
-                Method method = type.getMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-            }
+        try {
+            return ReflectionLookup.findMethod(type, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            for (String name : names) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-        }
-        return null;
     }
 
     private static Slot createAccessorySlot(IInventory inventory, int index, EntityPlayer player) {

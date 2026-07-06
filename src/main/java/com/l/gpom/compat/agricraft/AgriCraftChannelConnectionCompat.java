@@ -1,5 +1,6 @@
 package com.l.gpom.compat.agricraft;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.tileentity.TileEntity;
@@ -141,8 +142,7 @@ public final class AgriCraftChannelConnectionCompat {
     }
 
     private static boolean isRemote(World world) {
-        Object value = fieldValue(world, "field_72995_K", "isRemote");
-        return value instanceof Boolean && (Boolean) value;
+        return MinecraftMappingCompat.worldIsRemote(world);
     }
 
     private static boolean isAgriConnectable(TileEntity tile) {

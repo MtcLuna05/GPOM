@@ -1,6 +1,7 @@
 package com.l.gpom.compat.hei;
 
 import com.l.gpom.util.ReflectionFields;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import org.lwjgl.opengl.GL11;
@@ -127,18 +128,10 @@ public final class HeiOverlayLayeringCompat {
     }
 
     private static Method findMethod(Class<?> owner, Class<?>[] parameters, String... names) {
-        Class<?> current = owner;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameters);
-                    method.setAccessible(true);
-                    return method;
-                } catch (Throwable ignored) {
-                }
-            }
-            current = current.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameters);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 }

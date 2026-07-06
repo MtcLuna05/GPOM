@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.reliquary.ReliquaryHudRenderGuard;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.GpomSide;
 import com.l.gpom.profiling.StartupProfiler;
@@ -121,7 +122,9 @@ public final class EventBusRegistrationOptimizations {
             );
             Object replacement = replacementClass.getConstructor().newInstance();
             eventBus.register(replacement);
-            GPOM.LOGGER.info(successMessage);
+            if (GpomEarlyConfig.baublesInfoLogsEnabled()) {
+                GPOM.LOGGER.info(successMessage);
+            }
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn(failureMessage, throwable);
         }
@@ -415,6 +418,9 @@ public final class EventBusRegistrationOptimizations {
     }
 
     private static boolean isLazyStaticSubscriberDenied(Class<?> subscriberClass, ModContainer owner) {
+        if (GpomSide.isDedicatedServerLaunch() && isClientOnlyClassName(subscriberClass.getName())) {
+            return true;
+        }
         Set<String> denylist = GpomEarlyConfig.constructionGenericAutomaticSubscribersDenylist();
         if (denylist.isEmpty()) {
             return false;
@@ -544,6 +550,24 @@ public final class EventBusRegistrationOptimizations {
 
     private static String safeModId(ModContainer owner) {
         return owner == null ? "<null>" : owner.getModId();
+    }
+
+    private static boolean isClientOnlyClassName(String className) {
+        if (className == null) {
+            return false;
+        }
+        String lower = className.toLowerCase(Locale.ROOT);
+        return lower.startsWith("net.minecraft.client.")
+                || lower.contains(".client.")
+                || lower.contains(".clientgui.")
+                || lower.contains(".gui.client.")
+                || lower.contains(".render.")
+                || lower.contains(".renderer.")
+                || lower.contains(".rendering.")
+                || lower.endsWith(".clientproxy")
+                || lower.endsWith("clientproxy")
+                || lower.endsWith(".clienteventhandler")
+                || lower.endsWith("clienteventhandler");
     }
 
     private static final class StaticSubscriberVisitor extends ClassVisitor {
@@ -838,6 +862,9 @@ public final class EventBusRegistrationOptimizations {
         }
 
         private void invokeHandler(Event event) {
+            if (ReliquaryHudRenderGuard.shouldSkip(subscriberClass, spec.methodName, event)) {
+                return;
+            }
             try {
                 handler().invokeExact(event);
             } catch (RuntimeException | Error throwable) {
@@ -873,32 +900,85 @@ public final class EventBusRegistrationOptimizations {
 
         private MethodHandle createHandler() {
             try {
-                return MethodHandles.publicLookup()
-                        .findStatic(
-                                subscriberClass,
-                                spec.methodName,
-                                MethodType.methodType(Void.TYPE, spec.eventType)
-                        )
+                Method method = findSubscriberMethod();
+                method.setAccessible(true);
+                return MethodHandles.lookup()
+                        .unreflect(method)
                         .asType(MethodType.methodType(Void.TYPE, Event.class));
-            } catch (Throwable publicLookupFailure) {
+            } catch (Throwable throwable) {
+                GPOM.LOGGER.warn(
+                        "[EventBusRegistrationOptimizations] Disabling broken lazy static EventBus subscriber {}#{}({}) for {}; handler could not be initialized",
+                        subscriberClass.getName(),
+                        spec.methodName,
+                        spec.eventType.getName(),
+                        safeModId(owner),
+                        throwable
+                );
+                return NOOP_HANDLER;
+            }
+        }
+
+        private Method findSubscriberMethod() throws NoSuchMethodException {
+            try {
+                return subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
+            } catch (NoSuchMethodException ignored) {
+            }
+
+            Method method = findCompatibleSubscriberMethod(subscriberClass.getDeclaredMethods());
+            if (method != null) {
+                return method;
+            }
+
+            method = findCompatibleSubscriberMethod(subscriberClass.getMethods());
+            if (method != null) {
+                return method;
+            }
+
+            throw new NoSuchMethodException(subscriberClass.getName() + '#' + spec.methodName + '(' + spec.eventType.getName() + ')');
+        }
+
+        private Method findCompatibleSubscriberMethod(Method[] methods) {
+            Method sameNamedFallback = null;
+            Method uniqueSameNamedFallback = null;
+            int sameNamedCandidates = 0;
+            for (Method method : methods) {
+                if (!spec.methodName.equals(method.getName()) || !Modifier.isStatic(method.getModifiers())) {
+                    continue;
+                }
+
+                Class<?>[] parameterTypes;
                 try {
-                    Method method = subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
-                    method.setAccessible(true);
-                    return MethodHandles.lookup()
-                            .unreflect(method)
-                            .asType(MethodType.methodType(Void.TYPE, Event.class));
-                } catch (Throwable reflectiveFailure) {
-                    GPOM.LOGGER.error(
-                            "[EventBusRegistrationOptimizations] Disabling broken lazy static EventBus subscriber {}#{}({}) for {}; handler could not be initialized",
-                            subscriberClass.getName(),
-                            spec.methodName,
-                            spec.eventType.getName(),
-                            safeModId(owner),
-                            reflectiveFailure
-                    );
-                    return NOOP_HANDLER;
+                    parameterTypes = method.getParameterTypes();
+                } catch (Throwable ignored) {
+                    continue;
+                }
+
+                if (parameterTypes.length != 1) {
+                    continue;
+                }
+
+                sameNamedCandidates++;
+                if (uniqueSameNamedFallback == null) {
+                    uniqueSameNamedFallback = method;
+                }
+
+                Class<?> parameterType = parameterTypes[0];
+                if (parameterType == spec.eventType
+                        || parameterType.isAssignableFrom(spec.eventType)
+                        || spec.eventType.isAssignableFrom(parameterType)
+                        || parameterType.getName().equals(spec.eventType.getName())) {
+                    return method;
+                }
+
+                if (sameNamedFallback == null && Event.class.isAssignableFrom(parameterType)) {
+                    sameNamedFallback = method;
                 }
             }
+
+            if (sameNamedFallback != null) {
+                return sameNamedFallback;
+            }
+            return sameNamedCandidates == 1 ? uniqueSameNamedFallback : null;
         }
 
         private static MethodHandle noopHandler() {

@@ -170,7 +170,7 @@ gpom.registry.parallelRegisterEvents.recipes.enabled=false
 gpom.registry.parallelRegisterEvents.workers=0
 gpom.registry.parallelRegisterEvents.queuedCommit=true
 gpom.registry.parallelRegisterEvents.proxyEventRegistry=true
-gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist=moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes,draconicevolution@minecraft:recipes
+gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist=moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes,draconicevolution@minecraft:recipes,techreborn@minecraft:recipes
 gpom.registry.parallelRegisterEvents.immediateCommitRegistries=minecraft:items,minecraft:entities
 gpom.registry.parallelRegisterEvents.proxyImmediateRegistries=false
 gpom.registry.parallelRegisterEvents.orderedWaveRegistries=minecraft:items
@@ -198,6 +198,7 @@ Live MeatballCraft posture:
 - Blockcraftery and Mystical Lib registry listeners stay serial after a run registered Blockcraftery blocks under `mysticallib:*`, causing model lookups such as `mysticallib:blockstates/editable_door.json`.
 - Main-thread FML lifecycle dispatch uses Forge's real active mod container instead of GPOM's worker thread-local override, so MysticalLib's explicit `LibRegistry.setActiveMod("blockcraftery", ...)` can affect one-argument `setRegistryName(name)` calls.
 - Draconic Evolution `minecraft:recipes` stays serial and proxy-denied because its recipe helper registers shaped/fusion recipes through direct Forge registry writes, and the particle-generator block uses metadata-sensitive variants such as Particle Generator and Energy Core Stabilizer.
+- Tech Reborn `minecraft:recipes` stays serial and proxy-denied after copper cable/wire recipes appeared to miss while Tech Reborn's crafting recipes were logged from `GPOM Registry - techreborn`.
 
 Risk level: high. Add narrow `modid@registry` denylists for failures rather than disabling the whole dispatcher unless the failure is systemic.
 
@@ -507,11 +508,13 @@ gpom.betterPortals.cleanupClientWorlds=false
 
 Capabilities:
 
-- Client world-load, unload, and dimension-switch snapshots for memory/state debugging.
+- Client world-load, unload, and dimension-switch snapshots for memory/state debugging. Probe points include `loadWorld` begin, after handoff cleanup, before/after `RenderGlobal.setWorldAndLoadRenderers`, `loadWorld` return, Forge client world load/unload events, and delayed snapshots.
+- Retained-world leak probes track old client worlds through weak references and log `[WorldLifecycleLeakProbe]` warnings when old worlds survive delayed snapshots.
 - JourneyMap cleanup on client world unload and disconnect; Minecraft `loadWorld` handoffs are suppressed by default and require opt-in cleanup.
 - BetterPortals client view-world cleanup through BetterPortals' own reset path when explicitly enabled.
 - Client-side `World.notifyBlockUpdate` listener snapshot so listeners that remove themselves during chunk data handling cannot shrink the live listener list mid-loop.
 - Scoped dimension-handoff visual cleanup clears vanilla Minecraft particles and Astral Sorcery dynamic effect lists. It deliberately does not clear generic `RenderGlobal` update queues during BetterPortals/main-view handoffs, because those queues may contain pending Nothirium/AUSM chunk rebuild work.
+- Advanced Rocketry stale oxygen HUD guard clears only AR's recent-suffocation timestamp and extends AR's own warning suppress window for a short client dimension-handoff grace period. It is reflection-only and no-ops when Advanced Rocketry is absent.
 - Render-section update dedupe is disabled by default. Suppressing repeated same-section `RenderGlobal.markBlockRangeForRenderUpdate` calls is not safe in the current Nothirium/AUSM/CodeChickenLib profile.
 - CodeChickenLib bakery state repair is enabled by default. It normalizes null `ccl_model_error_state` values to CCL `ErrorState.OK` before CCL's bakery returns the missing model, preventing Nothirium/AUSM chunk rebuilds from breaking CCL-controlled models such as AE2 cover/facade render paths.
 
@@ -574,6 +577,7 @@ gpom.baubles.sideSlots.preferRight=false
 gpom.baubles.sideSlots.shiftRightClickEquip=true
 gpom.baubles.sideSlots.aether.enabled=false
 gpom.baubles.sideSlots.cosmeticArmor.enabled=false
+gpom.baubles.sideSlots.deepProbe.enabled=true
 ```
 
 Capabilities:
@@ -586,11 +590,32 @@ Capabilities:
 - Shift-left quick-equip runs only while the rail is open and only from normal inventory/hotbar slots.
 - Optional Aether Legacy accessory slots can be appended to the same rail using Aether's native slot validation and icons.
 - Optional CosmeticArmorReworked armor slots can be appended to the same rail with server-routed slot writes to avoid ghost stacks.
-- Side-rail normal pickup is server-authoritative. The client sends only GPOM's side-rail packet tagged with the original empty-cursor/occupied-slot intent; the server validates the side-rail slot, performs explicit cursor pickup, clears the source slot, and syncs the cursor. This avoids vanilla `windowClick` races that snap custom side-rail pickups back into the slot. Shift-click extraction remains on the same server packet path.
+- Side-rail normal pickup is server-authoritative. The client sends only GPOM's side-rail packet tagged with the original empty-cursor/occupied-slot intent; the server validates the side-rail slot, extracts through `Slot.decrStackSize`, calls `Slot.onTake`, and syncs the cursor. This avoids vanilla `windowClick` races and preserves Forge/Baubles item-handler semantics for wrappers such as BringMeTheRings. Shift-click extraction remains on the same server packet path.
+- Deep side-rail probes can log client click intent, resolved rail identity, cursor state, server slot resolution, mutation results, and rejection reasons under `[GPOM Baubles Probe]`.
 - CosmeticArmorReworked per-bauble visibility toggles are synced to rail positions and hidden when the rail closes.
 - Common-side network registration first checks `Loader.isModLoaded("baubles")` and then invokes the Baubles bridge reflectively so packs without Baubles can still load GPOM.
 
 Risk level: medium. Container slot count and packet symmetry are critical; keep this disabled by default for broad packs.
+
+## Crafting Safety
+
+Feature area: crash prevention for unsafe recipe preview/craft paths.
+
+Key config:
+
+```properties
+gpom.crafting.safeBrokenRecipePreview.enabled=true
+```
+
+Capabilities:
+
+- Guards vanilla `Container.slotChangedCraftingGrid` so broken `IRecipe.matches` or `IRecipe.getCraftingResult` calls clear the output slot and log once instead of crashing.
+- Guards `SlotCrafting.onTake` remainder calculation so broken `CraftingManager.getRemainingItems` calls do not crash after the output is taken.
+- If remainder calculation fails, consumes one item from each occupied input slot with no returned containers, avoiding an output duplication loop while still keeping the player/server alive.
+- Covers synthetic crafting inventories used by ME terminals and ProjectEX Arcane Transmutation Tablet without directly linking AE2 or ProjectEX.
+- Added after MBC scripts warned players not to craft `actuallyadditions:block_greenhouse_glass`, `botania:lexicon`, `extrautils2:terraformer:1`, `extrautils2:terraformer:9`, `extrautils2:biomemarker`, or `naturescompass:naturescompass` in ME terminals or arcane tablets.
+
+Risk level: low to medium. Normal recipes should behave exactly like vanilla; broken recipes fail closed and may require normal crafting if the recipe implementation depends on a special real-player context.
 
 ## Just Enough Calculation Features
 
@@ -607,6 +632,7 @@ Capabilities:
 
 - Adds a pin button to Just Enough Calculation's craft screen.
 - When pinned, renders JEC's crafting calculator as a compact draggable mini-window over normal container screens.
+- Persists the mini-window open/closed state and manually dragged position across client relaunches in `config/gpom-jecalculation-overlay.properties`.
 - Routes clicks, scroll, and key input only while the pointer/input belongs to the overlay bounds.
 - Uses reflection and optional bridges so it no-ops when JEC is absent or internals change.
 - Fuzzy volatile item NBT support lets JEC compare volatile-NBT stacks more usefully for craft planning.
@@ -644,6 +670,8 @@ Key config:
 gpom.architecturecraft.fastShapeLighting=true
 gpom.architecturecraft.accurateHitboxes=true
 gpom.architecturecraft.parentMaterialOcclusion.enabled=false
+gpom.architecturecraft.additionalSawbenchMaterials.enabled=true
+gpom.architecturecraft.additionalSawbenchMaterials.allowlist=enderio:block_fused_glass,enderio:block_fused_quartz
 gpom.blockcraftery.accurateHitboxes=true
 gpom.blockcraftery.parentMaterialOcclusion.enabled=true
 gpom.blockcraftery.modelRenderLayerCompat=true
@@ -653,6 +681,7 @@ Capabilities:
 
 - Blockcraftery accurate hitboxes and copied-material occlusion/side-render behavior.
 - ArchitectureCraft accurate hitboxes and optional parent-material occlusion.
+- ArchitectureCraft sawbench material allowlist for safe non-opaque non-tile blocks, covering EnderIO fused/quite-clear glass without a hard EnderIO dependency.
 - Blockcraftery baked-model render-layer compatibility when AUSM is absent.
 - ArchitectureCraft fast shape lighting when AUSM is absent.
 - Blockcraftery/Mystical Lib startup ownership is handled by lifecycle/registry denylists, not by the model-layer patch; the model patch remains optional and no-ops when Blockcraftery is absent.
@@ -772,6 +801,7 @@ Key config:
 gpom.tileEntity.missingMappingSaveGuard.enabled=true
 gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds=true
 gpom.actuallyAdditions.repairMissingTileEntityMappings=true
+gpom.architecturecraft.repairMissingTileEntityMappings=true
 gpom.enderio.repairMissingTileEntityMappings=true
 gpom.industrialForegoing.repairMissingTileEntityMappings=true
 gpom.registry.repairThaumicWondersMissingMappings=false
@@ -846,6 +876,7 @@ Implemented or configured mod-specific paths include:
 - NuclearCraft manufactory/log-crafting result caches and optional fast metal recipes.
 - OpenComputers settings cache, fast Lua architecture selection, and optional call/integration profilers.
 - Railcraft lazy item conditions, module-container deferral controls, and lazy cart config.
+- RandomThings/QuantumThings improved runic dust editor with mapping-safe runtime interaction hooks.
 - Scannable redundant config ore-cache rebuild skip and negative ore-cache id guard.
 - LoliASM thread-safe crash-state registry replacement.
 
@@ -869,6 +900,7 @@ gpom.railcraft.deferModuleIC2Containers=false
 gpom.railcraft.deferModuleContainers=false
 gpom.railcraft.deferSelectedModuleContainers=false
 gpom.railcraft.lazyCartConfig=false
+gpom.randomThings.improvedRunicDust.enabled=true
 gpom.scannable.skipRedundantConfigOreCacheRebuilds=true
 gpom.scannable.skipNegativeOreCacheIds=true
 gpom.loliasm.threadSafeStatefulRegistry=true

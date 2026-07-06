@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.core.TargetedModVersions;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.inventory.InventoryCrafting;
@@ -10,7 +11,6 @@ import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,16 +22,6 @@ public final class TechRebornRecipeOptimizations {
     private static final ConcurrentHashMap<String, ItemStack> SAWMILL_MATCH_CACHE = new ConcurrentHashMap<>();
     private static final Method RECIPE_CAN_FIT = findRecipeMethod(boolean.class, "canFit", "func_194133_a", int.class, int.class);
     private static final Method RECIPE_MATCHES = findRecipeMethod(boolean.class, "matches", "func_77569_a", InventoryCrafting.class, net.minecraft.world.World.class);
-    private static final Method RECIPE_RESULT = findRecipeMethod(ItemStack.class, "getCraftingResult", "func_77572_b", InventoryCrafting.class);
-    private static final Method INVENTORY_GET_STACK = findMethod(InventoryCrafting.class, "getStackInSlot", "func_70301_a", int.class);
-    private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, "isEmpty", "func_190926_b");
-    private static final Method STACK_COPY = findMethod(ItemStack.class, "copy", "func_77946_l");
-    private static final Method STACK_GET_ITEM = findMethod(ItemStack.class, "getItem", "func_77973_b");
-    private static final Method STACK_GET_META = findMethod(ItemStack.class, "getMetadata", "func_77960_j");
-    private static final Method STACK_HAS_TAG = findMethod(ItemStack.class, "hasTagCompound", "func_77942_o");
-    private static final Method STACK_GET_TAG = findMethod(ItemStack.class, "getTagCompound", "func_77978_p");
-    private static final Method ITEM_ID_FROM_ITEM = findMethod(Item.class, "getIdFromItem", "func_150891_b", Item.class);
-    private static final ItemStack EMPTY_STACK = findEmptyStack();
     private static volatile List<IRecipe> singleSlotRecipes;
     private static volatile boolean sawmillFallbackLogged;
     private static volatile boolean recipeBridgeFallbackLogged;
@@ -135,74 +125,32 @@ public final class TechRebornRecipeOptimizations {
     }
 
     private static ItemStack recipeCraftingResult(IRecipe recipe, InventoryCrafting inventory) {
-        if (recipe == null || inventory == null || RECIPE_RESULT == null) {
+        if (recipe == null || inventory == null) {
             return emptyStack();
         }
-        try {
-            Object result = RECIPE_RESULT.invoke(recipe, inventory);
-            return result instanceof ItemStack ? (ItemStack) result : emptyStack();
-        } catch (Throwable throwable) {
-            logRecipeBridgeFailure("getCraftingResult", throwable);
-            return emptyStack();
-        }
+        ItemStack result = MinecraftMappingCompat.recipeCraftingResult(recipe, inventory);
+        return result == null ? emptyStack() : result;
     }
 
     private static ItemStack inventoryStack(InventoryCrafting inventory, int slot) {
-        if (inventory == null || INVENTORY_GET_STACK == null) {
-            return emptyStack();
-        }
-        try {
-            Object value = INVENTORY_GET_STACK.invoke(inventory, slot);
-            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
-        } catch (Throwable throwable) {
-            logRecipeBridgeFailure("InventoryCrafting.getStackInSlot", throwable);
-            return emptyStack();
-        }
+        ItemStack value = MinecraftMappingCompat.inventoryStackInSlot(inventory, slot);
+        return value == null ? emptyStack() : value;
     }
 
     private static boolean isEmpty(ItemStack stack) {
-        if (stack == null || stack == EMPTY_STACK) {
-            return true;
-        }
-        if (STACK_IS_EMPTY == null) {
-            return false;
-        }
-        try {
-            return Boolean.TRUE.equals(STACK_IS_EMPTY.invoke(stack));
-        } catch (Throwable throwable) {
-            logRecipeBridgeFailure("ItemStack.isEmpty", throwable);
-            return false;
-        }
+        return MinecraftMappingCompat.itemStackIsEmpty(stack);
     }
 
     private static ItemStack copy(ItemStack stack) {
-        if (isEmpty(stack) || STACK_COPY == null) {
+        if (isEmpty(stack)) {
             return emptyStack();
         }
-        try {
-            Object value = STACK_COPY.invoke(stack);
-            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
-        } catch (Throwable throwable) {
-            logRecipeBridgeFailure("ItemStack.copy", throwable);
-            return emptyStack();
-        }
+        ItemStack copy = MinecraftMappingCompat.itemStackCopy(stack);
+        return copy == null ? emptyStack() : copy;
     }
 
     private static ItemStack emptyStack() {
-        return EMPTY_STACK != null ? EMPTY_STACK : null;
-    }
-
-    private static ItemStack findEmptyStack() {
-        Field field = findField(ItemStack.class, "EMPTY", "field_190927_a");
-        if (field == null) {
-            return null;
-        }
-        try {
-            Object value = field.get(null);
-            return value instanceof ItemStack ? (ItemStack) value : null;
-        } catch (Throwable ignored) {
-            return null;
-        }
+        return MinecraftMappingCompat.emptyStack();
     }
 
     private static Method findRecipeMethod(Class<?> returnType, String mcpName, String srgName, Class<?>... parameterTypes) {
@@ -225,44 +173,6 @@ public final class TechRebornRecipeOptimizations {
         }
     }
 
-    private static Method findMethod(Class<?> owner, String mcpName, String srgName, Class<?>... parameterTypes) {
-        Method method = findMethod(owner, mcpName, parameterTypes);
-        if (method == null) {
-            method = findMethod(owner, srgName, parameterTypes);
-        }
-        if (method != null) {
-            method.setAccessible(true);
-        }
-        return method;
-    }
-
-    private static Method findMethod(Class<?> owner, String name, Class<?>... parameterTypes) {
-        try {
-            return owner.getMethod(name, parameterTypes);
-        } catch (NoSuchMethodException ignored) {
-            return null;
-        }
-    }
-
-    private static Field findField(Class<?> owner, String mcpName, String srgName) {
-        Field field = findField(owner, mcpName);
-        if (field == null) {
-            field = findField(owner, srgName);
-        }
-        if (field != null) {
-            field.setAccessible(true);
-        }
-        return field;
-    }
-
-    private static Field findField(Class<?> owner, String name) {
-        try {
-            return owner.getField(name);
-        } catch (NoSuchFieldException ignored) {
-            return null;
-        }
-    }
-
     private static void logRecipeBridgeFailure(String method, Throwable throwable) {
         if (!recipeBridgeFallbackLogged) {
             recipeBridgeFallbackLogged = true;
@@ -274,47 +184,27 @@ public final class TechRebornRecipeOptimizations {
         if (isEmpty(stack)) {
             return "empty";
         }
-        Object item = invoke(STACK_GET_ITEM, stack);
+        Item item = MinecraftMappingCompat.itemStackItem(stack);
         ResourceLocation name = itemName(item);
-        String itemName = name != null ? name.toString() : String.valueOf(itemId(item));
-        Object tag = Boolean.TRUE.equals(invoke(STACK_HAS_TAG, stack)) ? invoke(STACK_GET_TAG, stack) : null;
+        String itemName = name != null ? name.toString() : String.valueOf(MinecraftMappingCompat.itemIdFromItem(item));
+        Object tag = MinecraftMappingCompat.itemStackHasTagCompound(stack) ? MinecraftMappingCompat.itemStackTagCompound(stack) : null;
         return itemName + '#' + stackMetadata(stack) + '#' + (tag != null ? tag.toString() : "");
     }
 
-    private static ResourceLocation itemName(Object item) {
-        if (!(item instanceof Item)) {
+    private static ResourceLocation itemName(Item item) {
+        if (item == null) {
             return null;
         }
         try {
-            return ForgeRegistries.ITEMS.getKey((Item) item);
+            return ForgeRegistries.ITEMS.getKey(item);
         } catch (Throwable throwable) {
             logRecipeBridgeFailure("ForgeRegistries.ITEMS.getKey", throwable);
             return null;
         }
     }
 
-    private static int itemId(Object item) {
-        if (!(item instanceof Item) || ITEM_ID_FROM_ITEM == null) {
-            return 0;
-        }
-        Object value = invoke(ITEM_ID_FROM_ITEM, null, item);
-        return value instanceof Number ? ((Number) value).intValue() : 0;
-    }
-
     private static int stackMetadata(ItemStack stack) {
-        Object value = invoke(STACK_GET_META, stack);
-        return value instanceof Number ? ((Number) value).intValue() : 0;
+        return MinecraftMappingCompat.itemStackMetadata(stack);
     }
 
-    private static Object invoke(Method method, Object target, Object... args) {
-        if (method == null) {
-            return null;
-        }
-        try {
-            return method.invoke(target, args);
-        } catch (Throwable throwable) {
-            logRecipeBridgeFailure(method.getName(), throwable);
-            return null;
-        }
-    }
 }

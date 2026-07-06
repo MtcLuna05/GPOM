@@ -7,7 +7,6 @@
   "mixins": [
     "fml.MixinAutomaticEventSubscriberStartupProfiler",
     "fml.MixinASMDataTableAnnotationCache",
-    "fml.MixinASMEventHandlerStartupProfiler",
     "fml.MixinEventBusStartupProfiler",
     "fml.MixinFMLContainerConstructionProfiler",
     "fml.MixinFMLCommonHandlerBranding",
@@ -20,10 +19,19 @@
     "baubles.MixinContainerPlayerSideSlots",
     "betterportals.MixinPlayerChunkMapMissingWorldManagerGuard",
     "betterportals.MixinServerWorldsManagerMissingTransferRepair",
-    "tileentity.MixinTileEntityMissingMappingSaveGuard"
+    "crafting.MixinContainerSafeBrokenRecipePreview",
+    "crafting.MixinSlotCraftingSafeBrokenRemainders",
+    "tileentity.MixinTileEntityMissingMappingSaveGuard",
+    "randomthings.MixinTileEntityRuneBase",
+    "randomthings.MixinItemRuneDust",
+    "randomthings.MixinItemRunePattern",
+    "randomthings.MixinBlockRuneBase",
+    "randomthings.MixinRTEventHandlerRunePattern"
   ],
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
+    "client.MixinMinecraftNullPlayerGameplayGuard",
+    "client.MixinFMLCommonHandlerNullPlayerRenderTickGuard",
     "client.MixinWorldNotifyBlockUpdateSnapshot",
     "client.MixinMinecraftWorldLoadingScreen",
     "client.MixinLoadingScreenRendererWorldLoading",
@@ -48,7 +56,8 @@
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",
     "baubles.MixinGuiInventoryBaublesSideSlots",
-    "baubles.MixinGuiContainerBaublesQuickEquip"
+    "baubles.MixinGuiContainerBaublesQuickEquip",
+    "randomthings.client.MixinModelRune"
   ],
   "server": [],
   "minVersion": "0.8"

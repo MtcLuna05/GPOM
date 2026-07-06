@@ -59,7 +59,9 @@ public final class SfmLightweightSearchCacheTransformer implements IClassTransfo
             }
             ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             node.accept(writer);
-            GPOM.LOGGER.info("[GPOM SFM] Patched SFM login item index handler");
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info("[GPOM SFM] Patched SFM login item index handler");
+            }
             return writer.toByteArray();
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[GPOM SFM] Failed to patch SFM login item index handler", throwable);
@@ -103,7 +105,9 @@ public final class SfmLightweightSearchCacheTransformer implements IClassTransfo
             }
             ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             node.accept(writer);
-            GPOM.LOGGER.info("[GPOM SFM] Patched SFM SearchUtil lightweight cache builder");
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info("[GPOM SFM] Patched SFM SearchUtil lightweight cache builder");
+            }
             return writer.toByteArray();
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[GPOM SFM] Failed to patch SFM SearchUtil lightweight cache builder", throwable);

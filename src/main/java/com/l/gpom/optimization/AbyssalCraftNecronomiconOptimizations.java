@@ -1,5 +1,6 @@
 package com.l.gpom.optimization;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -51,7 +52,7 @@ public final class AbyssalCraftNecronomiconOptimizations {
 
     public static ItemStack convertToStack(Object value) {
         if (value == null) {
-            return ItemStack.EMPTY;
+            return emptyStack();
         }
         if (value instanceof ItemStack) {
             return copyStack((ItemStack) value);
@@ -64,22 +65,22 @@ public final class AbyssalCraftNecronomiconOptimizations {
         }
         if (value instanceof Ingredient) {
             ItemStack[] stacks = matchingStacks((Ingredient) value);
-            return stacks.length > 0 ? copyStack(stacks[0]) : ItemStack.EMPTY;
+            return stacks.length > 0 ? copyStack(stacks[0]) : emptyStack();
         }
         if (value instanceof ItemStack[]) {
             ItemStack[] stacks = (ItemStack[]) value;
-            return stacks.length > 0 ? copyStack(stacks[0]) : ItemStack.EMPTY;
+            return stacks.length > 0 ? copyStack(stacks[0]) : emptyStack();
         }
         if (value instanceof String) {
             NonNullList<ItemStack> stacks = OreDictionary.getOres((String) value);
-            return stacks.isEmpty() ? ItemStack.EMPTY : copyStack(stacks.get(0));
+            return stacks.isEmpty() ? emptyStack() : copyStack(stacks.get(0));
         }
         if (value instanceof List) {
             List<?> stacks = (List<?>) value;
             if (!stacks.isEmpty() && stacks.get(0) instanceof ItemStack) {
                 return copyStack((ItemStack) stacks.get(0));
             }
-            return ItemStack.EMPTY;
+            return emptyStack();
         }
         throw new ClassCastException("Not a Item, Block, ItemStack, Ingredient, Array of ItemStacks, String or List of ItemStacks!");
     }
@@ -122,8 +123,8 @@ public final class AbyssalCraftNecronomiconOptimizations {
     }
 
     private static String recipeCacheKey(ItemStack stack) {
-        Object item = stackItem(stack);
-        ResourceLocation name = item instanceof Item ? ((Item) item).getRegistryName() : null;
+        Item item = stackItem(stack);
+        ResourceLocation name = item == null ? null : item.getRegistryName();
         return String.valueOf(name) + ':' + stackMeta(stack);
     }
 
@@ -173,87 +174,46 @@ public final class AbyssalCraftNecronomiconOptimizations {
     }
 
     private static ItemStack recipeOutput(IRecipe recipe) {
-        Object value = invokeFirst(recipe, "func_77571_b", "getRecipeOutput");
-        return value instanceof ItemStack ? (ItemStack) value : ItemStack.EMPTY;
+        ItemStack value = MinecraftMappingCompat.recipeOutput(recipe);
+        return value == null ? emptyStack() : value;
     }
 
-    @SuppressWarnings("unchecked")
     private static NonNullList<Ingredient> recipeIngredients(IRecipe recipe) {
-        Object value = invokeFirst(recipe, "func_192400_c", "getIngredients");
-        return value instanceof NonNullList ? (NonNullList<Ingredient>) value : null;
+        return MinecraftMappingCompat.recipeIngredients(recipe);
     }
 
     private static ItemStack[] matchingStacks(Ingredient ingredient) {
-        Object value = invokeFirst(ingredient, "func_193365_a", "getMatchingStacks");
-        return value instanceof ItemStack[] ? (ItemStack[]) value : new ItemStack[0];
+        return MinecraftMappingCompat.ingredientMatchingStacks(ingredient);
     }
 
     private static ItemStack copyStack(ItemStack stack) {
-        Object value = invokeFirst(stack, "func_77946_l", "copy");
-        return value instanceof ItemStack ? (ItemStack) value : ItemStack.EMPTY;
+        ItemStack value = MinecraftMappingCompat.itemStackCopy(stack);
+        return value == null ? emptyStack() : value;
     }
 
     private static boolean stackEmpty(ItemStack stack) {
-        Object value = invokeFirst(stack, "func_190926_b", "isEmpty");
-        return value instanceof Boolean ? (Boolean) value : stack == ItemStack.EMPTY;
+        return MinecraftMappingCompat.itemStackIsEmpty(stack);
     }
 
     private static int stackCount(ItemStack stack) {
-        Object value = invokeFirst(stack, "func_190916_E", "getCount");
-        return value instanceof Number ? ((Number) value).intValue() : 1;
+        int count = MinecraftMappingCompat.itemStackCount(stack);
+        return count <= 0 ? 1 : count;
     }
 
     private static void setStackCount(ItemStack stack, int count) {
-        invokeFirst(stack, new Class<?>[]{Integer.TYPE}, new Object[]{count}, "func_190920_e", "setCount");
+        MinecraftMappingCompat.itemStackSetCount(stack, count);
     }
 
     private static int stackMeta(ItemStack stack) {
-        Object value = invokeFirst(stack, "func_77960_j", "getMetadata");
-        return value instanceof Number ? ((Number) value).intValue() : 0;
+        return MinecraftMappingCompat.itemStackMetadata(stack);
     }
 
-    private static Object stackItem(ItemStack stack) {
-        return invokeFirst(stack, "func_77973_b", "getItem");
+    private static Item stackItem(ItemStack stack) {
+        return MinecraftMappingCompat.itemStackItem(stack);
     }
 
-    private static Object invokeFirst(Object target, String... names) {
-        return invokeFirst(target, new Class<?>[0], new Object[0], names);
-    }
-
-    private static Object invokeFirst(Object target, Class<?>[] parameterTypes, Object[] args, String... names) {
-        if (target == null) {
-            return null;
-        }
-        Class<?> type = target.getClass();
-        for (String name : names) {
-            try {
-                Method method = type.getMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method.invoke(target, args);
-            } catch (Throwable ignored) {
-                // Try declared methods and alternate mapping names.
-            }
-            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method.invoke(target, args);
-                } catch (Throwable ignored) {
-                    // Try interface, alternate mapping name, or superclass.
-                }
-            }
-            Class<?>[] interfaces = type.getInterfaces();
-            for (Class<?> iface : interfaces) {
-                try {
-                    Method method = iface.getMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method.invoke(target, args);
-                } catch (Throwable ignored) {
-                    // Try the next name.
-                }
-            }
-        }
-        return null;
+    private static ItemStack emptyStack() {
+        return MinecraftMappingCompat.emptyStack();
     }
 
     private static int intField(Object target, Class<?> type, String... names) {

@@ -55,8 +55,8 @@ jobs:
           path: dist/*.jar
           if-no-files-found: error
 
-  latest-release:
-    name: Publish latest release
+  build-release:
+    name: Publish build release
     needs: jar
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.actor == 'MtcLuna05')
@@ -70,17 +70,45 @@ jobs:
           name: GPOM-${{ github.sha }}
           path: dist
 
-      - name: Publish latest release jar
+      - name: Publish versioned release jar
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           test -f dist/GPOM-latest.jar
-          gh release delete latest --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag 2>/dev/null || true
-          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" 2>/dev/null || true
-          gh release create latest dist/GPOM-latest.jar --repo "${GITHUB_REPOSITORY}" \
-            --title "GPOM Latest Build" \
-            --notes "Latest jar from commit ${GITHUB_SHA}." \
-            --prerelease \
-            --target "${GITHUB_SHA}"
+          short_sha="${GITHUB_SHA::7}"
+          versioned_jar="$(find dist -maxdepth 1 -type f -name "GPOM-*+${short_sha}.jar" | sort | tail -n 1)"
+          if [[ -z "${versioned_jar}" ]]; then
+            echo "No versioned GPOM jar found in dist" >&2
+            find dist -maxdepth 1 -type f -print >&2 || true
+            exit 1
+          fi
+          version="$(basename "${versioned_jar}")"
+          version="${version#GPOM-}"
+          version="${version%+${short_sha}.jar}"
+          release_tag="v${version}+${short_sha}"
+          if gh release view "${release_tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${release_tag}" "${versioned_jar}" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${release_tag}" "${versioned_jar}" --repo "${GITHUB_REPOSITORY}" \
+              --title "GPOM ${version} (${short_sha})" \
+              --notes "Build from commit ${GITHUB_SHA}." \
+              --prerelease \
+              --target "${GITHUB_SHA}"
+          fi
+
+      - name: Retain latest five build releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,createdAt,isPrerelease \
+            --jq '.[] | select(.isPrerelease and (.tagName | test("^v[0-9].*\\+[0-9a-f]{7}$"))) | [.createdAt, .tagName] | @tsv' \
+            | sort -r \
+            | tail -n +6 \
+            | while IFS=$'\t' read -r _ tag; do
+                [[ -n "${tag}" ]] || continue
+                gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag
+              done

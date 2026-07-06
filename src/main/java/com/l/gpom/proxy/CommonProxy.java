@@ -3,6 +3,8 @@ package com.l.gpom.proxy;
 import com.l.gpom.GPOM;
 import com.l.gpom.compat.bloodmagic.BloodMagicWorldMapRecoveryEvents;
 import com.l.gpom.compat.hei.HeiQuickCraftNetwork;
+import com.l.gpom.compat.randomthings.RandomThingsRuneCommonEvents;
+import com.l.gpom.compat.randomthings.RandomThingsRuneNetwork;
 import com.l.gpom.compat.thaumcraft.ThaumcraftResearchRecoveryEvents;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.MissingMappingRepairs;
@@ -17,6 +19,8 @@ public class CommonProxy {
         registerBaublesSideSlotsNetwork();
         registerDankStoragePickupSync();
         HeiQuickCraftNetwork.registerIfNeeded();
+        RandomThingsRuneCommonEvents.registerIfNeeded();
+        RandomThingsRuneNetwork.registerIfNeeded();
         MissingMappingRepairs.register();
         BloodMagicWorldMapRecoveryEvents.register();
         ThaumcraftResearchRecoveryEvents.register();

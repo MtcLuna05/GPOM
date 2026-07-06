@@ -5,6 +5,7 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableSetMultimap;
 import com.google.common.collect.SetMultimap;
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.reliquary.ReliquaryHudRenderGuard;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.profiling.StartupProfiler;
 import net.minecraftforge.common.MinecraftForge;
@@ -127,7 +128,9 @@ public final class ForgeConstructionAnnotationOptimizations {
             return false;
         }
         String modId = safeModId(container);
-        if (GpomEarlyConfig.constructionGenericSidedProxiesDenylist().contains(modId.toLowerCase())) {
+        String normalizedModId = modId.toLowerCase();
+        if ("jei".equals(normalizedModId)
+                || GpomEarlyConfig.constructionGenericSidedProxiesDenylist().contains(normalizedModId)) {
             return false;
         }
 
@@ -213,7 +216,9 @@ public final class ForgeConstructionAnnotationOptimizations {
             return false;
         }
         String modId = safeModId(mod);
-        if (GpomEarlyConfig.constructionGenericAutomaticSubscribersDenylist().contains(modId.toLowerCase())) {
+        String normalizedModId = modId.toLowerCase();
+        if (normalizedModId.startsWith("enderio")
+                || GpomEarlyConfig.constructionGenericAutomaticSubscribersDenylist().contains(normalizedModId)) {
             return false;
         }
 
@@ -234,6 +239,9 @@ public final class ForgeConstructionAnnotationOptimizations {
                 }
 
                 String className = data.getClassName();
+                if (side == Side.SERVER && isClientOnlyClassName(className)) {
+                    continue;
+                }
                 long loadStartedAt = StartupProfiler.beginAutomaticSubscriberProbe();
                 Class<?> subscriberClass;
                 try {
@@ -383,6 +391,24 @@ public final class ForgeConstructionAnnotationOptimizations {
             allowedSides.add(Side.valueOf(holder.getValue()));
         }
         return allowedSides.contains(side);
+    }
+
+    private static boolean isClientOnlyClassName(String className) {
+        if (className == null) {
+            return false;
+        }
+        String lower = className.toLowerCase();
+        return lower.startsWith("net.minecraft.client.")
+                || lower.contains(".client.")
+                || lower.contains(".clientgui.")
+                || lower.contains(".gui.client.")
+                || lower.contains(".render.")
+                || lower.contains(".renderer.")
+                || lower.contains(".rendering.")
+                || lower.endsWith(".clientproxy")
+                || lower.endsWith("clientproxy")
+                || lower.endsWith(".clienteventhandler")
+                || lower.endsWith("clienteventhandler");
     }
 
     private static List<SubscriberHandlerSpec> handlerSpecsFor(String subscriberClassName,
@@ -1009,6 +1035,9 @@ public final class ForgeConstructionAnnotationOptimizations {
         }
 
         private void invokeHandler(Event event) {
+            if (ReliquaryHudRenderGuard.shouldSkip(subscriberClass, spec.methodName, event)) {
+                return;
+            }
             try {
                 handler().invokeExact(event);
             } catch (RuntimeException | Error throwable) {

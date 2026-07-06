@@ -1,5 +1,6 @@
 package com.l.gpom.client;
 
+import com.l.gpom.compat.advancedrocketry.AdvancedRocketryOxygenOverlayHandoffGuard;
 import com.l.gpom.util.ReflectionFields;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.World;
@@ -29,6 +30,7 @@ public final class ClientDimensionHandoffCleanup {
         Runnable cleanup = () -> {
             clearMinecraftParticles(minecraft);
             cleanupAstralEffects();
+            AdvancedRocketryOxygenOverlayHandoffGuard.beginGuard(reason);
         };
         if (ClientAccess.isMinecraftThread(minecraft)) {
             cleanup.run();

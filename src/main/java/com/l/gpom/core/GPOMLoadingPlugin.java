@@ -46,6 +46,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
                 "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
                 "com.l.gpom.core.CodeChickenLibModelStateTransformer",
+                "com.l.gpom.core.WirelessRedstoneServerAddonsTransformer",
                 "com.l.gpom.core.ForgeRegistrySerializationTransformer",
                 "com.l.gpom.core.ForestryRecipeManagerSerializationTransformer",
                 "com.l.gpom.core.HammerCoreConstructionTransformer",
@@ -70,6 +71,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.ScannableConfigSyncTransformer",
                 "com.l.gpom.core.SfmLightweightSearchCacheTransformer",
                 "com.l.gpom.core.CustomMainMenuStartupOverlayTransformer",
+                "com.l.gpom.core.RandomThingsRenderUtilsTransformer",
                 "com.l.gpom.core.LogSpamTransformer"
         };
     }

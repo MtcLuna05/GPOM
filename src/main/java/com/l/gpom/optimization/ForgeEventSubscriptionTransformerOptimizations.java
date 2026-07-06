@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.launchwrapper.IClassTransformer;
 import net.minecraft.launchwrapper.Launch;
 import net.minecraft.launchwrapper.LaunchClassLoader;
@@ -48,7 +49,9 @@ public final class ForgeEventSubscriptionTransformerOptimizations {
             if (transformer != null && FORGE_TRANSFORMER.equals(transformer.getClass().getName())) {
                 transformers.set(i, new FastEventSubscriptionTransformer(transformer));
                 installed = true;
-                GPOM.LOGGER.info("[FmlParallelLoading] Installed fast Forge EventSubscriptionTransformer classifier");
+                if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
+                    GPOM.LOGGER.info("[FmlParallelLoading] Installed fast Forge EventSubscriptionTransformer classifier");
+                }
                 return;
             }
         }

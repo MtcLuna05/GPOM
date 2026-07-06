@@ -1,5 +1,6 @@
 package com.l.gpom.profiling;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.ReflectionFields;
 import net.minecraft.client.Minecraft;
@@ -30,7 +31,9 @@ public final class WorldLifecycleProfiler {
     private static final MemoryMXBean MEMORY = ManagementFactory.getMemoryMXBean();
     private static final Object LOCK = new Object();
     private static final List<DelayedSnapshot> DELAYED = new ArrayList<>();
+    private static final List<TrackedWorld> TRACKED_WORLDS = new ArrayList<>();
     private static final int MAX_GRAPH_OBJECTS = 6000;
+    private static final int MAX_TRACKED_WORLDS = 96;
     private static int nextTransitionId;
     private static ActiveTransition activeTransition;
     private static TextureBaseline textureBaseline;
@@ -44,6 +47,9 @@ public final class WorldLifecycleProfiler {
         }
         synchronized (LOCK) {
             activeTransition = new ActiveTransition(++nextTransitionId, transitionKind(previousWorld, nextWorld), previousWorld, nextWorld, message);
+            if (previousWorld != null && previousWorld != nextWorld) {
+                trackWorld(previousWorld, activeTransition, "loadWorld-previous");
+            }
             Snapshot snapshot = capture(minecraft, previousWorld, nextWorld, "before");
             logSnapshot(activeTransition, snapshot);
         }
@@ -62,6 +68,20 @@ public final class WorldLifecycleProfiler {
             logSnapshot(transition, snapshot.withClientState(player, screen));
             scheduleDelayedSnapshots(transition);
             activeTransition = null;
+        }
+    }
+
+    public static void checkpoint(Minecraft minecraft, Object previousWorld, Object nextWorld, String point) {
+        if (!enabled()) {
+            return;
+        }
+        synchronized (LOCK) {
+            ActiveTransition transition = activeTransition;
+            if (transition == null) {
+                return;
+            }
+            Snapshot snapshot = capture(minecraft, previousWorld, nextWorld, point);
+            logSnapshot(transition, snapshot);
         }
     }
 
@@ -86,7 +106,32 @@ public final class WorldLifecycleProfiler {
                 Snapshot snapshot = capture(minecraft, currentWorld, currentWorld, "delayed+" + delayed.delayMillis + "ms")
                         .withClientState(player, screen);
                 logSnapshot(delayed.transition, snapshot);
+                logRetainedWorlds(delayed.transition, snapshot);
             }
+        }
+    }
+
+    public static void worldEvent(String event, Object world) {
+        if (!enabled()) {
+            return;
+        }
+        synchronized (LOCK) {
+            ActiveTransition transition = activeTransition;
+            if ("unload".equals(event)) {
+                trackWorld(world, transition, "WorldEvent.Unload");
+            }
+            RetainedWorldProfile retained = retainedWorldProfile(world);
+            AsyncProbeLogger.info(
+                    "[WorldLifecycleEvent] {} transition={} world={} side={} retainedOldWorlds={} tracked={} cleared={} retained={}",
+                    clean(event),
+                    transition == null ? "none" : "#" + transition.id + ' ' + transition.kind,
+                    worldLabel(world),
+                    worldSide(world),
+                    retained.liveOldWorlds,
+                    retained.totalRefs,
+                    retained.clearedRefs,
+                    formatList(retained.liveLabels, Math.max(1, GpomEarlyConfig.worldLifecycleProfilerDeepAttributionMaxEntries()))
+            );
         }
     }
 
@@ -129,6 +174,11 @@ public final class WorldLifecycleProfiler {
         snapshot.particleLayerEntries = -1;
         snapshot.playingSounds = -1;
         snapshot.delayedSounds = -1;
+        snapshot.retainedTrackedWorldRefs = -1;
+        snapshot.retainedClearedWorldRefs = -1;
+        snapshot.retainedOldWorlds = -1;
+        snapshot.retainedOldWorldLabels = Collections.emptyList();
+        captureRetainedWorlds(snapshot, nextWorld);
 
         if (minecraft != null) {
             Object renderGlobal = ReflectionFields.get(minecraft, "renderGlobal", "renderGlobal", "field_71438_f", "g");
@@ -161,7 +211,7 @@ public final class WorldLifecycleProfiler {
     private static void logSnapshot(ActiveTransition transition, Snapshot snapshot) {
         long elapsedMs = transition.elapsedMillis();
         AsyncProbeLogger.info(
-                "[WorldLifecycle] #{} {} {} elapsed={}ms msg=\"{}\" prev={} next={} heap={}MiB/{}MiB runtime={}MiB/{}MiB nonHeap={}MiB direct={}MiB mapped={}MiB world[e={},te={},weather={},players={}] render[chunks={},infos={},tes={},damage={},sounds={}] client[textures={},tickTex={},particles={},emitters={},playingSounds={},delayedSounds={}] player={} screen={}",
+                "[WorldLifecycle] #{} {} {} elapsed={}ms msg=\"{}\" prev={} next={} heap={}MiB/{}MiB runtime={}MiB/{}MiB nonHeap={}MiB direct={}MiB mapped={}MiB world[e={},te={},weather={},players={}] render[chunks={},infos={},tes={},damage={},sounds={}] client[textures={},tickTex={},particles={},emitters={},playingSounds={},delayedSounds={}] retained[oldWorlds={},tracked={},cleared={}] player={} screen={}",
                 transition.id,
                 transition.kind,
                 snapshot.point,
@@ -191,6 +241,9 @@ public final class WorldLifecycleProfiler {
                 snapshot.particleEmitters,
                 snapshot.playingSounds,
                 snapshot.delayedSounds,
+                snapshot.retainedOldWorlds,
+                snapshot.retainedTrackedWorldRefs,
+                snapshot.retainedClearedWorldRefs,
                 snapshot.playerPresent,
                 snapshot.screenName
         );
@@ -198,6 +251,30 @@ public final class WorldLifecycleProfiler {
         if (GpomEarlyConfig.worldLifecycleProfilerDeepAttributionEnabled()) {
             logDeepSnapshot(transition, snapshot);
         }
+    }
+
+    private static void logRetainedWorlds(ActiveTransition transition, Snapshot snapshot) {
+        if (snapshot.retainedOldWorlds <= 0) {
+            return;
+        }
+        AsyncProbeLogger.warn(
+                "[WorldLifecycleLeakProbe] #{} {} {} retainedOldWorlds={} tracked={} cleared={} labels={}",
+                transition.id,
+                transition.kind,
+                snapshot.point,
+                snapshot.retainedOldWorlds,
+                snapshot.retainedTrackedWorldRefs,
+                snapshot.retainedClearedWorldRefs,
+                formatList(snapshot.retainedOldWorldLabels, Math.max(1, GpomEarlyConfig.worldLifecycleProfilerDeepAttributionMaxEntries()))
+        );
+    }
+
+    private static void captureRetainedWorlds(Snapshot snapshot, Object currentWorld) {
+        RetainedWorldProfile retained = retainedWorldProfile(currentWorld);
+        snapshot.retainedTrackedWorldRefs = retained.totalRefs;
+        snapshot.retainedClearedWorldRefs = retained.clearedRefs;
+        snapshot.retainedOldWorlds = retained.liveOldWorlds;
+        snapshot.retainedOldWorldLabels = retained.liveLabels;
     }
 
     private static void captureDeepAttribution(Snapshot snapshot, Minecraft minecraft, Object renderGlobal, Object textureManager, Object effectRenderer, Object soundManager) {
@@ -587,6 +664,68 @@ public final class WorldLifecycleProfiler {
         return name.startsWith("java.nio.") && name.endsWith("ByteBuffer");
     }
 
+    private static void trackWorld(Object world, ActiveTransition transition, String reason) {
+        if (world == null || isAlreadyTracked(world)) {
+            pruneTrackedWorlds(false);
+            return;
+        }
+        TRACKED_WORLDS.add(new TrackedWorld(
+                new WeakReference<>(world),
+                worldLabel(world),
+                transition == null ? -1 : transition.id,
+                reason,
+                System.nanoTime()
+        ));
+        pruneTrackedWorlds(true);
+    }
+
+    private static boolean isAlreadyTracked(Object world) {
+        for (TrackedWorld tracked : TRACKED_WORLDS) {
+            Object value = tracked.reference.get();
+            if (value == world) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static RetainedWorldProfile retainedWorldProfile(Object currentWorld) {
+        RetainedWorldProfile profile = new RetainedWorldProfile();
+        long now = System.nanoTime();
+        for (TrackedWorld tracked : TRACKED_WORLDS) {
+            profile.totalRefs++;
+            Object value = tracked.reference.get();
+            if (value == null) {
+                profile.clearedRefs++;
+                continue;
+            }
+            if (value == currentWorld) {
+                continue;
+            }
+            profile.liveOldWorlds++;
+            if (profile.liveLabels.size() < Math.max(1, GpomEarlyConfig.worldLifecycleProfilerDeepAttributionMaxEntries())) {
+                long ageMillis = Math.max(0L, (now - tracked.createdAtNanos) / 1_000_000L);
+                profile.liveLabels.add(tracked.label + "/age=" + ageMillis + "ms/source=" + tracked.reason + "/transition=" + tracked.transitionId);
+            }
+        }
+        pruneTrackedWorlds(false);
+        return profile;
+    }
+
+    private static void pruneTrackedWorlds(boolean enforceLimit) {
+        for (int i = TRACKED_WORLDS.size() - 1; i >= 0; i--) {
+            if (TRACKED_WORLDS.get(i).reference.get() == null) {
+                TRACKED_WORLDS.remove(i);
+            }
+        }
+        if (!enforceLimit) {
+            return;
+        }
+        while (TRACKED_WORLDS.size() > MAX_TRACKED_WORLDS) {
+            TRACKED_WORLDS.remove(0);
+        }
+    }
+
     private static long estimatedBufferBytes(Buffer buffer) {
         int elementSize = 1;
         if (buffer instanceof java.nio.CharBuffer || buffer instanceof java.nio.ShortBuffer) {
@@ -812,11 +951,18 @@ public final class WorldLifecycleProfiler {
         }
         World typed = (World) world;
         String dimension = "?";
-        try {
-            dimension = Integer.toString(typed.provider.getDimension());
-        } catch (Throwable ignored) {
+        Integer value = MinecraftMappingCompat.worldDimension(typed);
+        if (value != null) {
+            dimension = Integer.toString(value);
         }
         return typed.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(typed)) + "/dim=" + dimension;
+    }
+
+    private static String worldSide(Object world) {
+        if (!(world instanceof World)) {
+            return "?";
+        }
+        return MinecraftMappingCompat.worldIsRemote((World) world) ? "client" : "server";
     }
 
     private static long bufferPoolBytes(String name) {
@@ -1007,6 +1153,29 @@ public final class WorldLifecycleProfiler {
         }
     }
 
+    private static final class TrackedWorld {
+        private final WeakReference<Object> reference;
+        private final String label;
+        private final int transitionId;
+        private final String reason;
+        private final long createdAtNanos;
+
+        private TrackedWorld(WeakReference<Object> reference, String label, int transitionId, String reason, long createdAtNanos) {
+            this.reference = reference;
+            this.label = label;
+            this.transitionId = transitionId;
+            this.reason = reason;
+            this.createdAtNanos = createdAtNanos;
+        }
+    }
+
+    private static final class RetainedWorldProfile {
+        private int totalRefs;
+        private int clearedRefs;
+        private int liveOldWorlds;
+        private final List<String> liveLabels = new ArrayList<>();
+    }
+
     private static final class Snapshot {
         private final String point;
         private long heapUsedBytes;
@@ -1033,6 +1202,10 @@ public final class WorldLifecycleProfiler {
         private int particleLayerEntries;
         private int playingSounds;
         private int delayedSounds;
+        private int retainedTrackedWorldRefs;
+        private int retainedClearedWorldRefs;
+        private int retainedOldWorlds;
+        private List<String> retainedOldWorldLabels;
         private boolean playerPresent;
         private String screenName = "null";
         private TextureProfile textureProfile;

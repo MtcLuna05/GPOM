@@ -4,6 +4,9 @@ import baubles.api.BaubleType;
 import baubles.api.cap.IBaublesItemHandler;
 import baubles.common.container.SlotBauble;
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
+import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.Container;
@@ -31,19 +34,15 @@ public final class BaublesSideSlotsCommon {
     private static final Field SLOT_X = findField(Slot.class, "xPos", "field_75223_e");
     private static final Field SLOT_Y = findField(Slot.class, "yPos", "field_75221_f");
     private static final Field SLOT_BAUBLE_INDEX = findField(SlotBauble.class, "baubleSlot");
-    private static final Field ITEM_STACK_EMPTY = findField(ItemStack.class, "EMPTY", "field_190927_a");
     private static final Method SLOT_HAS_STACK = findMethod(Slot.class, "getHasStack", "func_75216_d");
     private static final Method SLOT_GET_STACK = findMethod(Slot.class, "getStack", "func_75211_c");
     private static final Method SLOT_PUT_STACK = findMethod(Slot.class, "putStack", "func_75215_d", ItemStack.class);
     private static final Method SLOT_CHANGED = findMethod(Slot.class, "onSlotChanged", "func_75218_e");
+    private static final Method SLOT_DECR_STACK_SIZE = findMethod(Slot.class, "decrStackSize", "func_75209_a", int.class);
+    private static final Method SLOT_ON_TAKE = findMethod(Slot.class, "onTake", "func_190901_a", EntityPlayer.class, ItemStack.class);
     private static final Method SLOT_CAN_TAKE = findMethod(Slot.class, "canTakeStack", "func_82869_a", EntityPlayer.class);
     private static final Method SLOT_ITEM_VALID = findMethod(Slot.class, "isItemValid", "func_75214_a", ItemStack.class);
     private static final Method SLOT_ENABLED = findMethod(Slot.class, "isEnabled", "func_111238_b");
-    private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, "isEmpty", "func_190926_b");
-    private static final Method STACK_COPY = findMethod(ItemStack.class, "copy", "func_77946_l");
-    private static final Method STACK_GET_COUNT = findMethod(ItemStack.class, "getCount", "func_190916_E");
-    private static final Method STACK_SET_COUNT = findMethod(ItemStack.class, "setCount", "func_190920_e", int.class);
-    private static final Method STACK_SHRINK = findMethod(ItemStack.class, "shrink", "func_190918_g", int.class);
     private static Boolean bringMeTheRingsPresent;
     private static boolean loggedBmtrHook;
     private static boolean loggedBmtrSyntheticSlots;
@@ -89,11 +88,11 @@ public final class BaublesSideSlotsCommon {
         int existing = baubleSlots(container).size();
         int handlerSlots = handler.getSlots();
         if (isBringMeTheRingsPresent()) {
-            if (!loggedBmtrHook) {
+            if (!loggedBmtrHook && GpomEarlyConfig.baublesInfoLogsEnabled()) {
                 loggedBmtrHook = true;
                 GPOM.LOGGER.info("[GPOM Baubles] BringMeTheRings detected; reusing existing Baubles container slots and adding only missing handler slots");
             }
-            if (existing < handlerSlots && !loggedBmtrSyntheticSlots) {
+            if (existing < handlerSlots && !loggedBmtrSyntheticSlots && GpomEarlyConfig.baublesInfoLogsEnabled()) {
                 loggedBmtrSyntheticSlots = true;
                 GPOM.LOGGER.info("[GPOM Baubles] BringMeTheRings exposed {} existing Baubles slots for a {}-slot handler; adding {} missing GPOM side-rail slot(s)",
                         existing, handlerSlots, handlerSlots - existing);
@@ -317,6 +316,16 @@ public final class BaublesSideSlotsCommon {
         invoke(SLOT_CHANGED, slot);
     }
 
+    public static ItemStack decrSlotStack(Slot slot, int amount) {
+        Object value = invoke(SLOT_DECR_STACK_SIZE, slot, amount);
+        return value instanceof ItemStack ? (ItemStack) value : emptyStack();
+    }
+
+    public static ItemStack onTakeSlotStack(Slot slot, EntityPlayer player, ItemStack stack) {
+        Object value = invoke(SLOT_ON_TAKE, slot, player, stack);
+        return value instanceof ItemStack ? (ItemStack) value : stack;
+    }
+
     public static boolean canTakeSlotStack(Slot slot, EntityPlayer player) {
         Object value = invoke(SLOT_CAN_TAKE, slot, player);
         return !(value instanceof Boolean) || (Boolean) value;
@@ -333,43 +342,37 @@ public final class BaublesSideSlotsCommon {
     }
 
     public static ItemStack emptyStack() {
-        Object value = fieldValue(ITEM_STACK_EMPTY, null);
-        return value instanceof ItemStack ? (ItemStack) value : null;
+        return MinecraftMappingCompat.emptyStack();
     }
 
     public static boolean isEmptyStack(ItemStack stack) {
-        if (stack == null) {
-            return true;
-        }
-        Object value = invoke(STACK_IS_EMPTY, stack);
-        return value instanceof Boolean ? (Boolean) value : stack == emptyStack();
+        return MinecraftMappingCompat.itemStackIsEmpty(stack);
     }
 
     public static ItemStack copyStack(ItemStack stack) {
         if (isEmptyStack(stack)) {
             return emptyStack();
         }
-        Object value = invoke(STACK_COPY, stack);
-        return value instanceof ItemStack ? (ItemStack) value : emptyStack();
+        ItemStack copy = MinecraftMappingCompat.itemStackCopy(stack);
+        return copy == null ? emptyStack() : copy;
     }
 
     public static int stackCount(ItemStack stack) {
-        Object value = invoke(STACK_GET_COUNT, stack);
-        return value instanceof Integer ? (Integer) value : 0;
+        return MinecraftMappingCompat.itemStackCount(stack);
     }
 
     public static void setStackCount(ItemStack stack, int count) {
-        invoke(STACK_SET_COUNT, stack, count);
+        MinecraftMappingCompat.itemStackSetCount(stack, count);
     }
 
     public static void shrinkStack(ItemStack stack, int amount) {
         if (stack == null || amount <= 0) {
             return;
         }
-        if (STACK_SHRINK != null) {
-            invoke(STACK_SHRINK, stack, amount);
-        } else {
-            setStackCount(stack, Math.max(0, stackCount(stack) - amount));
+        int before = stackCount(stack);
+        MinecraftMappingCompat.itemStackShrink(stack, amount);
+        if (before > 0 && stackCount(stack) == before) {
+            setStackCount(stack, Math.max(0, before - amount));
         }
     }
 
@@ -393,6 +396,33 @@ public final class BaublesSideSlotsCommon {
         putSlotStack(target, moved);
         slotChanged(target);
         return true;
+    }
+
+    public static String slotDebug(Slot slot) {
+        if (slot == null) {
+            return "null";
+        }
+        IInventory inventory = slotInventory(slot);
+        String inventoryName = inventory == null ? "null" : inventory.getClass().getName();
+        return slot.getClass().getName()
+                + "{slotNumber=" + slotNumber(slot)
+                + ", slotIndex=" + slotIndex(slot)
+                + ", baubleIndex=" + baubleSlotIndex(slot)
+                + ", x=" + slotX(slot)
+                + ", y=" + slotY(slot)
+                + ", enabled=" + isSlotEnabled(slot)
+                + ", sideRail=" + isSideRailSlot(slot)
+                + ", hasStack=" + slotHasStack(slot)
+                + ", inventory=" + inventoryName
+                + ", stack=" + stackDebug(slotStack(slot))
+                + "}";
+    }
+
+    public static String stackDebug(ItemStack stack) {
+        if (isEmptyStack(stack)) {
+            return "EMPTY";
+        }
+        return String.valueOf(stack) + " x" + stackCount(stack);
     }
 
     private static void moveSlot(Container container, Slot added, int targetIndex) {
@@ -492,38 +522,19 @@ public final class BaublesSideSlotsCommon {
     }
 
     private static Field findField(Class<?> owner, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Field field = type.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Method findMethod(Class<?> owner, String mcpName, String srgName, Class<?>... parameterTypes) {
-        Method method = findMethod(owner, mcpName, parameterTypes);
-        return method != null ? method : findMethod(owner, srgName, parameterTypes);
-    }
-
-    private static Method findMethod(Class<?> owner, String name, Class<?>... parameterTypes) {
-        Class<?> type = owner;
-        while (type != null) {
-            try {
-                Method method = type.getDeclaredMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, mcpName, srgName, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     public enum SlotType {

@@ -50,15 +50,42 @@ public final class GpomEarlyConfig {
                     + "projectred-relocation,projectred-transportation,projectred-exploration";
     private static final String CLIENT_PREINIT_THREAD_AFFINITY_DENYLIST =
             "simplyjetpacks," + PROJECTRED_CLIENT_PREINIT_DENYLIST;
+    private static final String CODECHICKEN_CONSTRUCTION_SHORTCUT_DENYLIST =
+            "codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,wrcbe,"
+                    + PROJECTRED_CLIENT_PREINIT_DENYLIST;
     private static final String DEFAULT_PREINIT_DENYLIST =
             ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST
                     + ",erebus,extracells,draconicevolution,aether_legacy,"
                     + BINNIE_FLUID_PREINIT_DENYLIST + ","
                     + CLIENT_PREINIT_THREAD_AFFINITY_DENYLIST;
     private static final String DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST =
-            "thaumcraft,aether_legacy,architecturecraft";
+            "thaumcraft,aether_legacy,architecturecraft,jei," + CODECHICKEN_CONSTRUCTION_SHORTCUT_DENYLIST;
     private static final String DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST =
-            "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy,superfactorymanager";
+            "thaumcraft,thaumcraftfix,chisel,ctm,unlimitedchiselworks,thebetweenlands,twilightforest,erebus,plustic,aether_legacy,superfactorymanager,"
+                    + ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST + ","
+                    + CODECHICKEN_CONSTRUCTION_SHORTCUT_DENYLIST;
+    private static final String ARCHITECTURECRAFT_DEFAULT_ADDITIONAL_MATERIALS =
+            "enderio:block_fused_quartz,enderio:block_fused_glass,"
+                    + "enderio:block_enlightened_fused_quartz,enderio:block_enlightened_fused_glass,"
+                    + "enderio:block_dark_fused_quartz,enderio:block_dark_fused_glass,"
+                    + "enderio:block_holy_fused_quartz,enderio:block_holy_fused_glass,"
+                    + "enderio:block_holy_enlightened_fused_quartz,enderio:block_holy_enlightened_fused_glass,"
+                    + "enderio:block_holy_dark_fused_quartz,enderio:block_holy_dark_fused_glass,"
+                    + "enderio:block_unholy_fused_quartz,enderio:block_unholy_fused_glass,"
+                    + "enderio:block_unholy_enlightened_fused_quartz,enderio:block_unholy_enlightened_fused_glass,"
+                    + "enderio:block_unholy_dark_fused_quartz,enderio:block_unholy_dark_fused_glass,"
+                    + "enderio:block_pasture_fused_quartz,enderio:block_pasture_fused_glass,"
+                    + "enderio:block_pasture_enlightened_fused_quartz,enderio:block_pasture_enlightened_fused_glass,"
+                    + "enderio:block_pasture_dark_fused_quartz,enderio:block_pasture_dark_fused_glass,"
+                    + "enderio:block_not_holy_fused_quartz,enderio:block_not_holy_fused_glass,"
+                    + "enderio:block_not_holy_enlightened_fused_quartz,enderio:block_not_holy_enlightened_fused_glass,"
+                    + "enderio:block_not_holy_dark_fused_quartz,enderio:block_not_holy_dark_fused_glass,"
+                    + "enderio:block_not_unholy_fused_quartz,enderio:block_not_unholy_fused_glass,"
+                    + "enderio:block_not_unholy_enlightened_fused_quartz,enderio:block_not_unholy_enlightened_fused_glass,"
+                    + "enderio:block_not_unholy_dark_fused_quartz,enderio:block_not_unholy_dark_fused_glass,"
+                    + "enderio:block_not_pasture_fused_quartz,enderio:block_not_pasture_fused_glass,"
+                    + "enderio:block_not_pasture_enlightened_fused_quartz,enderio:block_not_pasture_enlightened_fused_glass,"
+                    + "enderio:block_not_pasture_dark_fused_quartz,enderio:block_not_pasture_dark_fused_glass";
 
     static {
         DEFAULTS.setProperty("fml.parallel.preInit.enabled", "true");
@@ -73,35 +100,38 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.init.workers", "0");
         DEFAULTS.setProperty("fml.parallel.loadComplete.workers", "0");
         DEFAULTS.setProperty("fml.parallel.construct.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.construct.denylist", "advancedrocketry,advancedrocketrycore,ausm,betterportals,codechickenlib,enderiomachines,enderutilities,renderlib,gpom,gunpowderlib,iceandfire,ichunutil,holoinventory,immersivepetroleum,incontrol,thaumcraft,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiopowertools,enderioendergy,aether_legacy,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,dankstorage");
+        DEFAULTS.setProperty("fml.parallel.construct.denylist", "advancedrocketry,advancedrocketrycore,ausm,betterportals,codechickenlib,enderiomachines,enderutilities,renderlib,gpom,gunpowderlib,iceandfire,ichunutil,holoinventory,immersivepetroleum,incontrol,thaumcraft,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiopowertools,enderioendergy,aether_legacy,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,wrcbe,dankstorage");
         DEFAULTS.setProperty("fml.parallel.construct.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.construct.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.preInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.preInit.denylist", "tconstruct,betterportals,smoothfont,natura,ae2ctl,thaumcraft,ausm,industrialforegoing,blockcraftery,mysticallib,buildcraftcore,avaritia,betterquesting,botania,bloodmagic,advancedrocketry,immersiveengineering,immersivepetroleum,openblocks,buildcraftlib,buildcraftbuilders,buildcraftenergy,buildcraftfactory,buildcraftsilicon,buildcrafttransport,buildcraftcompat,thermaldynamics,iceandfire,moartinkers,wrcbe,thebetweenlands,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,erebus,extracells,draconicevolution,aether_legacy,binniecore,binniedesign,genetics,botany,extrabees,extratrees,gendustry,simplyjetpacks,projectred-core,projectred-illumination,projectred-compat,projectred-integration,projectred-transmission,projectred-fabrication,projectred-expansion,projectred-relocation,projectred-transportation,projectred-exploration,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,actuallyadditions");
+        DEFAULTS.setProperty("fml.parallel.preInit.denylist", "tconstruct,betterportals,smoothfont,natura,ae2ctl,thaumcraft,ausm,industrialforegoing,blockcraftery,mysticallib,buildcraftcore,avaritia,betterquesting,botania,bloodmagic,advancedrocketry,immersiveengineering,immersivepetroleum,openblocks,buildcraftlib,buildcraftbuilders,buildcraftenergy,buildcraftfactory,buildcraftsilicon,buildcrafttransport,buildcraftcompat,thermaldynamics,iceandfire,moartinkers,wrcbe,thebetweenlands,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,erebus,extracells,draconicevolution,aether_legacy,binniecore,binniedesign,genetics,botany,extrabees,extratrees,gendustry,simplyjetpacks,projectred-core,projectred-illumination,projectred-compat,projectred-integration,projectred-transmission,projectred-fabrication,projectred-expansion,projectred-relocation,projectred-transportation,projectred-exploration,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,actuallyadditions,extendedcrafting");
         DEFAULTS.setProperty("fml.parallel.preInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.preInit.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.init.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.init.denylist", "betterportals,forestry,railcraft,lemonskin,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,actuallyadditions");
+        DEFAULTS.setProperty("fml.parallel.init.denylist", "betterportals,forestry,railcraft,lemonskin,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,wrcbe,actuallyadditions,modularmachinery,modularmachineryaddons");
         DEFAULTS.setProperty("fml.parallel.init.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.init.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.postInit.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "smoothfont,projecte,cyclopscore,integrateddynamics,integrateddynamicscompat,integratednbt,integratedtunnels,integratedtunnelscompat,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore");
+        DEFAULTS.setProperty("fml.parallel.postInit.denylist", "smoothfont,projecte,cyclopscore,integrateddynamics,integrateddynamicscompat,integratednbt,integratedtunnels,integratedtunnelscompat,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,wrcbe,modularmachinery,modularmachineryaddons");
         DEFAULTS.setProperty("fml.parallel.postInit.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.postInit.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.loadComplete.allowlist", "*");
-        DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "betterportals,betterquesting,cofhcore,crafttweaker,iceandfire,jei,jeresources,journeymap,scannable,thaumicaugmentation,thebetweenlands,topaddons,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore");
+        DEFAULTS.setProperty("fml.parallel.loadComplete.denylist", "betterportals,betterquesting,cofhcore,crafttweaker,iceandfire,jei,jeresources,journeymap,scannable,thaumicaugmentation,thebetweenlands,topaddons,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,codechickenlib,forgemultipartcbe,minecraftmultipartcbe,microblockcbe,mrtjpcore,wrcbe,modularmachinery,modularmachineryaddons");
         DEFAULTS.setProperty("fml.parallel.loadComplete.continueOnModError", "false");
         DEFAULTS.setProperty("fml.parallel.loadComplete.dag.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.registrySerialization.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.clientLifecycleOpenGlScan.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.autoQuarantineGlErrors.includeRelatedMods", "false");
-        DEFAULTS.setProperty("gpom.construction.genericSidedProxies.denylist", "thaumcraft,aether_legacy,architecturecraft");
-        DEFAULTS.setProperty("gpom.construction.genericAutomaticSubscribers.denylist", "thaumcraft,chisel,ctm,unlimitedchiselworks,thaumcraftfix,thebetweenlands,twilightforest,erebus,plustic,aether_legacy,superfactorymanager,dankstorage");
+        DEFAULTS.setProperty("gpom.construction.genericSidedProxies.denylist", DEFAULT_CONSTRUCTION_GENERIC_PROXY_DENYLIST);
+        DEFAULTS.setProperty("gpom.construction.genericAutomaticSubscribers.denylist", DEFAULT_CONSTRUCTION_GENERIC_SUBSCRIBER_DENYLIST + ",dankstorage");
         DEFAULTS.setProperty("gpom.logging.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.fmlScheduler.enabled", "true");
         DEFAULTS.setProperty("gpom.logging.optimizationInfo.enabled", "true");
         DEFAULTS.setProperty("gpom.logging.cacheInfo.enabled", "true");
+        DEFAULTS.setProperty("gpom.logging.worldLoadingScreenDiagnostics.enabled", "false");
+        DEFAULTS.setProperty("gpom.logging.baublesInfo.enabled", "false");
+        DEFAULTS.setProperty("gpom.logging.sfmInfo.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.queueSize", "32768");
         DEFAULTS.setProperty("gpom.vintageFix.suppressUcwModelErrorSpam", "true");
@@ -128,9 +158,9 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.startupProfiler.logs.postPreInitProbeSummary.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.probeLogs.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.probeHighVolumeEventBusPosts", "false");
-        DEFAULTS.setProperty("gpom.startupProfiler.probePrefixAllowlist", "*");
+        DEFAULTS.setProperty("gpom.startupProfiler.probePrefixAllowlist", "");
         DEFAULTS.setProperty("gpom.startupProfiler.topCount", "40");
-        DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressBars", "true");
+        DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressBars", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.postPreInitProgressSteps", "96");
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "true");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "MeatballCraft");
@@ -145,14 +175,15 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.topCount", "24");
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.slowThresholdMillis", "40");
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled", "false");
-        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.enabled", "true");
+        DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.enabled", "false");
         DEFAULTS.setProperty("gpom.runtimeSinkProfiler.forgeEvents.profileAll", "false");
         DEFAULTS.setProperty("gpom.client.fastNotifyBlockUpdate.enabled", "true");
         DEFAULTS.setProperty("gpom.client.dedupeRenderSectionUpdates.enabled", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.enabled", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.maxFailures", "500");
-        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "true");
-        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "true");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "false");
+        DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "false");
+        DEFAULTS.setProperty("gpom.crafting.safeBrokenRecipePreview.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.pinnedCraftOverlay.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.extendedCraftingLowerTierTransfer.enabled", "true");
@@ -167,8 +198,12 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.baubles.sideSlots.shiftRightClickEquip", "true");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.aether.enabled", "true");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.cosmeticArmor.enabled", "true");
+        DEFAULTS.setProperty("gpom.baubles.sideSlots.deepProbe.enabled", "false");
         DEFAULTS.setProperty("gpom.loliasm.threadSafeStatefulRegistry", "true");
         DEFAULTS.setProperty("gpom.codeChickenLib.repairNullModelErrorState", "true");
+        DEFAULTS.setProperty("gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled", "true");
+        DEFAULTS.setProperty("gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled", "true");
+        DEFAULTS.setProperty("gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks", "120");
         DEFAULTS.setProperty("gpom.betterPortals.fixMissingNewTarget", "true");
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
@@ -180,6 +215,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.architecturecraft.fastShapeLighting", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.enabled", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.allowlist", ARCHITECTURECRAFT_DEFAULT_ADDITIONAL_MATERIALS);
         DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
@@ -188,9 +225,12 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
         DEFAULTS.setProperty("gpom.scannable.skipNegativeOreCacheIds", "true");
         DEFAULTS.setProperty("gpom.dankStorage.portablePickupSync.enabled", "true");
+        DEFAULTS.setProperty("gpom.randomThings.improvedRunicDust.enabled", "true");
+        DEFAULTS.setProperty("gpom.randomThings.improvedRunicDust.guiProbe.enabled", "false");
         DEFAULTS.setProperty("gpom.tileEntity.missingMappingSaveGuard.enabled", "true");
         DEFAULTS.setProperty("gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds", "true");
         DEFAULTS.setProperty("gpom.actuallyAdditions.repairMissingTileEntityMappings", "true");
+        DEFAULTS.setProperty("gpom.architecturecraft.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.enderio.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.industrialForegoing.repairMissingTileEntityMappings", "true");
         DEFAULTS.setProperty("gpom.registry.repairThaumicWondersMissingMappings", "false");
@@ -231,8 +271,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.extraPrefixes", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitAllowlist", "*");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.noInitPrefixes", "erebus:erebus/entity/|erebus/client/render/entity/;deepmoblearning:mustapelto/deepmoblearning/;extrautils2:com/rwtema/extrautils2/");
-        DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeClasses", "true");
-        DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeAllowlist", "*");
+        DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeClasses", "false");
+        DEFAULTS.setProperty("gpom.preInitClassPrewarm.initializeAllowlist", "");
         DEFAULTS.setProperty("gpom.preInitClassPrewarm.explicitClasses", "railcraft:mods.railcraft.common.blocks.RailcraftBlocks|mods.railcraft.common.carts.RailcraftCarts|mods.railcraft.common.items.RailcraftItems|mods.railcraft.common.blocks.tracks.outfitted.TrackKits;twilightforest:twilightforest.TFFeature");
         DEFAULTS.setProperty("gpom.gendustryConfigCache", "true");
         DEFAULTS.setProperty("gpom.gendustryCallProfiler", "false");
@@ -258,18 +298,18 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.nuclearcraft.skipEmptyManufactoryLogCraftingFallback", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.enabled", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.registries", "minecraft:recipes,minecraft:blocks,minecraft:items,minecraft:entities,ebwizardry:spells");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.recipes.enabled", "true");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.recipes.enabled", "false");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.workers", "6");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.queuedCommit", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistry", "true");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist", "moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes,draconicevolution@minecraft:recipes");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyEventRegistryDenylist", "moarsigns@minecraft:recipes,cyclopscore@minecraft:recipes,integrateddynamics@minecraft:recipes,draconicevolution@minecraft:recipes,techreborn@minecraft:recipes");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitRegistries", "minecraft:items,minecraft:entities");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.proxyImmediateRegistries", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.orderedWaveRegistries", "minecraft:items");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.immediateCommitWaitDiagnosticsMillis", "5000");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.dependencyGating", "true");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.allowlist", "*");
-        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "betterportals,contenttweaker,modtweaker,actuallyadditions@minecraft:items,actuallyadditions@minecraft:blocks,abyssalcraft@minecraft:items,tconstruct@minecraft:items,natura@minecraft:blocks,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,enderiointegrationtic@minecraft:blocks,enderiointegrationticlate@minecraft:blocks,enderiointegrationforestry@minecraft:blocks,natura@minecraft:items,thebetweenlands@minecraft:blocks,thebetweenlands@minecraft:items,thebetweenlands@minecraft:recipes,mysticalagriculture@minecraft:items,actuallybaubles@minecraft:items,mysticalagradditions@minecraft:items,industrialforegoing@minecraft:blocks,industrialforegoing@minecraft:items,plustic@minecraft:items,cyclicmagic@minecraft:recipes,cyclicmagic@minecraft:items,botania@minecraft:items,immersiveengineering@minecraft:items,iceandfire@minecraft:items,zerocore@minecraft:items,bigreactors@minecraft:items,glassential@minecraft:items,storagedrawers@minecraft:items,bewitchment@minecraft:blocks,bewitchment@minecraft:items,extendedcrafting@minecraft:items,extrabotany@minecraft:items,bhc@minecraft:items,deepmoblearningbm@minecraft:items,chickens@minecraft:items,integrateddynamics@minecraft:blocks,rftools@minecraft:items,appliedenergistics2@minecraft:items,integrateddynamics@minecraft:items,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,chisel@minecraft:blocks,chisel@minecraft:items,chisel@minecraft:recipes,unlimitedchiselworks@minecraft:blocks,unlimitedchiselworks@minecraft:items,unlimitedchiselworks@minecraft:recipes,deepmoblearning@minecraft:blocks,deepmoblearning@minecraft:items,blockcraftery,mysticallib,cofhcore@minecraft:recipes,thermalfoundation@minecraft:recipes,thermalexpansion@minecraft:recipes,thermaldynamics@minecraft:recipes,thermalcultivation@minecraft:recipes,thermalinnovation@minecraft:recipes,redstonearsenal@minecraft:recipes,draconicevolution@minecraft:recipes");
+        DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.denylist", "betterportals,contenttweaker,modtweaker,actuallyadditions@minecraft:items,actuallyadditions@minecraft:blocks,abyssalcraft@minecraft:items,tconstruct@minecraft:items,natura@minecraft:blocks,enderio@minecraft:blocks,enderiobase@minecraft:blocks,enderioconduits@minecraft:blocks,enderioinvpanel@minecraft:blocks,enderiomachines@minecraft:blocks,enderiopowertools@minecraft:blocks,enderioendergy@minecraft:blocks,enderiointegrationtic@minecraft:blocks,enderiointegrationticlate@minecraft:blocks,enderiointegrationforestry@minecraft:blocks,natura@minecraft:items,thebetweenlands@minecraft:blocks,thebetweenlands@minecraft:items,thebetweenlands@minecraft:recipes,mysticalagriculture@minecraft:items,actuallybaubles@minecraft:items,mysticalagradditions@minecraft:items,industrialforegoing@minecraft:blocks,industrialforegoing@minecraft:items,plustic@minecraft:items,cyclicmagic@minecraft:recipes,cyclicmagic@minecraft:items,botania@minecraft:items,immersiveengineering@minecraft:items,iceandfire@minecraft:items,zerocore@minecraft:items,bigreactors@minecraft:items,glassential@minecraft:items,storagedrawers@minecraft:items,bewitchment@minecraft:blocks,bewitchment@minecraft:items,extendedcrafting@minecraft:items,extrabotany@minecraft:items,bhc@minecraft:items,deepmoblearningbm@minecraft:items,chickens@minecraft:items,integrateddynamics@minecraft:blocks,rftools@minecraft:items,appliedenergistics2@minecraft:items,integrateddynamics@minecraft:items,enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,enderioconduitsopencomputers,enderioconduitsrefinedstorage,enderiointegrationforestry,enderiointegrationtic,enderiointegrationticlate,enderioinvpanel,enderiomachines,enderiopowertools,enderioendergy,chisel@minecraft:blocks,chisel@minecraft:items,chisel@minecraft:recipes,unlimitedchiselworks@minecraft:blocks,unlimitedchiselworks@minecraft:items,unlimitedchiselworks@minecraft:recipes,deepmoblearning@minecraft:blocks,deepmoblearning@minecraft:items,blockcraftery,mysticallib,cofhcore@minecraft:recipes,thermalfoundation@minecraft:recipes,thermalexpansion@minecraft:recipes,thermaldynamics@minecraft:recipes,thermalcultivation@minecraft:recipes,thermalinnovation@minecraft:recipes,redstonearsenal@minecraft:recipes,draconicevolution@minecraft:recipes,techreborn@minecraft:recipes");
         DEFAULTS.setProperty("gpom.registry.parallelRegisterEvents.deepDiagnostics", "false");
         DEFAULTS.setProperty("gpom.preInitHighSinkCallProfiler", "false");
         DEFAULTS.setProperty("gpom.postPreInitTopCallProfiler", "false");
@@ -605,11 +645,17 @@ public final class GpomEarlyConfig {
                 "gpom.hei.draconicFusionTransfer.enabled",
                 "gpom.hei.craftableRecipesFirst.enabled"
         );
+        writeSection(writer, "Crafting Safety", "Fail-closed guards for recipe implementations that crash when previewed or consumed from synthetic crafting inventories such as ME terminals and ProjectEX arcane tablets.",
+                "gpom.crafting.safeBrokenRecipePreview.enabled"
+        );
         writeSection(writer, "GPOM Logging", "Controls GPOM's own logger and high-volume categories. Keep the root logger enabled when diagnostics such as world lifecycle snapshots are needed.",
                 "gpom.logging.enabled",
                 "gpom.logging.fmlScheduler.enabled",
                 "gpom.logging.optimizationInfo.enabled",
                 "gpom.logging.cacheInfo.enabled",
+                "gpom.logging.worldLoadingScreenDiagnostics.enabled",
+                "gpom.logging.baublesInfo.enabled",
+                "gpom.logging.sfmInfo.enabled",
                 "gpom.logging.asyncProbeLogs.enabled",
                 "gpom.logging.asyncProbeLogs.queueSize"
         );
@@ -654,7 +700,8 @@ public final class GpomEarlyConfig {
                 "gpom.baubles.sideSlots.preferRight",
                 "gpom.baubles.sideSlots.shiftRightClickEquip",
                 "gpom.baubles.sideSlots.aether.enabled",
-                "gpom.baubles.sideSlots.cosmeticArmor.enabled"
+                "gpom.baubles.sideSlots.cosmeticArmor.enabled",
+                "gpom.baubles.sideSlots.deepProbe.enabled"
         );
         writeSection(writer, "World Lifecycle Profiling", "World load, unload, and dimension-switch diagnostics for tracking retained client state and memory leaks.",
                 "gpom.worldLifecycleProfiler.enabled",
@@ -692,6 +739,9 @@ public final class GpomEarlyConfig {
         writeSection(writer, "Compatibility Fixes", "Small exact-version safety fixes for known thread-safety or lifecycle issues exposed by modern render/loading stacks.",
                 "gpom.loliasm.threadSafeStatefulRegistry",
                 "gpom.codeChickenLib.repairNullModelErrorState",
+                "gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled",
+                "gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled",
+                "gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks",
                 "gpom.betterPortals.fixMissingNewTarget",
                 "gpom.betterPortals.remapLegacyAetherBridge",
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
@@ -704,6 +754,8 @@ public final class GpomEarlyConfig {
                 "gpom.architecturecraft.fastShapeLighting",
                 "gpom.architecturecraft.accurateHitboxes",
                 "gpom.architecturecraft.parentMaterialOcclusion.enabled",
+                "gpom.architecturecraft.additionalSawbenchMaterials.enabled",
+                "gpom.architecturecraft.additionalSawbenchMaterials.allowlist",
                 "gpom.blockcraftery.accurateHitboxes",
                 "gpom.blockcraftery.parentMaterialOcclusion.enabled",
                 "gpom.blockcraftery.modelRenderLayerCompat",
@@ -712,9 +764,12 @@ public final class GpomEarlyConfig {
                 "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
                 "gpom.scannable.skipNegativeOreCacheIds",
                 "gpom.dankStorage.portablePickupSync.enabled",
+                "gpom.randomThings.improvedRunicDust.enabled",
+                "gpom.randomThings.improvedRunicDust.guiProbe.enabled",
                 "gpom.tileEntity.missingMappingSaveGuard.enabled",
                 "gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds",
                 "gpom.actuallyAdditions.repairMissingTileEntityMappings",
+                "gpom.architecturecraft.repairMissingTileEntityMappings",
                 "gpom.enderio.repairMissingTileEntityMappings",
                 "gpom.industrialForegoing.repairMissingTileEntityMappings",
                 "gpom.registry.repairThaumicWondersMissingMappings",
@@ -948,6 +1003,12 @@ public final class GpomEarlyConfig {
                 return "Enables one-time informational lines from optimization installers and exact-version fast paths.";
             case "gpom.logging.cacheInfo.enabled":
                 return "Enables cache hit, miss, invalidation, and persistence lines for GPOM input-validated caches.";
+            case "gpom.logging.worldLoadingScreenDiagnostics.enabled":
+                return "Enables one-shot GPOM world-loading overlay diagnostics such as start, first-render, and skipped-render reasons.";
+            case "gpom.logging.baublesInfo.enabled":
+                return "Enables informational GPOM Baubles side-slot lines. Warnings remain available through the main GPOM logger.";
+            case "gpom.logging.sfmInfo.enabled":
+                return "Enables informational GPOM Super Factory Manager lightweight-search-cache lines. Warnings remain available through the main GPOM logger.";
             case "gpom.logging.asyncProbeLogs.enabled":
                 return "Moves high-volume GPOM probe/profiler log writes onto a bounded daemon thread so console/file IO does not stall gameplay.";
             case "gpom.logging.asyncProbeLogs.queueSize":
@@ -1050,6 +1111,8 @@ public final class GpomEarlyConfig {
                 return "Logs recipes whose canonical ingredient choice matches a different recipe or output before AE2 pattern validation.";
             case "gpom.ae2.patternDiagnostics.skipRecipeFunctions":
                 return "Skips CraftTweaker/RecipeStages recipes with recipe functions before AE2 PatternHelper validation, avoiding CT FATAL spam from synthetic diagnostic inventories.";
+            case "gpom.crafting.safeBrokenRecipePreview.enabled":
+                return "Catches broken IRecipe preview/remainder exceptions from vanilla crafting containers, clears the output slot, and logs the failed recipe instead of crashing ME terminals or ProjectEX arcane tablets.";
             case "gpom.jecalculation.pinnedCraftOverlay.enabled":
                 return "Adds a client-only pinned Just Enough Calculation craft overlay to normal container screens, with a GPOM pin toggle on JEC's craft screen. No-ops when JEC is absent.";
             case "gpom.jecalculation.fuzzyVolatileItemNbt.enabled":
@@ -1076,10 +1139,18 @@ public final class GpomEarlyConfig {
                 return "Adds The Aether accessory slots to the same Baubles side rail when Aether Legacy is loaded. Requires gpom.baubles.sideSlots.enabled.";
             case "gpom.baubles.sideSlots.cosmeticArmor.enabled":
                 return "Adds Cosmetic Armor Reworked armor slots to the same Baubles side rail when Cosmetic Armor Reworked is loaded. Requires gpom.baubles.sideSlots.enabled.";
+            case "gpom.baubles.sideSlots.deepProbe.enabled":
+                return "Logs client and server side-rail click resolution, slot state, cursor state, and rejection reasons for debugging failed Baubles/Curios-style clicks.";
             case "gpom.loliasm.threadSafeStatefulRegistry":
                 return "Replaces LoliASM's crash-state registry with a concurrent set and prunes cleared weak references from BufferBuilder churn.";
             case "gpom.codeChickenLib.repairNullModelErrorState":
                 return "Repairs CCL bakery extended states whose ccl_model_error_state property is present but null, avoiding missing models in Nothirium/AUSM chunk rebuilds.";
+            case "gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled":
+                return "Skips WRCBE's unsafe server world-tick map processing when its RedstoneEtherAddons server manager is unexpectedly null. No-op when WirelessRedstone-CBE is absent.";
+            case "gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled":
+                return "Suppresses stale Advanced Rocketry no-oxygen HUD warnings for a short client dimension-handoff grace window. No-op when Advanced Rocketry is absent.";
+            case "gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks":
+                return "Client ticks to keep clearing stale Advanced Rocketry suffocation warning timestamps after world load/unload or dimension handoff.";
             case "gpom.betterPortals.fixMissingNewTarget":
                 return "Patches BetterPortals' legacy EntityRenderer @At(\"NEW\") mixin metadata with an explicit Frustum target on newer Mixin runtimes.";
             case "gpom.betterPortals.remapLegacyAetherBridge":
@@ -1102,6 +1173,10 @@ public final class GpomEarlyConfig {
                 return "Replaces ArchitectureCraft shape ray tracing with a GPOM-safe collision-box ray trace and preserves the selected sub-box for outlines. No-op when ArchitectureCraft is absent.";
             case "gpom.architecturecraft.parentMaterialOcclusion.enabled":
                 return "Lets ArchitectureCraft shapes answer side-render checks as their base material. Experimental; disabled by default because it can over-darken ambient occlusion on partial framed geometry.";
+            case "gpom.architecturecraft.additionalSawbenchMaterials.enabled":
+                return "Extends ArchitectureCraft's sawbench material filter with a registry allowlist for safe non-opaque non-tile blocks such as EnderIO fused glass. Original ArchitectureCraft accepted materials remain accepted.";
+            case "gpom.architecturecraft.additionalSawbenchMaterials.allowlist":
+                return "Comma-separated block registry ids additionally allowed as ArchitectureCraft sawbench materials when the additional-materials patch is enabled. Tile-entity blocks are still rejected for save safety.";
             case "gpom.blockcraftery.accurateHitboxes":
                 return "Adds optional Blockcraftery ray-hitbox fixes for editable slants, corners, and copied-block cubes. No-op when Blockcraftery is absent.";
             case "gpom.blockcraftery.parentMaterialOcclusion.enabled":
@@ -1120,12 +1195,18 @@ public final class GpomEarlyConfig {
                 return "Skips negative Scannable ore-cache block state ids before they reach BitSet.set, avoiding client disconnect crashes during cache rebuilds. No-op when Scannable is absent.";
             case "gpom.dankStorage.portablePickupSync.enabled":
                 return "Allows Dank Storage portable danks to keep auto-pickup active while their GUI is open and refreshes the open container from the item NBT before slot sync. No-op when Dank Storage is absent.";
+            case "gpom.randomThings.improvedRunicDust.enabled":
+                return "Enables GPOM's optional QuantumThings/RandomThings improved runic dust editor and placement/rendering layer. Per-rune values are edited in game with shift right-click and stored in gpom-rune-dust.properties.";
+            case "gpom.randomThings.improvedRunicDust.guiProbe.enabled":
+                return "Logs targeted Improved Runic Dust GUI open/init/draw/button coordinates and draws a high-contrast diagnostic background while investigating invisible screens.";
             case "gpom.tileEntity.missingMappingSaveGuard.enabled":
                 return "Intercepts vanilla TileEntity NBT id writes when a class-to-id mapping is missing. Known repair hooks run first so chunk sends/saves do not crash or silently skip tile persistence.";
             case "gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds":
-                return "Allows the TileEntity save guard to write exact known fallback ids for recognized tile classes if registry repair still cannot restore the mapping. Currently limited to Actually Additions tiles with their own name metadata.";
+                return "Allows the TileEntity save guard to write exact known fallback ids for recognized tile classes if registry repair still cannot restore the mapping. Currently scoped to Actually Additions, ArchitectureCraft, Astral Sorcery, and Tinker I/O known tiles.";
             case "gpom.actuallyAdditions.repairMissingTileEntityMappings":
                 return "After Actually Additions load, re-registers missing vanilla TileEntity class-to-id mappings from Actually Additions' own tile metadata. No-op when Actually Additions is absent or mappings are already present.";
+            case "gpom.architecturecraft.repairMissingTileEntityMappings":
+                return "After ArchitectureCraft load, re-registers missing Shape and Sawbench TileEntity class-to-id mappings. Prevents shape tile data from being skipped and falling back to default oak roof tiles.";
             case "gpom.enderio.repairMissingTileEntityMappings":
                 return "After EnderIO load, re-registers missing vanilla TileEntity class-to-id mappings from EnderIO's own tile enum metadata. No-op when EnderIO is absent or mappings are already present.";
             case "gpom.industrialForegoing.repairMissingTileEntityMappings":
@@ -1207,7 +1288,7 @@ public final class GpomEarlyConfig {
             case "gpom.preInitClassPrewarm.noInitPrefixes":
                 return "Extra no-static-init prefixes, formatted modid:internal/prefix|other/prefix;modid2:prefix.";
             case "gpom.preInitClassPrewarm.initializeClasses":
-                return "Allows static initializers during scanned class prewarm for every allowlisted mod. Risky; prefer gpom.preInitClassPrewarm.initializeAllowlist for targeted testing.";
+                return "Allows static initializers during scanned class prewarm for every allowlisted mod. Risky; keep false unless testing a precise class list.";
             case "gpom.preInitClassPrewarm.initializeAllowlist":
                 return "Comma-separated mod ids whose scanned prewarm classes may run static initializers. Overrides the safe no-init bucket only for listed mods.";
             case "gpom.preInitClassPrewarm.explicitClasses":
@@ -1490,6 +1571,9 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.immediateSlowLogs.enabled");
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.enabled");
         copySystemPropertyIfAbsent("gpom.runtimeSinkProfiler.forgeEvents.profileAll");
+        copySystemPropertyIfAbsent("gpom.logging.worldLoadingScreenDiagnostics.enabled");
+        copySystemPropertyIfAbsent("gpom.logging.baublesInfo.enabled");
+        copySystemPropertyIfAbsent("gpom.logging.sfmInfo.enabled");
         copySystemPropertyIfAbsent("gpom.client.fastNotifyBlockUpdate.enabled");
         copySystemPropertyIfAbsent("gpom.client.dedupeRenderSectionUpdates.enabled");
         copySystemPropertyIfAbsent("gpom.ae2.patternDiagnostics.enabled");
@@ -1505,8 +1589,11 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.shiftRightClickEquip");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.aether.enabled");
         copySystemPropertyIfAbsent("gpom.baubles.sideSlots.cosmeticArmor.enabled");
+        copySystemPropertyIfAbsent("gpom.baubles.sideSlots.deepProbe.enabled");
         copySystemPropertyIfAbsent("gpom.loliasm.threadSafeStatefulRegistry");
         copySystemPropertyIfAbsent("gpom.codeChickenLib.repairNullModelErrorState");
+        copySystemPropertyIfAbsent("gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled");
+        copySystemPropertyIfAbsent("gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixMissingNewTarget");
         copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
@@ -1518,6 +1605,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.architecturecraft.fastShapeLighting");
         copySystemPropertyIfAbsent("gpom.architecturecraft.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.architecturecraft.parentMaterialOcclusion.enabled");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.additionalSawbenchMaterials.enabled");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.additionalSawbenchMaterials.allowlist");
         copySystemPropertyIfAbsent("gpom.blockcraftery.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.blockcraftery.parentMaterialOcclusion.enabled");
         copySystemPropertyIfAbsent("gpom.blockcraftery.modelRenderLayerCompat");
@@ -1527,9 +1616,12 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
         copySystemPropertyIfAbsent("gpom.scannable.skipNegativeOreCacheIds");
         copySystemPropertyIfAbsent("gpom.dankStorage.portablePickupSync.enabled");
+        copySystemPropertyIfAbsent("gpom.randomThings.improvedRunicDust.enabled");
+        copySystemPropertyIfAbsent("gpom.randomThings.improvedRunicDust.guiProbe.enabled");
         copySystemPropertyIfAbsent("gpom.tileEntity.missingMappingSaveGuard.enabled");
         copySystemPropertyIfAbsent("gpom.tileEntity.missingMappingSaveGuard.writeKnownFallbackIds");
         copySystemPropertyIfAbsent("gpom.actuallyAdditions.repairMissingTileEntityMappings");
+        copySystemPropertyIfAbsent("gpom.architecturecraft.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.enderio.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.industrialForegoing.repairMissingTileEntityMappings");
         copySystemPropertyIfAbsent("gpom.registry.repairThaumicWondersMissingMappings");
@@ -1590,6 +1682,18 @@ public final class GpomEarlyConfig {
 
     public static boolean cacheInfoLogsEnabled() {
         return gpomLoggingEnabled() && booleanValue("gpom.logging.cacheInfo.enabled");
+    }
+
+    public static boolean worldLoadingScreenDiagnosticLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.logging.worldLoadingScreenDiagnostics.enabled");
+    }
+
+    public static boolean baublesInfoLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.logging.baublesInfo.enabled");
+    }
+
+    public static boolean sfmInfoLogsEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.logging.sfmInfo.enabled");
     }
 
     public static Set<String> cacheInvalidationDenylist() {
@@ -1704,6 +1808,10 @@ public final class GpomEarlyConfig {
 
     public static boolean dedupeRenderSectionUpdatesEnabled() {
         return booleanValue("gpom.client.dedupeRenderSectionUpdates.enabled");
+    }
+
+    public static boolean safeBrokenRecipePreviewEnabled() {
+        return booleanValue("gpom.crafting.safeBrokenRecipePreview.enabled");
     }
 
     public static boolean worldLifecycleProfilerEnabled() {
@@ -1826,8 +1934,24 @@ public final class GpomEarlyConfig {
         return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.cosmeticArmor.enabled");
     }
 
+    public static boolean baublesSideSlotsDeepProbeEnabled() {
+        return baublesSideSlotsEnabled() && booleanValue("gpom.baubles.sideSlots.deepProbe.enabled");
+    }
+
     public static boolean loliAsmThreadSafeStatefulRegistryEnabled() {
         return booleanValue("gpom.loliasm.threadSafeStatefulRegistry");
+    }
+
+    public static boolean wirelessRedstoneSkipNullServerAddonsWorldTickEnabled() {
+        return booleanValue("gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled");
+    }
+
+    public static boolean advancedRocketryOxygenOverlayHandoffGuardEnabled() {
+        return booleanValue("gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled");
+    }
+
+    public static int advancedRocketryOxygenOverlayHandoffGuardTicks() {
+        return Math.max(20, Math.min(400, intValue("gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks", 120)));
     }
 
     public static boolean betterPortalsMissingNewTargetFixEnabled() {
@@ -1878,6 +2002,14 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.architecturecraft.parentMaterialOcclusion.enabled");
     }
 
+    public static boolean architectureCraftAdditionalSawbenchMaterialsEnabled() {
+        return booleanValue("gpom.architecturecraft.additionalSawbenchMaterials.enabled");
+    }
+
+    public static Set<String> architectureCraftAdditionalSawbenchMaterialAllowlist() {
+        return setValue("gpom.architecturecraft.additionalSawbenchMaterials.allowlist");
+    }
+
     public static boolean blockcrafteryAccurateHitboxesEnabled() {
         return booleanValue("gpom.blockcraftery.accurateHitboxes");
     }
@@ -1910,6 +2042,14 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.dankStorage.portablePickupSync.enabled");
     }
 
+    public static boolean randomThingsImprovedRunicDustEnabled() {
+        return booleanValue("gpom.randomThings.improvedRunicDust.enabled");
+    }
+
+    public static boolean randomThingsImprovedRunicDustGuiProbeEnabled() {
+        return booleanValue("gpom.randomThings.improvedRunicDust.guiProbe.enabled");
+    }
+
     public static boolean journeyMapWaypointDimensionDropupEnabled() {
         return booleanValue("gpom.journeymap.waypointDimensionDropup.enabled");
     }
@@ -1928,6 +2068,10 @@ public final class GpomEarlyConfig {
 
     public static boolean actuallyAdditionsMissingTileEntityMappingRepairEnabled() {
         return booleanValue("gpom.actuallyAdditions.repairMissingTileEntityMappings");
+    }
+
+    public static boolean architectureCraftMissingTileEntityMappingRepairEnabled() {
+        return booleanValue("gpom.architecturecraft.repairMissingTileEntityMappings");
     }
 
     public static boolean industrialForegoingMissingTileEntityMappingRepairEnabled() {

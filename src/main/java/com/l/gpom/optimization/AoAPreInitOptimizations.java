@@ -1,6 +1,7 @@
 package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.client.ClientNullPlayerStateGuard;
 import com.l.gpom.core.TargetedModVersions;
 import com.l.gpom.profiling.StartupProfiler;
 import com.l.gpom.util.ReflectionFields;
@@ -192,6 +193,9 @@ public final class AoAPreInitOptimizations {
     }
 
     private static void dispatchLazy(String className, String methodName, String eventClassName, Event event) {
+        if (shouldSkipWithoutClientPlayer(eventClassName)) {
+            return;
+        }
         Object target = lazyTarget(className);
         Method method = lazyMethod(target, className, methodName, eventClassName);
         try {
@@ -200,6 +204,9 @@ public final class AoAPreInitOptimizations {
             throw new RuntimeException("Unable to invoke AoA3 client event handler " + className + '#' + methodName, e);
         } catch (InvocationTargetException e) {
             Throwable cause = e.getCause();
+            if (shouldSuppressMissingClientPlayerCrash(className, eventClassName, cause)) {
+                return;
+            }
             if (cause instanceof RuntimeException) {
                 throw (RuntimeException) cause;
             }
@@ -208,6 +215,32 @@ public final class AoAPreInitOptimizations {
             }
             throw new RuntimeException("AoA3 client event handler failed " + className + '#' + methodName, cause);
         }
+    }
+
+    private static boolean shouldSkipWithoutClientPlayer(String eventClassName) {
+        if (!isClientPlayerDependentEvent(eventClassName)) {
+            return false;
+        }
+        return ClientNullPlayerStateGuard.hasNoCurrentClientWorldOrPlayer();
+    }
+
+    private static boolean shouldSuppressMissingClientPlayerCrash(String className, String eventClassName, Throwable cause) {
+        if (!(cause instanceof NullPointerException)
+                || !isClientPlayerDependentEvent(eventClassName)
+                || !className.startsWith("net.tslat.aoa3.client.gui.render.")) {
+            return false;
+        }
+        String message = cause.getMessage();
+        return message != null
+                && (message.contains("field_71439_g") || message.contains(".player") || message.contains(" player"));
+    }
+
+    private static boolean isClientPlayerDependentEvent(String eventClassName) {
+        return "net.minecraftforge.fml.common.gameevent.TickEvent$RenderTickEvent".equals(eventClassName)
+                || "net.minecraftforge.client.event.RenderGameOverlayEvent$Pre".equals(eventClassName)
+                || "net.minecraftforge.client.event.RenderGameOverlayEvent$Post".equals(eventClassName)
+                || "net.minecraftforge.client.event.RenderSpecificHandEvent".equals(eventClassName)
+                || "net.minecraftforge.client.event.FOVUpdateEvent".equals(eventClassName);
     }
 
     private static void registerClientEventsFallback() {

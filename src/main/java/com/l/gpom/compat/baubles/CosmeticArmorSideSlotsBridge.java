@@ -1,7 +1,9 @@
 package com.l.gpom.compat.baubles;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -51,7 +53,6 @@ public final class CosmeticArmorSideSlotsBridge {
     private static volatile Field inventoryManagerField;
     private static volatile Method getServerInventoryMethod;
     private static volatile Method getClientInventoryMethod;
-    private static volatile Method entityUniqueIdMethod;
     private static volatile Method inventoryStackMethod;
     private static volatile Method stackItemMethod;
     private static volatile Field networkField;
@@ -219,7 +220,7 @@ public final class CosmeticArmorSideSlotsBridge {
             return null;
         }
 
-        UUID uuid = playerUniqueId(player);
+        UUID uuid = MinecraftMappingCompat.playerUniqueId(player);
         if (uuid == null) {
             return null;
         }
@@ -266,21 +267,6 @@ public final class CosmeticArmorSideSlotsBridge {
             inventoryManagerField = field;
         }
         return field == null ? null : field.get(null);
-    }
-
-    private static UUID playerUniqueId(EntityPlayer player) {
-        try {
-            Method method = entityUniqueIdMethod;
-            if (method == null || !method.getDeclaringClass().isAssignableFrom(player.getClass())) {
-                method = findMethod(player.getClass(), new Class<?>[0], "func_110124_au", "getUniqueID");
-                entityUniqueIdMethod = method;
-            }
-            Object value = method == null ? null : method.invoke(player);
-            return value instanceof UUID ? (UUID) value : null;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
-            logFailure("Could not resolve player UUID for Cosmetic Armor side slots", exception);
-            return null;
-        }
     }
 
     private static ItemStack inventoryStack(IInventory inventory, int index) {
@@ -344,39 +330,19 @@ public final class CosmeticArmorSideSlotsBridge {
         if (type == null || names == null) {
             return null;
         }
-        for (String name : names) {
-            try {
-                Method method = type.getMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException ignored) {
-            }
+        try {
+            return ReflectionLookup.findMethod(type, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            for (String name : names) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-        }
-        return null;
     }
 
     private static Field findField(Class<?> type, String... names) {
-        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-            for (String name : names) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
+        try {
+            return ReflectionLookup.findField(type, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static boolean enabledAndPresent() {

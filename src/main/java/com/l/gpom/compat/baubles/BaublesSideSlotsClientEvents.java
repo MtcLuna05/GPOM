@@ -6,9 +6,11 @@ import baubles.api.cap.BaublesCapabilities;
 import baubles.client.ClientProxy;
 import baubles.common.items.ItemRing;
 import com.l.gpom.client.ClientAccess;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiContainerCreative;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.renderer.block.model.ModelResourceLocation;
@@ -35,15 +37,12 @@ import java.util.List;
 
 public final class BaublesSideSlotsClientEvents {
     private static volatile Method keyIsPressedMethod;
-    private static volatile Method displayGuiScreenMethod;
     private static volatile Method stackHasCapabilityMethod;
     private static volatile Method stackGetCapabilityMethod;
     private static volatile Method i18nFormatMethod;
     private static volatile Method tooltipStackMethod;
     private static volatile Method tooltipListMethod;
-    private static volatile Field currentScreenField;
     private static volatile Field inGameHasFocusField;
-    private static volatile Field worldIsRemoteField;
 
     @SubscribeEvent
     public void registerItemModels(ModelRegistryEvent event) {
@@ -73,6 +72,7 @@ public final class BaublesSideSlotsClientEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void playerTick(TickEvent.PlayerTickEvent event) {
         if (!GpomEarlyConfig.baublesSideSlotsEnabled()
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
                 || event.side != Side.CLIENT
                 || event.phase != TickEvent.Phase.START
                 || !keyPressed(ClientProxy.KEY_BAUBLES)) {
@@ -105,16 +105,19 @@ public final class BaublesSideSlotsClientEvents {
     public static void openVanillaInventoryWithSideSlots() {
         Minecraft minecraft = ClientAccess.minecraft();
         Object player = ClientAccess.player(minecraft);
-        if (minecraft == null || !(player instanceof EntityPlayer) || !inGameHasFocus(minecraft)) {
+        if (minecraft == null
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
+                || !(player instanceof EntityPlayer)
+                || !inGameHasFocus(minecraft)) {
             return;
         }
-        Object currentScreen = currentScreen(minecraft);
+        Object currentScreen = ClientAccess.currentScreen(minecraft);
         if (isCreativePlayer((EntityPlayer) player)) {
             if (currentScreen instanceof GuiInventory) {
                 BaublesSideSlotsClient.removeGuiInventorySideSlots((GuiInventory) currentScreen);
             }
             if (!(currentScreen instanceof GuiContainerCreative)) {
-                displayGuiScreen(minecraft, new GuiContainerCreative((EntityPlayer) player));
+                ClientAccess.displayGuiScreen(minecraft, new GuiContainerCreative((EntityPlayer) player));
             }
             return;
         }
@@ -124,7 +127,7 @@ public final class BaublesSideSlotsClientEvents {
         }
         GuiInventory inventory = new GuiInventory((EntityPlayer) player);
         BaublesSideSlotsClient.setPanelVisible(inventory, true);
-        displayGuiScreen(minecraft, inventory);
+        ClientAccess.displayGuiScreen(minecraft, inventory);
     }
 
     private static boolean isCreativePlayer(EntityPlayer player) {
@@ -237,55 +240,21 @@ public final class BaublesSideSlotsClientEvents {
     }
 
     private static boolean inGameHasFocus(Minecraft minecraft) {
-        Object value = fieldValue(minecraft, inGameHasFocusField, true, "field_71415_G", "inGameHasFocus");
+        Object value = fieldValue(minecraft, inGameHasFocusField, "field_71415_G", "inGameHasFocus");
         return !(value instanceof Boolean) || (Boolean) value;
     }
 
-    private static Object currentScreen(Minecraft minecraft) {
-        return fieldValue(minecraft, currentScreenField, false, "field_71462_r", "currentScreen");
-    }
-
     private static boolean isRemoteWorld(World world) {
-        if (world == null) {
-            return false;
-        }
-        try {
-            Field field = worldIsRemoteField;
-            if (field == null) {
-                field = findField(World.class, "field_72995_K", "isRemote");
-                worldIsRemoteField = field;
-            }
-            return field != null && field.getBoolean(world);
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            return false;
-        }
+        return MinecraftMappingCompat.worldIsRemote(world);
     }
 
-    private static void displayGuiScreen(Minecraft minecraft, GuiScreen screen) {
-        try {
-            Method method = displayGuiScreenMethod;
-            if (method == null) {
-                method = findMethod(Minecraft.class, new Class<?>[] {GuiScreen.class}, "func_147108_a", "displayGuiScreen");
-                displayGuiScreenMethod = method;
-            }
-            if (method != null) {
-                method.invoke(minecraft, screen);
-            }
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
-    }
-
-    private static Object fieldValue(Minecraft minecraft, Field cached, boolean focus, String... names) {
+    private static Object fieldValue(Minecraft minecraft, Field cached, String... names) {
         if (minecraft == null) {
             return null;
         }
         try {
             Field field = cached != null ? cached : findField(Minecraft.class, names);
-            if (focus) {
-                inGameHasFocusField = field;
-            } else {
-                currentScreenField = field;
-            }
+            inGameHasFocusField = field;
             return field == null ? null : field.get(minecraft);
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             return null;
@@ -293,26 +262,18 @@ public final class BaublesSideSlotsClientEvents {
     }
 
     private static Method findMethod(Class<?> type, Class<?>[] parameterTypes, String... names) {
-        for (String name : names) {
-            try {
-                Method method = type.getMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-            }
+        try {
+            return ReflectionLookup.findMethod(type, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Field findField(Class<?> type, String... names) {
-        for (String name : names) {
-            try {
-                Field field = type.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (ReflectiveOperationException | RuntimeException ignored) {
-            }
+        try {
+            return ReflectionLookup.findField(type, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 }

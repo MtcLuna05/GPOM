@@ -8,8 +8,6 @@ import net.minecraft.client.resources.IResourceManager;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraft.client.resources.IResourceManagerReloadListener;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -78,11 +76,7 @@ public final class BetweenlandsResourceReloadOptimizations {
     }
 
     private static void invokeResourceReload(DeferredReload reload) throws ReflectiveOperationException {
-        Method reloadMethod = findReloadMethod(reload.listener.getClass());
-        if (reloadMethod == null) {
-            throw new NoSuchMethodException(reload.listener.getClass().getName() + ".onResourceManagerReload/func_110549_a");
-        }
-        reloadMethod.invoke(reload.listener, reload.manager);
+        ResourceReloadHelper.invokeReload(reload.manager, reload.listener);
     }
 
     private static boolean shouldAppendShaderWithoutImmediateReload(IResourceManagerReloadListener listener) {
@@ -107,24 +101,8 @@ public final class BetweenlandsResourceReloadOptimizations {
 
     @SuppressWarnings("unchecked")
     private static boolean appendReloadListener(IReloadableResourceManager manager, IResourceManagerReloadListener listener) {
-        if (manager == null || listener == null) {
-            return false;
-        }
         try {
-            Field field = findField(manager.getClass(), "reloadListeners", "field_110546_b");
-            if (field == null) {
-                return false;
-            }
-            field.setAccessible(true);
-            Object value = field.get(manager);
-            if (!(value instanceof List)) {
-                return false;
-            }
-            List<IResourceManagerReloadListener> listeners = (List<IResourceManagerReloadListener>) value;
-            if (!listeners.contains(listener)) {
-                listeners.add(listener);
-            }
-            return true;
+            return ResourceReloadHelper.appendReloadListener(manager, listener);
         } catch (Throwable throwable) {
             if (!fallbackLogged) {
                 fallbackLogged = true;
@@ -135,63 +113,14 @@ public final class BetweenlandsResourceReloadOptimizations {
     }
 
     private static void registerNow(IReloadableResourceManager manager, IResourceManagerReloadListener listener) {
-        if (manager == null || listener == null) {
-            return;
-        }
         try {
-            Method register = findMethod(manager.getClass(), "registerReloadListener", "func_110542_a");
-            if (register == null) {
-                throw new NoSuchMethodException(manager.getClass().getName() + ".registerReloadListener");
-            }
-            register.invoke(manager, listener);
+            ResourceReloadHelper.registerReloadListener(manager, listener);
         } catch (Throwable throwable) {
             if (!fallbackLogged) {
                 fallbackLogged = true;
                 GPOM.LOGGER.warn("Betweenlands reload listener registration failed", throwable);
             }
         }
-    }
-
-    private static Field findField(Class<?> type, String deobfuscatedName, String runtimeName) {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : new String[] {deobfuscatedName, runtimeName}) {
-                try {
-                    return current.getDeclaredField(name);
-                } catch (ReflectiveOperationException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return null;
-    }
-
-    private static Method findMethod(Class<?> type, String deobfuscatedName, String runtimeName) {
-        for (String name : new String[] {deobfuscatedName, runtimeName}) {
-            try {
-                Method method = type.getMethod(name, IResourceManagerReloadListener.class);
-                method.setAccessible(true);
-                return method;
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-        return null;
-    }
-
-    private static Method findReloadMethod(Class<?> type) {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : new String[] {"onResourceManagerReload", "func_110549_a"}) {
-                try {
-                    Method method = current.getDeclaredMethod(name, IResourceManager.class);
-                    method.setAccessible(true);
-                    return method;
-                } catch (ReflectiveOperationException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        return null;
     }
 
     private static final class DeferredReload {

@@ -1,6 +1,7 @@
 package com.l.gpom.compat.thaumcraft;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -340,41 +341,15 @@ public final class ThaumcraftResearchClientProbe {
     }
 
     private static Method findStaticMethod(Class<?> type, String... names) throws NoSuchMethodException {
-        for (String name : names) {
-            try {
-                return type.getDeclaredMethod(name);
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        throw new NoSuchMethodException(type.getName() + "." + String.join("/", names));
+        return ReflectionLookup.findMethod(type, names);
     }
 
     private static Method findMethod(Class<?> type, String... names) throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredMethod(name);
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchMethodException(type.getName() + "." + String.join("/", names));
+        return ReflectionLookup.findMethod(type, names);
     }
 
     private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredField(name);
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchFieldException(type.getName() + "." + String.join("/", names));
+        return ReflectionLookup.findField(type, names);
     }
 
     private static String arraySummary(Object value) {

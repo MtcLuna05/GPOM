@@ -69,9 +69,15 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
                     "func_73718_a(I)V"
             },
             at = @At("HEAD"),
+            cancellable = true,
             require = 0
     )
     private void gpom$drawWorldLoadingScreen(int progress, CallbackInfo ci) {
+        if (WorldLoadingProgress.shouldSuppressVanillaLoadingRenderer()) {
+            WorldLoadingProgress.updateFromVanilla(null, null, progress);
+            ci.cancel();
+            return;
+        }
         gpom$setLoadingProgressStartedAt = RuntimeSinkProfiler.begin();
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.setLoadingProgress", null, null, progress);
         if (!WorldLoadingProgress.isActive()) {

@@ -2,40 +2,44 @@ package com.l.gpom.compat.tileentity;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.compat.actuallyadditions.ActuallyAdditionsTileEntityMappingFix;
+import com.l.gpom.compat.architecturecraft.ArchitectureCraftTileEntityMappingFix;
 import com.l.gpom.compat.enderio.EnderIOTileEntityMappingFix;
 import com.l.gpom.compat.industrialforegoing.IndustrialForegoingTileEntityMappingFix;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.fml.common.registry.GameRegistry;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class TileEntityMissingMappingSaveGuard {
     private static final String ACTUALLY_ADDITIONS_TILE_BASE = "de.ellpeck.actuallyadditions.mod.tile.TileEntityBase";
+    private static final String ARCHITECTURECRAFT_TILE_SHAPE = "com.elytradev.architecture.common.tile.TileShape";
+    private static final String ARCHITECTURECRAFT_TILE_SAWBENCH = "com.elytradev.architecture.common.tile.TileSawbench";
+    private static final String ASTRAL_TILE_PREFIX = "hellfirepvp.astralsorcery.common.tile.";
+    private static final String TINKER_IO_SMART_OUTPUT = "tinker_io.tileentity.TileEntitySmartOutput";
     private static final Set<String> LOGGED_FALLBACKS = ConcurrentHashMap.newKeySet();
     private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
-
-    private static volatile Object tileEntityRegistry;
-    private static volatile Method getNameForObjectMethod;
-    private static volatile Method getObjectMethod;
 
     private TileEntityMissingMappingSaveGuard() {
     }
 
     public static boolean writeFallbackIdIfNeeded(TileEntity tile, NBTTagCompound compound) {
-        if (!GpomEarlyConfig.tileEntityMissingMappingSaveGuardEnabled() || tile == null || compound == null) {
+        if (!GpomEarlyConfig.tileEntityMissingMappingSaveGuardEnabled()
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
+                || tile == null
+                || compound == null) {
             return false;
         }
 
         @SuppressWarnings("unchecked")
         Class<? extends TileEntity> tileClass = (Class<? extends TileEntity>) tile.getClass();
         try {
-            if (registeredName(tileClass) != null) {
+            if (TileEntityMappingRegistry.registeredName(tileClass) != null) {
                 return false;
             }
         } catch (ReflectiveOperationException exception) {
@@ -46,7 +50,7 @@ public final class TileEntityMissingMappingSaveGuard {
         runKnownMappingRepairs();
 
         try {
-            if (registeredName(tileClass) != null) {
+            if (TileEntityMappingRegistry.registeredName(tileClass) != null) {
                 return false;
             }
         } catch (ReflectiveOperationException exception) {
@@ -66,15 +70,15 @@ public final class TileEntityMissingMappingSaveGuard {
         }
 
         try {
-            Class<? extends TileEntity> existingClass = registeredClass(fallbackId);
+            Class<? extends TileEntity> existingClass = TileEntityMappingRegistry.registeredClass(fallbackId);
             if (existingClass != null && existingClass != tileClass) {
                 logFailureOnce(tileClass, "write fallback id " + fallbackId + " because it already maps to " + existingClass.getName(), null);
                 return false;
             }
             if (existingClass == null) {
                 try {
-                    GameRegistry.registerTileEntity(tileClass, fallbackId);
-                    if (registeredName(tileClass) != null) {
+                    TileEntityMappingRegistry.registerTileEntity(tileClass, fallbackId);
+                    if (TileEntityMappingRegistry.registeredName(tileClass) != null) {
                         return false;
                     }
                 } catch (RuntimeException exception) {
@@ -99,6 +103,7 @@ public final class TileEntityMissingMappingSaveGuard {
 
     private static void runKnownMappingRepairs() {
         ActuallyAdditionsTileEntityMappingFix.repairIfEnabled();
+        ArchitectureCraftTileEntityMappingFix.repairIfEnabled();
         EnderIOTileEntityMappingFix.repairIfEnabled();
         IndustrialForegoingTileEntityMappingFix.repairIfEnabled();
     }
@@ -107,6 +112,50 @@ public final class TileEntityMissingMappingSaveGuard {
         ResourceLocation actuallyAdditionsId = actuallyAdditionsFallbackId(tile);
         if (actuallyAdditionsId != null) {
             return actuallyAdditionsId;
+        }
+        ResourceLocation architectureCraftId = architectureCraftFallbackId(tile);
+        if (architectureCraftId != null) {
+            return architectureCraftId;
+        }
+        ResourceLocation astralSorceryId = astralSorceryFallbackId(tile);
+        if (astralSorceryId != null) {
+            return astralSorceryId;
+        }
+        ResourceLocation tinkerIoId = tinkerIoFallbackId(tile);
+        if (tinkerIoId != null) {
+            return tinkerIoId;
+        }
+        return null;
+    }
+
+    private static ResourceLocation astralSorceryFallbackId(TileEntity tile) {
+        Class<?> tileClass = tile.getClass();
+        String className = tileClass.getName();
+        if (!className.startsWith(ASTRAL_TILE_PREFIX)) {
+            return null;
+        }
+        String simpleName = tileClass.getSimpleName();
+        if (simpleName.isEmpty() || simpleName.indexOf('$') >= 0) {
+            return null;
+        }
+        return new ResourceLocation("astralsorcery", simpleName.toLowerCase(Locale.ROOT));
+    }
+
+    private static ResourceLocation tinkerIoFallbackId(TileEntity tile) {
+        String className = tile.getClass().getName();
+        if (TINKER_IO_SMART_OUTPUT.equals(className)) {
+            return new ResourceLocation("tinker_io", "smart_output");
+        }
+        return null;
+    }
+
+    private static ResourceLocation architectureCraftFallbackId(TileEntity tile) {
+        String className = tile.getClass().getName();
+        if (ARCHITECTURECRAFT_TILE_SHAPE.equals(className)) {
+            return new ResourceLocation("architecturecraft", "shape");
+        }
+        if (ARCHITECTURECRAFT_TILE_SAWBENCH.equals(className)) {
+            return new ResourceLocation("architecturecraft", "sawbench");
         }
         return null;
     }
@@ -117,7 +166,7 @@ public final class TileEntityMissingMappingSaveGuard {
             if (!isInstanceOf(tileClass, ACTUALLY_ADDITIONS_TILE_BASE)) {
                 return null;
             }
-            Field nameField = findField(tileClass, "name");
+            Field nameField = TileEntityMappingRegistry.findField(tileClass, "name");
             Object rawName = nameField.get(tile);
             if (!(rawName instanceof String) || ((String) rawName).isEmpty()) {
                 return null;
@@ -126,73 +175,6 @@ public final class TileEntityMissingMappingSaveGuard {
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return null;
         }
-    }
-
-    private static ResourceLocation registeredName(Class<? extends TileEntity> tileClass) throws ReflectiveOperationException {
-        Method method = getNameForObjectMethod;
-        if (method == null) {
-            method = findRegistryMethod("getNameForObject", "func_177774_c");
-            getNameForObjectMethod = method;
-        }
-        Object result = method.invoke(tileEntityRegistry(), tileClass);
-        return result instanceof ResourceLocation ? (ResourceLocation) result : null;
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Class<? extends TileEntity> registeredClass(ResourceLocation registryName) throws ReflectiveOperationException {
-        Method method = getObjectMethod;
-        if (method == null) {
-            method = findRegistryMethod("getObject", "func_82594_a");
-            getObjectMethod = method;
-        }
-        Object result = method.invoke(tileEntityRegistry(), registryName);
-        if (!(result instanceof Class)) {
-            return null;
-        }
-        return ((Class<?>) result).asSubclass(TileEntity.class);
-    }
-
-    private static Object tileEntityRegistry() throws ReflectiveOperationException {
-        Object registry = tileEntityRegistry;
-        if (registry != null) {
-            return registry;
-        }
-        Field field = findField(TileEntity.class, "REGISTRY", "field_190562_f");
-        registry = field.get(null);
-        tileEntityRegistry = registry;
-        return registry;
-    }
-
-    private static Field findField(Class<?> owner, String... names) throws NoSuchFieldException {
-        Class<?> current = owner;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchFieldException(owner.getName() + "." + names[0]);
-    }
-
-    private static Method findRegistryMethod(String mcpName, String srgName) throws ReflectiveOperationException {
-        Object registry = tileEntityRegistry();
-        Class<?> owner = registry.getClass();
-        while (owner != null) {
-            for (Method method : owner.getDeclaredMethods()) {
-                String name = method.getName();
-                if ((mcpName.equals(name) || srgName.equals(name)) && method.getParameterTypes().length == 1) {
-                    method.setAccessible(true);
-                    return method;
-                }
-            }
-            owner = owner.getSuperclass();
-        }
-        throw new NoSuchMethodException(registry.getClass().getName() + "." + mcpName);
     }
 
     private static boolean isInstanceOf(Class<?> type, String expectedName) {

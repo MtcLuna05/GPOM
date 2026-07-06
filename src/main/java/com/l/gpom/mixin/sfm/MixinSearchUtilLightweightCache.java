@@ -2,6 +2,7 @@ package com.l.gpom.mixin.sfm;
 
 import com.google.common.collect.Multimap;
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.item.Item;
@@ -20,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -81,18 +83,22 @@ public abstract class MixinSearchUtilLightweightCache {
                 }
                 executor.shutdown();
                 while (!executor.awaitTermination(1L, TimeUnit.MINUTES)) {
-                    GPOM.LOGGER.info("[GPOM SFM] Waiting for lightweight item search cache workers indexed={}/{}", indexedCount.get(), stacks.size());
+                    if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                        GPOM.LOGGER.info("[GPOM SFM] Waiting for lightweight item search cache workers indexed={}/{}", indexedCount.get(), stacks.size());
+                    }
                 }
             }
 
-            GPOM.LOGGER.info(
-                    "[GPOM SFM] Built lightweight item search cache source={} indexed={} candidates={} workers={} elapsed={}ms",
-                    source,
-                    indexedCount.get(),
-                    stacks.size(),
-                    workers,
-                    System.currentTimeMillis() - startedAt
-            );
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info(
+                        "[GPOM SFM] Built lightweight item search cache source={} indexed={} candidates={} workers={} elapsed={}ms",
+                        source,
+                        indexedCount.get(),
+                        stacks.size(),
+                        workers,
+                        System.currentTimeMillis() - startedAt
+                );
+            }
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[GPOM SFM] Failed to build lightweight item search cache source={}; leaving SFM cache empty", source, throwable);
         } finally {
@@ -109,12 +115,19 @@ public abstract class MixinSearchUtilLightweightCache {
             }
         }
         NonNullList<ItemStack> stacks = NonNullList.create();
-        for (Item item : Item.REGISTRY) {
-            if (item == null || item.getCreativeTab() == null) {
+        Object registry = MinecraftMappingCompat.staticFieldValue(Item.class, "item.registry", "field_150901_e", "REGISTRY");
+        Iterable<?> items = registry instanceof Iterable ? (Iterable<?>) registry : Collections.emptyList();
+        for (Object itemObject : items) {
+            Item item = itemObject instanceof Item ? (Item) itemObject : null;
+            Object creativeTab = MinecraftMappingCompat.invoke(item, "item.getCreativeTab",
+                    MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS, "func_77640_w", "getCreativeTab");
+            if (item == null || creativeTab == null) {
                 continue;
             }
             try {
-                item.getSubItems(CreativeTabs.SEARCH, stacks);
+                MinecraftMappingCompat.invoke(item, "item.getSubItems",
+                        new Class<?>[]{CreativeTabs.class, NonNullList.class}, new Object[]{CreativeTabs.SEARCH, stacks},
+                        "func_150895_a", "getSubItems");
             } catch (Throwable ignored) {
             }
         }
@@ -142,7 +155,9 @@ public abstract class MixinSearchUtilLightweightCache {
                 }
             }
         } catch (Throwable throwable) {
-            GPOM.LOGGER.info("[GPOM SFM] HEI ingredient list unavailable for SFM search cache; using creative fallback ({})", throwable.toString());
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info("[GPOM SFM] HEI ingredient list unavailable for SFM search cache; using creative fallback ({})", throwable.toString());
+            }
         }
         return stacks;
     }
@@ -163,12 +178,16 @@ public abstract class MixinSearchUtilLightweightCache {
     private static void gpom$indexRange(List<ItemStack> stacks, int start, int end, AtomicInteger indexedCount) {
         for (int i = start; i < end; i++) {
             ItemStack stack = stacks.get(i);
-            if (stack == null || stack.isEmpty()) {
+            if (MinecraftMappingCompat.itemStackIsEmpty(stack)) {
                 continue;
             }
             try {
-                gpom$put(stack, stack.getDisplayName());
-                ResourceLocation registryName = stack.getItem().getRegistryName();
+                Object displayName = MinecraftMappingCompat.invoke(stack, "itemStack.getDisplayName",
+                        MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                        "func_82833_r", "getDisplayName");
+                gpom$put(stack, displayName instanceof String ? (String) displayName : "");
+                Item item = MinecraftMappingCompat.itemStackItem(stack);
+                ResourceLocation registryName = item == null ? null : item.getRegistryName();
                 if (registryName != null) {
                     gpom$put(stack, registryName.toString());
                     gpom$put(stack, registryName.getNamespace());

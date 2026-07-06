@@ -1,5 +1,6 @@
 package com.l.gpom.compat.jecalculation;
 
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.item.Item;
 import net.minecraft.nbt.NBTTagCompound;
 
@@ -126,20 +127,10 @@ public final class JecVolatileNbtLabels {
     }
 
     private static Method findMethod(Class<?> owner, String[] names, Class<?>... parameters) {
-        for (String name : names) {
-            try {
-                Method method = owner.getMethod(name, parameters);
-                method.setAccessible(true);
-                return method;
-            } catch (Throwable ignored) {
-            }
-            try {
-                Method method = owner.getDeclaredMethod(name, parameters);
-                method.setAccessible(true);
-                return method;
-            } catch (Throwable ignored) {
-            }
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameters);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 }

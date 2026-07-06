@@ -44,7 +44,6 @@ public final class MouseFocusDeltaGuard {
     public static void afterUngrab() {
         pendingFocusDeltaDrops = 0;
         droppingFocusDeltaPair = false;
-        recenterCursor();
     }
 
     public static void ensureFirstPersonMouseGrabbed(Object minecraft) {
@@ -58,6 +57,15 @@ public final class MouseFocusDeltaGuard {
             }
 
             resolveAccess(minecraft.getClass());
+            if (value(minecraft, worldField) == null || value(minecraft, playerField) == null) {
+                setBoolean(minecraft, inGameHasFocusField, false);
+                if (Mouse.isGrabbed()) {
+                    Mouse.setGrabbed(false);
+                }
+                afterUngrab();
+                return;
+            }
+
             if (value(minecraft, currentScreenField) != null
                     || value(minecraft, worldField) == null
                     || value(minecraft, playerField) == null) {
@@ -100,22 +108,6 @@ public final class MouseFocusDeltaGuard {
                 && Display.isCreated()
                 && Mouse.isCreated()
                 && Mouse.isGrabbed();
-    }
-
-    private static void recenterCursor() {
-        try {
-            if (!Display.isCreated() || !Mouse.isCreated() || Mouse.isGrabbed()) {
-                return;
-            }
-            int width = Display.getWidth();
-            int height = Display.getHeight();
-            if (width <= 0 || height <= 0) {
-                return;
-            }
-
-            Mouse.setCursorPosition(width / 2, height / 2);
-        } catch (Throwable ignored) {
-        }
     }
 
     private static void resolveAccess(Class<?> minecraftClass) {

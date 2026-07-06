@@ -1,6 +1,7 @@
 package com.l.gpom.compat.bloodmagic;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.world.WorldEvent;
@@ -133,31 +134,11 @@ public final class BloodMagicWorldMapRecoveryEvents {
     }
 
     private static Method findMethod(Class<?> type, String... names) throws NoSuchMethodException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredMethod(name);
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchMethodException(String.join("/", names));
+        return ReflectionLookup.findMethod(type, names);
     }
 
     private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
-        Class<?> current = type;
-        while (current != null) {
-            for (String name : names) {
-                try {
-                    return current.getDeclaredField(name);
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchFieldException(String.join("/", names));
+        return ReflectionLookup.findField(type, names);
     }
 
     private static Class<?> genericHandlerClass() throws ClassNotFoundException {

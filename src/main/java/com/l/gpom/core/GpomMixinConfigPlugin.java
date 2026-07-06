@@ -52,6 +52,15 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "net/ndrei/teslacorelib/tileentities/SyncTileEntity.class",
             "net/ndrei/teslacorelib/tileentities/ElectricMachine.class"
     };
+    private static final String[] RANDOM_THINGS_RUNE_TARGETS = {
+            "lumien/randomthings/block/BlockRuneBase.class",
+            "lumien/randomthings/item/ItemRuneDust.class",
+            "lumien/randomthings/item/ItemRunePattern.class",
+            "lumien/randomthings/tileentity/TileEntityRuneBase.class"
+    };
+    private static final String[] RANDOM_THINGS_RUNE_CLIENT_TARGETS = {
+            "lumien/randomthings/client/models/blocks/ModelRune.class"
+    };
     @Override
     public void onLoad(String mixinPackage) {
     }
@@ -70,7 +79,7 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             boolean enabled = GpomEarlyConfig.baublesSideSlotsEnabled();
             boolean present = enabled && allResourcesPresent(BAUBLES_TARGETS);
-            if (LOGGED.add(mixinClassName)) {
+            if (LOGGED.add(mixinClassName) && GpomEarlyConfig.baublesInfoLogsEnabled()) {
                 GPOM.LOGGER.info("[GPOM Baubles] mixin={} enabled={} baublesPresent={}",
                         mixinClassName, enabled, present);
             }
@@ -140,7 +149,7 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.equals("com.l.gpom.mixin.sfm.MixinSearchUtilLightweightCache")) {
             boolean enabled = GpomEarlyConfig.sfmLightweightSearchCacheEnabled();
             boolean present = enabled && allResourcesPresent(SFM_SEARCH_TARGETS);
-            if (LOGGED.add(mixinClassName)) {
+            if (LOGGED.add(mixinClassName) && GpomEarlyConfig.sfmInfoLogsEnabled()) {
                 GPOM.LOGGER.info("[GPOM SFM] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
@@ -153,7 +162,7 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             boolean enabled = GpomEarlyConfig.sfmLightweightSearchCacheEnabled();
             boolean present = enabled && allResourcesPresent(SFM_LOGIN_TARGETS);
-            if (LOGGED.add(mixinClassName)) {
+            if (LOGGED.add(mixinClassName) && GpomEarlyConfig.sfmInfoLogsEnabled()) {
                 GPOM.LOGGER.info("[GPOM SFM] mixin={} enabled={} targetsPresent={}",
                         mixinClassName, enabled, present);
             }
@@ -168,6 +177,20 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             return present;
         }
+        if (mixinClassName.startsWith("com.l.gpom.mixin.randomthings.")) {
+            if (isClientOnlyMixin(mixinClassName) && GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "client-only RandomThings rune mixin on dedicated server");
+                return false;
+            }
+            boolean enabled = GpomEarlyConfig.randomThingsImprovedRunicDustEnabled();
+            boolean present = allResourcesPresent(RANDOM_THINGS_RUNE_TARGETS)
+                    && (!isClientOnlyMixin(mixinClassName) || allResourcesPresent(RANDOM_THINGS_RUNE_CLIENT_TARGETS));
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM RandomThings Runes] mixin={} enabled={} targetsPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return enabled && present;
+        }
         return true;
     }
 
@@ -180,7 +203,8 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     private static boolean isClientOnlyMixin(String mixinClassName) {
         return mixinClassName.startsWith("com.l.gpom.mixin.client.")
                 || mixinClassName.equals("com.l.gpom.mixin.baubles.MixinGuiInventoryBaublesSideSlots")
-                || mixinClassName.equals("com.l.gpom.mixin.baubles.MixinGuiContainerBaublesQuickEquip");
+                || mixinClassName.equals("com.l.gpom.mixin.baubles.MixinGuiContainerBaublesQuickEquip")
+                || mixinClassName.startsWith("com.l.gpom.mixin.randomthings.client.");
     }
 
     private static void logSideSkip(String mixinClassName, String reason) {

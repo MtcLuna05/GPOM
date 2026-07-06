@@ -1647,8 +1647,15 @@ public final class FmlParallelLoadingScheduler {
 
     private static boolean isParallelAllowed(FMLEvent event, ModContainer mod, Set<String> parallelMods, Set<String> deniedMods) {
         return isParallelAllowed(mod, parallelMods, deniedMods)
+                && !isConstructionMainThreadOnlyMod(event, mod)
                 && !isInitCapabilityAttachSerialMod(event, mod)
                 && !requiresMainThreadForClientLifecycle(event, mod);
+    }
+
+    private static boolean isConstructionMainThreadOnlyMod(FMLEvent event, ModContainer mod) {
+        return event instanceof FMLConstructionEvent
+                && mod != null
+                && "jei".equals(normalize(mod.getModId()));
     }
 
     private static boolean isInitCapabilityAttachSerialMod(FMLEvent event, ModContainer mod) {

@@ -39,7 +39,9 @@ public abstract class MixinIndexItemsOnLoginLightweightCache {
                 Method buildCache = searchUtil.getDeclaredMethod("buildCache");
                 buildCache.setAccessible(true);
                 buildCache.invoke(null);
-                GPOM.LOGGER.info("[GPOM SFM] Deferred SFM item search cache build onto client thread");
+                if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                    GPOM.LOGGER.info("[GPOM SFM] Deferred SFM item search cache build onto client thread");
+                }
             } catch (Throwable throwable) {
                 gpom$scheduled.set(false);
                 GPOM.LOGGER.warn("[GPOM SFM] Failed to defer SFM item search cache build; leaving SFM login handler cancelled", throwable);

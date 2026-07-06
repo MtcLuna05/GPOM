@@ -6,6 +6,7 @@ import com.l.gpom.config.GpomEarlyConfig;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +48,11 @@ public final class ThaumcraftRecipeIndex {
             for (Object recipe : recipes) {
                 try {
                     Object recipeOut = recipeOutput(recipe);
-                    Object ph = getAspectsFromIngredients(ingredients(recipe), recipeOut, recipe, history);
+                    Object ingredients = ingredients(recipe);
+                    if (!fitsVanillaCraftingGrid(recipe, ingredients)) {
+                        continue;
+                    }
+                    Object ph = getAspectsFromIngredients(ingredients, recipeOut, recipe, history);
                     if (isArcaneRecipe(recipe)) {
                         int vis = arcaneVis(recipe);
                         if (vis > 0) {
@@ -162,7 +167,11 @@ public final class ThaumcraftRecipeIndex {
                 if (validRecipe(recipe) && recipeKey(recipeOutput(recipe)).equals(recipeKey(stack))) {
                     try {
                         Object recipeOut = recipeOutput(recipe);
-                        Object ph = getAspectsFromIngredients(ingredients(recipe), recipeOut, recipe, history);
+                        Object ingredients = ingredients(recipe);
+                        if (!fitsVanillaCraftingGrid(recipe, ingredients)) {
+                            continue;
+                        }
+                        Object ph = getAspectsFromIngredients(ingredients, recipeOut, recipe, history);
                         if (isArcaneRecipe(recipe)) {
                             int vis = arcaneVis(recipe);
                             if (vis > 0) {
@@ -245,6 +254,34 @@ public final class ThaumcraftRecipeIndex {
 
     private static Object ingredients(Object recipe) throws Exception {
         return call(recipe, "getIngredients", "func_192400_c");
+    }
+
+    private static boolean fitsVanillaCraftingGrid(Object recipe, Object ingredients) throws Exception {
+        if (ingredients == null) {
+            return recipeFitsVanillaCraftingGrid(recipe);
+        }
+        int size;
+        if (ingredients instanceof Collection) {
+            size = ((Collection<?>) ingredients).size();
+        } else {
+            size = intCall(ingredients, "size");
+        }
+        return size <= 9 && recipeFitsVanillaCraftingGrid(recipe);
+    }
+
+    private static boolean recipeFitsVanillaCraftingGrid(Object recipe) {
+        if (recipe == null) {
+            return true;
+        }
+        try {
+            Object value = twoArgMethod(recipe.getClass(), int.class, int.class, "canFit", "func_194133_a")
+                    .invoke(recipe, 3, 3);
+            return !(value instanceof Boolean) || (Boolean) value;
+        } catch (NoSuchMethodException ignored) {
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static boolean isArcaneRecipe(Object recipe) throws Exception {

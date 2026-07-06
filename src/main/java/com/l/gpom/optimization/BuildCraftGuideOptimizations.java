@@ -6,8 +6,6 @@ import com.l.gpom.profiling.StartupProfiler;
 import net.minecraft.client.resources.IReloadableResourceManager;
 import net.minecraft.client.resources.IResourceManagerReloadListener;
 
-import java.lang.reflect.Method;
-
 public final class BuildCraftGuideOptimizations {
     private static final boolean DEFER_GUIDE_RELOAD = Boolean.parseBoolean(System.getProperty("gpom.buildcraft.deferGuideReload", "true"));
     private static final Object LOCK = new Object();
@@ -58,32 +56,13 @@ public final class BuildCraftGuideOptimizations {
     }
 
     private static void registerNow(IReloadableResourceManager manager, IResourceManagerReloadListener listener) {
-        if (manager == null || listener == null) {
-            return;
-        }
         try {
-            Method register = findMethod(manager.getClass(), "registerReloadListener", "func_110542_a");
-            if (register == null) {
-                throw new NoSuchMethodException(manager.getClass().getName() + ".registerReloadListener");
-            }
-            register.invoke(manager, listener);
+            ResourceReloadHelper.registerReloadListener(manager, listener);
         } catch (Throwable throwable) {
             if (!fallbackLogged) {
                 fallbackLogged = true;
                 GPOM.LOGGER.warn("BuildCraft guide reload listener registration failed", throwable);
             }
         }
-    }
-
-    private static Method findMethod(Class<?> type, String deobfuscatedName, String runtimeName) {
-        for (String name : new String[] {deobfuscatedName, runtimeName}) {
-            try {
-                Method method = type.getMethod(name, IResourceManagerReloadListener.class);
-                method.setAccessible(true);
-                return method;
-            } catch (ReflectiveOperationException ignored) {
-            }
-        }
-        return null;
     }
 }

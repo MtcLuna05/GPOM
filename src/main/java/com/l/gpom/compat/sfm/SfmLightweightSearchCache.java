@@ -53,7 +53,9 @@ public final class SfmLightweightSearchCache {
                 Method buildCache = searchUtil.getDeclaredMethod("buildCache");
                 buildCache.setAccessible(true);
                 buildCache.invoke(null);
-                GPOM.LOGGER.info("[GPOM SFM] Deferred SFM item search cache build onto client thread");
+                if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                    GPOM.LOGGER.info("[GPOM SFM] Deferred SFM item search cache build onto client thread");
+                }
             } catch (Throwable throwable) {
                 SCHEDULED.set(false);
                 GPOM.LOGGER.warn("[GPOM SFM] Failed to defer SFM item search cache build; leaving SFM cache empty", throwable);
@@ -107,18 +109,22 @@ public final class SfmLightweightSearchCache {
                 }
                 executor.shutdown();
                 while (!executor.awaitTermination(1L, TimeUnit.MINUTES)) {
-                    GPOM.LOGGER.info("[GPOM SFM] Waiting for lightweight item search cache workers indexed={}/{}", indexedCount.get(), stacks.size());
+                    if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                        GPOM.LOGGER.info("[GPOM SFM] Waiting for lightweight item search cache workers indexed={}/{}", indexedCount.get(), stacks.size());
+                    }
                 }
             }
 
-            GPOM.LOGGER.info(
-                    "[GPOM SFM] Built lightweight item search cache source={} indexed={} candidates={} workers={} elapsed={}ms",
-                    source,
-                    indexedCount.get(),
-                    stacks.size(),
-                    workers,
-                    System.currentTimeMillis() - startedAt
-            );
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info(
+                        "[GPOM SFM] Built lightweight item search cache source={} indexed={} candidates={} workers={} elapsed={}ms",
+                        source,
+                        indexedCount.get(),
+                        stacks.size(),
+                        workers,
+                        System.currentTimeMillis() - startedAt
+                );
+            }
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[GPOM SFM] Failed to build lightweight item search cache source={}; leaving SFM cache empty", source, throwable);
         } finally {
@@ -166,7 +172,9 @@ public final class SfmLightweightSearchCache {
                 }
             }
         } catch (Throwable throwable) {
-            GPOM.LOGGER.info("[GPOM SFM] HEI ingredient list unavailable for SFM search cache; using creative fallback ({})", throwable.toString());
+            if (GpomEarlyConfig.sfmInfoLogsEnabled()) {
+                GPOM.LOGGER.info("[GPOM SFM] HEI ingredient list unavailable for SFM search cache; using creative fallback ({})", throwable.toString());
+            }
         }
         return stacks;
     }

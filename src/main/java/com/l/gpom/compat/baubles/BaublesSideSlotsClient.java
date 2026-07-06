@@ -1,8 +1,11 @@
 package com.l.gpom.compat.baubles;
 
 import baubles.common.container.SlotBauble;
+import com.l.gpom.GPOM;
 import com.l.gpom.client.ClientAccess;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.GpomRemoteEnvironment;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
@@ -267,10 +270,20 @@ public final class BaublesSideSlotsClient {
 
     public static boolean handleSideRailSlotClick(GuiContainer gui, int mouseX, int mouseY, int mouseButton) {
         if (!isSideRailOpen(gui)) {
+            probe("client click ignored: rail closed gui={} mouse=({}, {}) button={}",
+                    gui == null ? "null" : gui.getClass().getName(),
+                    mouseX,
+                    mouseY,
+                    mouseButton);
             closeSideRailRendering(gui);
             return false;
         }
         if (mouseButton != 0) {
+            probe("client click ignored: unsupported mouse button gui={} mouse=({}, {}) button={}",
+                    gui == null ? "null" : gui.getClass().getName(),
+                    mouseX,
+                    mouseY,
+                    mouseButton);
             return false;
         }
 
@@ -278,6 +291,12 @@ public final class BaublesSideSlotsClient {
         Slot slot = findSlotAt(container, guiLeft(gui), guiTop(gui), mouseX, mouseY);
         if (!BaublesSideSlotsCommon.isSideRailSlot(slot)
                 || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
+            probe("client click ignored: no enabled side slot gui={} window={} mouse=({}, {}) resolved={}",
+                    gui == null ? "null" : gui.getClass().getName(),
+                    container == null ? -1 : BaublesSideSlotsCommon.windowId(container),
+                    mouseX,
+                    mouseY,
+                    BaublesSideSlotsCommon.slotDebug(slot));
             return false;
         }
 
@@ -287,6 +306,11 @@ public final class BaublesSideSlotsClient {
         int windowId = BaublesSideSlotsCommon.windowId(container);
         int slotNumber = BaublesSideSlotsCommon.slotNumber(slot);
         if (windowId < 0 || slotNumber < 0) {
+            probe("client click ignored: invalid window/slot gui={} window={} slot={} resolved={}",
+                    gui == null ? "null" : gui.getClass().getName(),
+                    windowId,
+                    slotNumber,
+                    BaublesSideSlotsCommon.slotDebug(slot));
             return false;
         }
 
@@ -295,6 +319,16 @@ public final class BaublesSideSlotsClient {
                 && BaublesSideSlotsCommon.slotHasStack(slot);
         int railType = sideRailType(slot);
         int railIndex = sideRailIndex(slot);
+        probe("client send click gui={} window={} slot={} railType={} railIndex={} clickType={} emptyCursorPickup={} carried={} resolved={}",
+                gui == null ? "null" : gui.getClass().getName(),
+                windowId,
+                slotNumber,
+                railType,
+                railIndex,
+                clickType,
+                emptyCursorPickup,
+                BaublesSideSlotsCommon.stackDebug(ClientAccess.carriedStack(ClientAccess.minecraft())),
+                BaublesSideSlotsCommon.slotDebug(slot));
         // Side-rail slots are server-authoritative. A local vanilla windowClick races
         // the GPOM packet and makes normal pickups snap back into the slot.
         BaublesSideSlotsNetwork.sendSideRailSlotClick(windowId, slotNumber, railType, railIndex, mouseButton, clickType, emptyCursorPickup);
@@ -610,6 +644,7 @@ public final class BaublesSideSlotsClient {
         }
 
         if (!GpomEarlyConfig.baublesSideSlotsShiftRightClickEquipEnabled()
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
                 || !isShiftKeyDown()
                 || !isSideRailOpen(gui)
                 || container == null) {
@@ -636,6 +671,7 @@ public final class BaublesSideSlotsClient {
 
     public static boolean handleToggleButtonClick(Object button, GuiContainer parent, Minecraft minecraft, int mouseX, int mouseY) {
         if (!GpomEarlyConfig.baublesSideSlotsEnabled()
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
                 || !(parent instanceof GuiInventory)
                 || !isActiveScreen(minecraft, parent)) {
             return false;
@@ -814,7 +850,10 @@ public final class BaublesSideSlotsClient {
     }
 
     public static boolean drawToggleButton(Object button, GuiContainer parent, Minecraft minecraft, int mouseX, int mouseY) {
-        if (!GpomEarlyConfig.baublesSideSlotsEnabled() || !(parent instanceof GuiInventory) || !(button instanceof GuiButton)) {
+        if (!GpomEarlyConfig.baublesSideSlotsEnabled()
+                || !GpomRemoteEnvironment.serverFeaturesAllowed()
+                || !(parent instanceof GuiInventory)
+                || !(button instanceof GuiButton)) {
             return false;
         }
         if (!isActiveScreen(minecraft, parent)) {
@@ -1222,6 +1261,9 @@ public final class BaublesSideSlotsClient {
     }
 
     private static void sendCosmeticArmorSlotStateToServer(GuiContainer gui, int cosmeticSlot) {
+        if (!GpomRemoteEnvironment.serverFeaturesAllowed()) {
+            return;
+        }
         try {
             Minecraft minecraft = ClientAccess.minecraft();
             EntityLivingBase player = ClientAccess.player(minecraft);
@@ -1319,6 +1361,7 @@ public final class BaublesSideSlotsClient {
 
     private static boolean isSideRailOpen(GuiContainer gui) {
         return GpomEarlyConfig.baublesSideSlotsEnabled()
+                && GpomRemoteEnvironment.serverFeaturesAllowed()
                 && isSupportedGui(gui)
                 && isPanelVisible(gui);
     }
@@ -1373,6 +1416,7 @@ public final class BaublesSideSlotsClient {
 
     private static boolean shouldUseReducedHoverOverlay(GuiContainer gui) {
         return GpomEarlyConfig.baublesSideSlotsEnabled()
+                && GpomRemoteEnvironment.serverFeaturesAllowed()
                 && (isSideRailOpen(gui) || isCreativeSurvivalInventoryTab(gui));
     }
 
@@ -1922,35 +1966,19 @@ public final class BaublesSideSlotsClient {
     }
 
     private static Field findField(Class<?> owner, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Field field = type.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Method findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Method method = type.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Method findCompatibleMethod(Class<?> owner, String name, Object singleArgument) {
@@ -2086,23 +2114,13 @@ public final class BaublesSideSlotsClient {
     }
 
     private static Field findField(String mcpName, String srgName) throws NoSuchFieldException {
-        Class<?> type = GuiContainer.class;
-        while (type != null) {
-            try {
-                Field field = type.getDeclaredField(mcpName);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-            }
-            try {
-                Field field = type.getDeclaredField(srgName);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException ignored) {
-            }
-            type = type.getSuperclass();
+        return ReflectionLookup.findField(GuiContainer.class, mcpName, srgName);
+    }
+
+    private static void probe(String message, Object... args) {
+        if (GpomEarlyConfig.baublesSideSlotsDeepProbeEnabled()) {
+            GPOM.LOGGER.info("[GPOM Baubles Probe] " + message, args);
         }
-        throw new NoSuchFieldException(mcpName + "/" + srgName);
     }
 
     private static final class Dimensions {

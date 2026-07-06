@@ -19,3 +19,6 @@ run/
 *.log
 hs_err_pid*.log
 replay_pid*.log
+
+# Hidden/dot folders
+**/.*/

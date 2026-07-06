@@ -3,8 +3,11 @@ package com.l.gpom.compat.baubles;
 import baubles.api.BaublesApi;
 import baubles.api.cap.IBaublesItemHandler;
 import baubles.common.container.SlotBauble;
+import com.l.gpom.GPOM;
 import com.l.gpom.Reference;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
+import com.l.gpom.util.GpomRemoteEnvironment;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -61,7 +64,7 @@ public final class BaublesSideSlotsNetwork {
     }
 
     public static void sendQuickEquip(int windowId, int slotNumber) {
-        if (!registered) {
+        if (!registered || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
             return;
         }
         NETWORK.sendToServer(new QuickEquipMessage(windowId, slotNumber));
@@ -86,7 +89,7 @@ public final class BaublesSideSlotsNetwork {
                                              int mouseButton,
                                              ClickType clickType,
                                              boolean emptyCursorPickup) {
-        if (!registered || clickType == null) {
+        if (!registered || clickType == null || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
             return;
         }
         NETWORK.sendToServer(new CosmeticSlotClickMessage(windowId,
@@ -272,7 +275,10 @@ public final class BaublesSideSlotsNetwork {
                                           int mouseButton,
                                           int clickTypeOrdinal,
                                           boolean emptyCursorPickup) {
+        probe("server recv player={} window={} slot={} railType={} railIndex={} mouse={} clickOrdinal={} emptyCursorPickup={}",
+                player, windowId, slotNumber, railType, railIndex, mouseButton, clickTypeOrdinal, emptyCursorPickup);
         if (!GpomEarlyConfig.baublesSideSlotsEnabled()) {
+            probe("server reject: side slots disabled");
             return;
         }
 
@@ -280,35 +286,74 @@ public final class BaublesSideSlotsNetwork {
         if (container == null
                 || BaublesSideSlotsCommon.windowId(container) != windowId
                 || mouseButton != 0) {
+            probe("server reject: container/window/mouse mismatch container={} actualWindow={} expectedWindow={} mouse={}",
+                    container == null ? "null" : container.getClass().getName(),
+                    container == null ? -1 : BaublesSideSlotsCommon.windowId(container),
+                    windowId,
+                    mouseButton);
             return;
         }
 
         java.util.List<Slot> slots = BaublesSideSlotsCommon.slots(container);
         Slot slot = findSideRailSlot(slots, slotNumber, railType, railIndex);
         if (!BaublesSideSlotsCommon.isSideRailSlot(slot) || !BaublesSideSlotsCommon.isSlotEnabled(slot)) {
+            probe("server reject: unresolved or disabled side slot resolved={} requestedSlot={} requestedRailType={} requestedRailIndex={} sideSlotCount={} slotCount={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    slotNumber,
+                    railType,
+                    railIndex,
+                    BaublesSideSlotsCommon.sideRailSlots(container).size(),
+                    slots == null ? -1 : slots.size());
             return;
         }
 
         ClickType clickType = clickType(clickTypeOrdinal);
         if (clickType == null || (clickType != ClickType.PICKUP && clickType != ClickType.QUICK_MOVE)) {
+            probe("server reject: unsupported click type ordinal={} resolved={}", clickTypeOrdinal, clickType);
             return;
         }
 
+        probe("server resolved: container={} slot={} carried={}",
+                container.getClass().getName(),
+                BaublesSideSlotsCommon.slotDebug(slot),
+                BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
         if (clickType == ClickType.QUICK_MOVE) {
             if (moveSideRailSlotToPlayerInventory(container, slot, player)) {
                 syncAfterMutation(player, container);
                 syncCosmeticSlotIfNeeded(player, slot);
+                probe("server quick_move success: slot={} carried={}",
+                        BaublesSideSlotsCommon.slotDebug(slot),
+                        BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
+            } else {
+                probe("server quick_move failed: slot={} carried={}",
+                        BaublesSideSlotsCommon.slotDebug(slot),
+                        BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
             }
+            return;
+        }
+
+        if (emptyCursorPickup && BaublesSideSlotsCommon.slotHasStack(slot) && pickupSideRailSlot(slot, player)) {
+            syncAfterMutation(player, container);
+            syncCosmeticSlotIfNeeded(player, slot);
+            probe("server empty-cursor pickup success: slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
             return;
         }
 
         if (clickPickupSideRailSlot(slot, player)) {
             syncAfterMutation(player, container);
             syncCosmeticSlotIfNeeded(player, slot);
+            probe("server pickup/place/swap success: slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
             return;
         }
         syncAfterMutation(player, container);
         syncCosmeticSlotIfNeeded(player, slot);
+        probe("server pickup/place/swap failed and resynced: slot={} carried={}",
+                BaublesSideSlotsCommon.slotDebug(slot),
+                BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
     }
 
     private static Slot findSideRailSlot(java.util.List<Slot> slots, int slotNumber, int railType, int railIndex) {
@@ -373,17 +418,34 @@ public final class BaublesSideSlotsNetwork {
                 || player == null
                 || !BaublesSideSlotsCommon.canTakeSlotStack(slot, player)
                 || !BaublesSideSlotsCommon.slotHasStack(slot)) {
+            probe("pickup reject: slot/player/canTake/hasStack slot={} player={} canTake={} hasStack={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    player,
+                    slot != null && player != null && BaublesSideSlotsCommon.canTakeSlotStack(slot, player),
+                    slot != null && BaublesSideSlotsCommon.slotHasStack(slot));
             return false;
         }
 
         ItemStack stack = BaublesSideSlotsCommon.slotStack(slot);
         if (BaublesSideSlotsCommon.isEmptyStack(stack)) {
+            probe("pickup reject: slot reported stack empty slot={}", BaublesSideSlotsCommon.slotDebug(slot));
             return false;
         }
 
-        setCarriedStack(player, BaublesSideSlotsCommon.copyStack(stack));
-        BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.emptyStack());
-        BaublesSideSlotsCommon.slotChanged(slot);
+        probe("pickup before decr: slot={} count={}", BaublesSideSlotsCommon.slotDebug(slot), BaublesSideSlotsCommon.stackCount(stack));
+        ItemStack extracted = BaublesSideSlotsCommon.decrSlotStack(slot, BaublesSideSlotsCommon.stackCount(stack));
+        if (BaublesSideSlotsCommon.isEmptyStack(extracted)) {
+            probe("pickup reject: decrStackSize returned empty slot={} original={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(stack));
+            return false;
+        }
+        BaublesSideSlotsCommon.onTakeSlotStack(slot, player, extracted);
+        setCarriedStack(player, BaublesSideSlotsCommon.copyStack(extracted));
+        probe("pickup after decr/onTake: extracted={} slot={} carried={}",
+                BaublesSideSlotsCommon.stackDebug(extracted),
+                BaublesSideSlotsCommon.slotDebug(slot),
+                BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
         return true;
     }
 
@@ -398,24 +460,39 @@ public final class BaublesSideSlotsNetwork {
         boolean slotEmpty = BaublesSideSlotsCommon.isEmptyStack(slotStack);
 
         if (carriedEmpty && slotEmpty) {
+            probe("pickup click reject: carried and slot empty slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carried));
             return false;
         }
         if (carriedEmpty) {
             return pickupSideRailSlot(slot, player);
         }
         if (!BaublesSideSlotsCommon.isSlotItemValid(slot, carried)) {
+            probe("pickup click reject: carried stack invalid for slot slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carried));
             return false;
         }
         if (slotEmpty) {
+            probe("pickup click placing carried into empty slot slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carried));
             BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.copyStack(carried));
             setCarriedStack(player, BaublesSideSlotsCommon.emptyStack());
             BaublesSideSlotsCommon.slotChanged(slot);
             return true;
         }
         if (!BaublesSideSlotsCommon.canTakeSlotStack(slot, player)) {
+            probe("pickup click reject: cannot take occupied slot for swap slot={} carried={}",
+                    BaublesSideSlotsCommon.slotDebug(slot),
+                    BaublesSideSlotsCommon.stackDebug(carried));
             return false;
         }
 
+        probe("pickup click swapping slot={} carried={}",
+                BaublesSideSlotsCommon.slotDebug(slot),
+                BaublesSideSlotsCommon.stackDebug(carried));
         BaublesSideSlotsCommon.putSlotStack(slot, BaublesSideSlotsCommon.copyStack(carried));
         setCarriedStack(player, BaublesSideSlotsCommon.copyStack(slotStack));
         BaublesSideSlotsCommon.slotChanged(slot);
@@ -648,10 +725,16 @@ public final class BaublesSideSlotsNetwork {
     }
 
     private static void syncAfterMutation(EntityPlayerMP player, Container container) {
+        probe("sync before: container={} carried={}",
+                container == null ? "null" : container.getClass().getName(),
+                BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
         detectAndSendChanges(container);
         updateHeldItem(player);
         sendContainerToPlayer(player, container);
         syncCarriedStack(player);
+        probe("sync after: container={} carried={}",
+                container == null ? "null" : container.getClass().getName(),
+                BaublesSideSlotsCommon.stackDebug(carriedStack(player)));
     }
 
     private static void syncCarriedStack(EntityPlayerMP player) {
@@ -683,6 +766,7 @@ public final class BaublesSideSlotsNetwork {
     private static void setCarriedStack(EntityPlayerMP player, ItemStack stack) {
         InventoryPlayer inventory = inventory(player);
         if (inventory == null) {
+            probe("set carried failed: inventory null player={} stack={}", player, BaublesSideSlotsCommon.stackDebug(stack));
             return;
         }
 
@@ -696,8 +780,13 @@ public final class BaublesSideSlotsNetwork {
             }
             if (method != null) {
                 method.invoke(inventory, stack == null ? BaublesSideSlotsCommon.emptyStack() : stack);
+            } else {
+                probe("set carried failed: setItemStack method missing inventory={} stack={}",
+                        inventory.getClass().getName(),
+                        BaublesSideSlotsCommon.stackDebug(stack));
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            probe("set carried failed: {} stack={}", throwable.toString(), BaublesSideSlotsCommon.stackDebug(stack));
         }
     }
 
@@ -750,35 +839,25 @@ public final class BaublesSideSlotsNetwork {
         return false;
     }
 
-    private static Field findField(Class<?> owner, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Field field = type.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            type = type.getSuperclass();
+    private static void probe(String message, Object... args) {
+        if (GpomEarlyConfig.baublesSideSlotsDeepProbeEnabled()) {
+            GPOM.LOGGER.info("[GPOM Baubles Probe] " + message, args);
         }
-        return null;
+    }
+
+    private static Field findField(Class<?> owner, String... names) {
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
+        }
     }
 
     private static Method findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Method method = type.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 }

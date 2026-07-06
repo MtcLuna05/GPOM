@@ -16,6 +16,7 @@ import java.util.Set;
 public final class ThaumcraftStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.thaumcraftProfiler", "true"));
     private static final boolean ASPECT_EVENT_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.thaumcraftProfiler.aspectEvents", "true"));
+    private static final boolean CRAFTING_RECIPE_INDEX = Boolean.parseBoolean(System.getProperty("gpom.thaumcraft.recipeOutputIndex", "false"));
     private static final Map<String, Set<MethodKey>> TARGETS = createTargets();
 
     @Override
@@ -133,7 +134,7 @@ public final class ThaumcraftStartupProfilerTransformer implements IClassTransfo
                 changed = true;
                 return null;
             }
-            if (patchCraftingRecipeScan(className, name, desc)) {
+            if (CRAFTING_RECIPE_INDEX && patchCraftingRecipeScan(className, name, desc)) {
                 changed = true;
                 return null;
             }
@@ -166,7 +167,8 @@ public final class ThaumcraftStartupProfilerTransformer implements IClassTransfo
                 visitor.visitMaxs(1, 1);
                 visitor.visitEnd();
             }
-            if (methods != null && methods.contains(new MethodKey("generateTagsFromCraftingRecipes", "(Lnet/minecraft/item/ItemStack;Ljava/util/ArrayList;)Lthaumcraft/api/aspects/AspectList;"))
+            if (CRAFTING_RECIPE_INDEX
+                    && methods != null && methods.contains(new MethodKey("generateTagsFromCraftingRecipes", "(Lnet/minecraft/item/ItemStack;Ljava/util/ArrayList;)Lthaumcraft/api/aspects/AspectList;"))
                     && "thaumcraft.common.lib.crafting.ThaumcraftCraftingManager".equals(className)) {
                 MethodVisitor visitor = super.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, "generateTagsFromCraftingRecipes", "(Lnet/minecraft/item/ItemStack;Ljava/util/ArrayList;)Lthaumcraft/api/aspects/AspectList;", null, null);
                 visitor.visitCode();

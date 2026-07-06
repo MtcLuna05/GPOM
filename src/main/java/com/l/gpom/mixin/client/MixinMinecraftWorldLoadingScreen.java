@@ -3,6 +3,7 @@ package com.l.gpom.mixin.client;
 import com.l.gpom.client.WorldLoadingProgress;
 import com.l.gpom.client.ClientDimensionHandoffCleanup;
 import com.l.gpom.client.RenderUpdateDeduplicator;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanup;
@@ -218,10 +219,11 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             }
         }
         if (worldClient == null) {
+            WorldLoadingProgress.suppressVanillaLoadingRenderer("Minecraft.loadWorld(null)");
             if (!WorldLoadingProgress.isActive()) {
                 WorldLoadingProgress.beginLeaving(message);
             }
-            gpom$drawImmediate("Closing previous world", "Clearing old client world", 18);
+            WorldLoadingProgress.update("Closing previous world", "Clearing old client world", 18);
             return;
         }
 
@@ -515,7 +517,8 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return "";
         }
         try {
-            return "Dimension " + world.provider.getDimension();
+            Integer dimension = MinecraftMappingCompat.worldDimension(world);
+            return dimension == null ? world.getClass().getSimpleName() : "Dimension " + dimension;
         } catch (Throwable ignored) {
             return world.getClass().getSimpleName();
         }

@@ -3,6 +3,7 @@ package com.l.gpom.optimization;
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.profiling.StartupProfiler;
+import com.l.gpom.util.GpomSide;
 import net.minecraftforge.fml.common.ModContainer;
 
 import java.io.File;
@@ -433,6 +434,9 @@ public final class PreInitClassPrewarmer {
         if (name == null || !name.endsWith(".class") || name.endsWith("package-info.class") || name.endsWith("module-info.class")) {
             return false;
         }
+        if (GpomSide.isDedicatedServerLaunch() && isClientOnlyClassEntry(name)) {
+            return false;
+        }
         if (!includeAnonClasses && (name.contains("$anonfun") || name.contains("$$anon") || name.contains("$lambda"))) {
             return false;
         }
@@ -446,6 +450,21 @@ public final class PreInitClassPrewarmer {
 
     private static String toClassName(String entryName) {
         return entryName.substring(0, entryName.length() - ".class".length()).replace('/', '.');
+    }
+
+    private static boolean isClientOnlyClassEntry(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.startsWith("net/minecraft/client/")
+                || lower.contains("/client/")
+                || lower.contains("/clientgui/")
+                || lower.contains("/gui/client/")
+                || lower.contains("/render/")
+                || lower.contains("/renderer/")
+                || lower.contains("/rendering/")
+                || lower.endsWith("/clientproxy.class")
+                || lower.endsWith("clientproxy.class")
+                || lower.endsWith("/clienteventhandler.class")
+                || lower.endsWith("clienteventhandler.class");
     }
 
     private static File sourceFile(ModContainer mod) {

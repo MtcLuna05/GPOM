@@ -173,7 +173,9 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             if (replacements == 0) {
                 return basicClass;
             }
-            GPOM.LOGGER.info("[FmlParallelLoading] Patched CodeChicken Multipart registry with {} synchronized registration method(s)", replacements);
+            if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
+                GPOM.LOGGER.info("[FmlParallelLoading] Patched CodeChicken Multipart registry with {} synchronized registration method(s)", replacements);
+            }
             ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             node.accept(writer);
             return writer.toByteArray();
@@ -279,7 +281,9 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             if (replacements == 0) {
                 return basicClass;
             }
-            GPOM.LOGGER.info("[FmlParallelLoading] Patched {} with {} synchronized cache allocation opcode(s)", label, replacements);
+            if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
+                GPOM.LOGGER.info("[FmlParallelLoading] Patched {} with {} synchronized cache allocation opcode(s)", label, replacements);
+            }
             ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
             node.accept(writer);
             return writer.toByteArray();

@@ -4,7 +4,9 @@ import appeng.api.AEApi;
 import appeng.helpers.ItemStackHelper;
 import appeng.helpers.PatternHelper;
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.Item;
@@ -17,7 +19,6 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
-import net.minecraft.world.WorldProvider;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.crafting.IShapedRecipe;
 import net.minecraftforge.event.world.WorldEvent;
@@ -33,16 +34,6 @@ import java.util.Optional;
 
 public final class Ae2PatternDiagnostics {
     private static final Ae2PatternDiagnostics INSTANCE = new Ae2PatternDiagnostics();
-    private static final Field WORLD_IS_REMOTE = findField(World.class, "isRemote", "field_72995_K");
-    private static final Field WORLD_PROVIDER = findField(World.class, "provider", "field_73011_w");
-    private static final Method PROVIDER_GET_DIMENSION = findMethod(WorldProvider.class, "getDimension", "func_186058_p");
-    private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, "isEmpty", "func_190926_b");
-    private static final Method STACK_COPY = findMethod(ItemStack.class, "copy", "func_77946_l");
-    private static final Method STACK_GET_COUNT = findMethod(ItemStack.class, "getCount", "func_190916_E");
-    private static final Method STACK_SET_COUNT = findMethod(ItemStack.class, "setCount", "func_190920_e", int.class);
-    private static final Method STACK_SET_TAG_COMPOUND = findMethod(ItemStack.class, "setTagCompound", "func_77982_d", NBTTagCompound.class);
-    private static final Method STACK_GET_ITEM = findMethod(ItemStack.class, "getItem", "func_77973_b");
-    private static final Method STACK_GET_METADATA = findMethod(ItemStack.class, "getMetadata", "func_77960_j");
     private static final Method RECIPE_GET_OUTPUT = findMethod(IRecipe.class, "getRecipeOutput", "func_77571_b");
     private static final Method RECIPE_CAN_FIT = findMethod(IRecipe.class, "canFit", "func_194133_a", int.class, int.class);
     private static final Method RECIPE_GET_INGREDIENTS = findMethod(IRecipe.class, "getIngredients", "func_192400_c");
@@ -53,7 +44,6 @@ public final class Ae2PatternDiagnostics {
     private static final Method NBT_SET_BOOLEAN = findMethod(NBTTagCompound.class, "setBoolean", "func_74757_a", String.class, boolean.class);
     private static final Method NBT_LIST_APPEND_TAG = findMethod(NBTTagList.class, "appendTag", "func_74742_a", NBTBase.class);
     private static final Method STACKS_EQUAL = findMethod(ItemStack.class, "areItemStacksEqual", "func_77989_b", ItemStack.class, ItemStack.class);
-    private static final ItemStack EMPTY_STACK = findEmptyStack();
     private static final Ingredient EMPTY_INGREDIENT = findEmptyIngredient();
     private static volatile boolean registered;
     private static volatile boolean ran;
@@ -522,54 +512,16 @@ public final class Ae2PatternDiagnostics {
     }
 
     private static boolean isRemote(World world) {
-        if (world == null || WORLD_IS_REMOTE == null) {
-            return false;
-        }
-        try {
-            return WORLD_IS_REMOTE.getBoolean(world);
-        } catch (Throwable throwable) {
-            GPOM.LOGGER.warn("[GPOM AE2 PatternDiag] Could not read World.isRemote; assuming server world", throwable);
-            return false;
-        }
+        return MinecraftMappingCompat.worldIsRemote(world);
     }
 
     private static int dimension(World world) {
-        if (world == null || WORLD_PROVIDER == null || PROVIDER_GET_DIMENSION == null) {
-            return Integer.MIN_VALUE;
-        }
-        try {
-            Object provider = WORLD_PROVIDER.get(world);
-            if (provider instanceof WorldProvider) {
-                Object value = PROVIDER_GET_DIMENSION.invoke(provider);
-                return value instanceof Integer ? (Integer) value : Integer.MIN_VALUE;
-            }
-        } catch (Throwable throwable) {
-            GPOM.LOGGER.warn("[GPOM AE2 PatternDiag] Could not read world dimension; skipping diagnostic world", throwable);
-        }
-        return Integer.MIN_VALUE;
+        Integer dimension = MinecraftMappingCompat.worldDimension(world);
+        return dimension == null ? Integer.MIN_VALUE : dimension;
     }
 
     private static ItemStack emptyStack() {
-        return EMPTY_STACK;
-    }
-
-    private static ItemStack findEmptyStack() {
-        Field field = findFieldQuiet(ItemStack.class, "field_190927_a", "EMPTY");
-        if (field != null) {
-            try {
-                Object value = field.get(null);
-                if (value instanceof ItemStack) {
-                    return (ItemStack) value;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-        try {
-            return new ItemStack((Item) null, 0, 0);
-        } catch (Throwable throwable) {
-            GPOM.LOGGER.warn("[GPOM AE2 PatternDiag] Could not create an empty ItemStack fallback", throwable);
-            return null;
-        }
+        return MinecraftMappingCompat.emptyStack();
     }
 
     private static Ingredient findEmptyIngredient() {
@@ -587,75 +539,31 @@ public final class Ae2PatternDiagnostics {
     }
 
     private static ItemStack copyStack(ItemStack stack) {
-        if (stack == null || isEmptyStack(stack) || STACK_COPY == null) {
+        if (stack == null || isEmptyStack(stack)) {
             return emptyStack();
         }
-        try {
-            Object value = STACK_COPY.invoke(stack);
-            return value instanceof ItemStack ? (ItemStack) value : emptyStack();
-        } catch (Throwable throwable) {
-            return emptyStack();
-        }
+        ItemStack copy = MinecraftMappingCompat.itemStackCopy(stack);
+        return copy == null ? emptyStack() : copy;
     }
 
     private static boolean isEmptyStack(ItemStack stack) {
-        if (stack == null) {
-            return true;
-        }
-        if (STACK_IS_EMPTY != null) {
-            try {
-                Object value = STACK_IS_EMPTY.invoke(stack);
-                return value instanceof Boolean && (Boolean) value;
-            } catch (Throwable ignored) {
-            }
-        }
-        return EMPTY_STACK != null && stack == EMPTY_STACK;
+        return MinecraftMappingCompat.itemStackIsEmpty(stack);
     }
 
     private static int count(ItemStack stack) {
-        if (stack == null || STACK_GET_COUNT == null) {
-            return 0;
-        }
-        try {
-            Object value = STACK_GET_COUNT.invoke(stack);
-            return value instanceof Integer ? (Integer) value : 0;
-        } catch (Throwable ignored) {
-            return 0;
-        }
+        return MinecraftMappingCompat.itemStackCount(stack);
     }
 
     private static void setCount(ItemStack stack, int count) {
-        if (stack == null || STACK_SET_COUNT == null) {
-            return;
-        }
-        try {
-            STACK_SET_COUNT.invoke(stack, count);
-        } catch (Throwable ignored) {
-        }
+        MinecraftMappingCompat.itemStackSetCount(stack, count);
     }
 
     private static int metadata(ItemStack stack) {
-        if (stack == null || STACK_GET_METADATA == null) {
-            return 0;
-        }
-        try {
-            Object value = STACK_GET_METADATA.invoke(stack);
-            return value instanceof Integer ? (Integer) value : 0;
-        } catch (Throwable ignored) {
-            return 0;
-        }
+        return MinecraftMappingCompat.itemStackMetadata(stack);
     }
 
     private static Item item(ItemStack stack) {
-        if (stack == null || STACK_GET_ITEM == null) {
-            return null;
-        }
-        try {
-            Object value = STACK_GET_ITEM.invoke(stack);
-            return value instanceof Item ? (Item) value : null;
-        } catch (Throwable ignored) {
-            return null;
-        }
+        return MinecraftMappingCompat.itemStackItem(stack);
     }
 
     private static void setInventorySlot(InventoryCrafting inventory, int slot, ItemStack stack) {
@@ -702,13 +610,7 @@ public final class Ae2PatternDiagnostics {
     }
 
     private static void setTagCompound(ItemStack stack, NBTTagCompound tag) {
-        if (stack == null || tag == null || STACK_SET_TAG_COMPOUND == null) {
-            return;
-        }
-        try {
-            STACK_SET_TAG_COMPOUND.invoke(stack, tag);
-        } catch (Throwable ignored) {
-        }
+        MinecraftMappingCompat.itemStackSetTagCompound(stack, tag);
     }
 
     private static Field findField(Class<?> owner, String... names) {
@@ -721,36 +623,16 @@ public final class Ae2PatternDiagnostics {
     }
 
     private static Field findFieldQuiet(Class<?> owner, String... names) {
-        for (String name : names) {
-            try {
-                Field field = owner.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (Throwable ignored) {
-            }
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (Throwable ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Method findMethod(Class<?> owner, String mcpName, String srgName, Class<?>... parameterTypes) {
-        Method method = findMethod(owner, mcpName, parameterTypes);
-        if (method != null) {
-            return method;
-        }
-        return findMethod(owner, srgName, parameterTypes);
-    }
-
-    private static Method findMethod(Class<?> owner, String name, Class<?>... parameterTypes) {
         try {
-            Method method = owner.getDeclaredMethod(name, parameterTypes);
-            method.setAccessible(true);
-            return method;
-        } catch (Throwable ignored) {
-        }
-        try {
-            Method method = owner.getMethod(name, parameterTypes);
-            method.setAccessible(true);
-            return method;
+            return ReflectionLookup.findMethod(owner, mcpName, srgName, parameterTypes);
         } catch (Throwable ignored) {
             return null;
         }

@@ -1,6 +1,7 @@
 package com.l.gpom.compat.architecturecraft;
 
 import com.l.gpom.compat.framed.FramedBlockEffectiveState;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
@@ -372,7 +373,7 @@ public final class ArchitectureCraftHitboxCompat {
 
     private static double numberFromMethod(Object target, String mcpName, String srgName)
             throws ReflectiveOperationException {
-        Method method = findMethod(target.getClass(), mcpName, srgName);
+        Method method = ReflectionLookup.findMethod(target.getClass(), mcpName, srgName);
         Object value = method.invoke(target);
         if (!(value instanceof Number)) {
             throw new NoSuchMethodException(mcpName);
@@ -402,34 +403,9 @@ public final class ArchitectureCraftHitboxCompat {
             return method;
         }
 
-        Method resolved = findMethod(type, mcpName, srgName, parameterTypes);
+        Method resolved = ReflectionLookup.findMethod(type, mcpName, srgName, parameterTypes);
         Method previous = cache.putIfAbsent(type, resolved);
         return previous == null ? resolved : previous;
-    }
-
-    private static Method findMethod(Class<?> type, String mcpName, String srgName, Class<?>... parameterTypes)
-            throws NoSuchMethodException {
-        NoSuchMethodException failure = null;
-        for (String name : new String[] {mcpName, srgName}) {
-            try {
-                Method method = type.getMethod(name, parameterTypes);
-                method.setAccessible(true);
-                return method;
-            } catch (NoSuchMethodException exception) {
-                failure = exception;
-            }
-
-            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (NoSuchMethodException exception) {
-                    failure = exception;
-                }
-            }
-        }
-        throw failure == null ? new NoSuchMethodException(mcpName) : failure;
     }
 
     private static Field cachedField(Class<?> type, String mcpName, String srgName) throws ReflectiveOperationException {
@@ -439,33 +415,9 @@ public final class ArchitectureCraftHitboxCompat {
             return field;
         }
 
-        Field resolved = findField(type, mcpName, srgName);
+        Field resolved = ReflectionLookup.findField(type, mcpName, srgName);
         Field previous = FIELD_CACHE.putIfAbsent(key, resolved);
         return previous == null ? resolved : previous;
-    }
-
-    private static Field findField(Class<?> type, String mcpName, String srgName) throws NoSuchFieldException {
-        NoSuchFieldException failure = null;
-        for (String name : new String[] {mcpName, srgName}) {
-            try {
-                Field field = type.getField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException exception) {
-                failure = exception;
-            }
-
-            for (Class<?> current = type; current != null; current = current.getSuperclass()) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException exception) {
-                    failure = exception;
-                }
-            }
-        }
-        throw failure == null ? new NoSuchFieldException(mcpName) : failure;
     }
 
     private static final class BoxHit {

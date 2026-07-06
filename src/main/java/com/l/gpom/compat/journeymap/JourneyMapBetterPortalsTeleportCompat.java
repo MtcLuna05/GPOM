@@ -2,6 +2,7 @@ package com.l.gpom.compat.journeymap;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
@@ -346,37 +347,13 @@ public final class JourneyMapBetterPortalsTeleportCompat {
     }
 
     private static Field findField(Class<?> type, String... names) throws NoSuchFieldException {
-        Class<?> current = type;
         String[] orderedNames = orderedNames(names);
-        while (current != null) {
-            for (String name : orderedNames) {
-                try {
-                    Field field = current.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (NoSuchFieldException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchFieldException(type.getName() + " " + java.util.Arrays.toString(names));
+        return ReflectionLookup.findField(type, orderedNames);
     }
 
     private static Method findMethod(Class<?> type, Class<?>[] parameterTypes, String... names) throws NoSuchMethodException {
-        Class<?> current = type;
         String[] orderedNames = orderedNames(names);
-        while (current != null) {
-            for (String name : orderedNames) {
-                try {
-                    Method method = current.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (NoSuchMethodException ignored) {
-                }
-            }
-            current = current.getSuperclass();
-        }
-        throw new NoSuchMethodException(type.getName() + " " + java.util.Arrays.toString(names));
+        return ReflectionLookup.findMethod(type, orderedNames, parameterTypes);
     }
 
     private static String[] orderedNames(String... names) {

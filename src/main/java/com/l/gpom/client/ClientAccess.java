@@ -3,8 +3,16 @@ package com.l.gpom.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiInventory;
+import net.minecraft.client.resources.I18n;
+import net.minecraft.client.renderer.BlockRendererDispatcher;
+import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.RenderItem;
+import net.minecraft.client.renderer.block.model.IBakedModel;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.InventoryPlayer;
@@ -19,6 +27,7 @@ public final class ClientAccess {
     private static volatile Method getMinecraftMethod;
     private static volatile Method isMinecraftThreadMethod;
     private static volatile Method addScheduledTaskMethod;
+    private static volatile Method displayGuiScreenMethod;
     private static volatile Method fontWidthMethod;
     private static volatile Method drawStringWithShadowMethod;
     private static volatile Method drawRectMethod;
@@ -26,10 +35,16 @@ public final class ClientAccess {
     private static volatile Method drawTexturedModalRectMethod;
     private static volatile Method drawModalRectWithCustomSizedTextureMethod;
     private static volatile Method getTextureManagerMethod;
+    private static volatile Method getBlockRendererDispatcherMethod;
+    private static volatile Method getTextureMapBlocksMethod;
+    private static volatile Method getModelForStateMethod;
+    private static volatile Method getMissingSpriteMethod;
     private static volatile Method bindTextureMethod;
     private static volatile Method drawInventoryEntityMethod;
     private static volatile Method getRenderItemMethod;
     private static volatile Method renderItemOverlayMethod;
+    private static volatile Method loadRenderersMethod;
+    private static volatile Method i18nFormatMethod;
     private static volatile Method windowClickMethod;
     private static volatile Method inventoryCarriedStackMethod;
     private static volatile Field fontRendererField;
@@ -39,6 +54,7 @@ public final class ClientAccess {
     private static volatile Field currentScreenField;
     private static volatile Field playerControllerField;
     private static volatile Field playerInventoryField;
+    private static volatile Field renderGlobalField;
 
     private ClientAccess() {
     }
@@ -94,6 +110,25 @@ public final class ClientAccess {
         }
     }
 
+    public static boolean displayGuiScreen(Minecraft minecraft, GuiScreen screen) {
+        if (minecraft == null) {
+            return false;
+        }
+        try {
+            Method method = displayGuiScreenMethod;
+            if (method == null) {
+                method = findMethod(Minecraft.class, new Class<?>[] {GuiScreen.class}, "func_147108_a", "displayGuiScreen");
+                displayGuiScreenMethod = method;
+            }
+            if (method != null) {
+                method.invoke(minecraft, screen);
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     public static FontRenderer fontRenderer(Minecraft minecraft) {
         if (minecraft == null) {
             return null;
@@ -124,6 +159,32 @@ public final class ClientAccess {
             return field == null ? null : field.get(minecraft);
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    public static void reloadRenderers(Minecraft minecraft) {
+        if (minecraft == null) {
+            return;
+        }
+        try {
+            Field field = renderGlobalField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71438_f", "renderGlobal");
+                renderGlobalField = field;
+            }
+            Object value = field == null ? null : field.get(minecraft);
+            if (!(value instanceof RenderGlobal)) {
+                return;
+            }
+            Method method = loadRenderersMethod;
+            if (method == null) {
+                method = findMethod(RenderGlobal.class, new Class<?>[0], "func_72712_a", "loadRenderers");
+                loadRenderersMethod = method;
+            }
+            if (method != null) {
+                method.invoke(value);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -166,6 +227,23 @@ public final class ClientAccess {
                 method.invoke(font, text, x, y, color);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    public static String i18nFormat(String key, Object... args) {
+        if (key == null) {
+            return "";
+        }
+        try {
+            Method method = i18nFormatMethod;
+            if (method == null) {
+                method = findMethod(I18n.class, new Class<?>[] {String.class, Object[].class}, "func_135052_a", "format");
+                i18nFormatMethod = method;
+            }
+            Object value = method == null ? null : method.invoke(null, new Object[] {key, args == null ? new Object[0] : args});
+            return value instanceof String ? (String) value : key;
+        } catch (Throwable ignored) {
+            return key;
         }
     }
 
@@ -269,6 +347,58 @@ public final class ClientAccess {
                 bind.invoke(manager, texture);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    public static IBakedModel modelForState(Minecraft minecraft, IBlockState state) {
+        if (minecraft == null || state == null) {
+            return null;
+        }
+        try {
+            Method dispatcherMethod = getBlockRendererDispatcherMethod;
+            if (dispatcherMethod == null) {
+                dispatcherMethod = findMethod(Minecraft.class, new Class<?>[0], "func_175602_ab", "getBlockRendererDispatcher");
+                getBlockRendererDispatcherMethod = dispatcherMethod;
+            }
+            Object dispatcher = dispatcherMethod == null ? null : dispatcherMethod.invoke(minecraft);
+            if (!(dispatcher instanceof BlockRendererDispatcher)) {
+                return null;
+            }
+            Method modelMethod = getModelForStateMethod;
+            if (modelMethod == null) {
+                modelMethod = findMethod(BlockRendererDispatcher.class, new Class<?>[] {IBlockState.class}, "func_175023_a", "getModelForState");
+                getModelForStateMethod = modelMethod;
+            }
+            Object model = modelMethod == null ? null : modelMethod.invoke(dispatcher, state);
+            return model instanceof IBakedModel ? (IBakedModel) model : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static TextureAtlasSprite missingSprite(Minecraft minecraft) {
+        if (minecraft == null) {
+            return null;
+        }
+        try {
+            Method mapMethod = getTextureMapBlocksMethod;
+            if (mapMethod == null) {
+                mapMethod = findMethod(Minecraft.class, new Class<?>[0], "func_147117_R", "getTextureMapBlocks");
+                getTextureMapBlocksMethod = mapMethod;
+            }
+            Object textureMap = mapMethod == null ? null : mapMethod.invoke(minecraft);
+            if (!(textureMap instanceof TextureMap)) {
+                return null;
+            }
+            Method missingMethod = getMissingSpriteMethod;
+            if (missingMethod == null) {
+                missingMethod = findMethod(TextureMap.class, new Class<?>[0], "func_174944_f", "getMissingSprite");
+                getMissingSpriteMethod = missingMethod;
+            }
+            Object sprite = missingMethod == null ? null : missingMethod.invoke(textureMap);
+            return sprite instanceof TextureAtlasSprite ? (TextureAtlasSprite) sprite : null;
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 

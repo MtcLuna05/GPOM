@@ -1,6 +1,7 @@
 package com.l.gpom.compat.journeymap;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.client.ClientAccess;
 import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.client.Minecraft;
 
@@ -67,8 +68,8 @@ public final class JourneyMapLeakCleanup {
 
     private static boolean isClientThread() {
         try {
-            Minecraft minecraft = Minecraft.getMinecraft();
-            return minecraft != null && minecraft.isCallingFromMinecraftThread();
+            Minecraft minecraft = ClientAccess.minecraft();
+            return minecraft != null && ClientAccess.isMinecraftThread(minecraft);
         } catch (Throwable ignored) {
             return "Client thread".equals(Thread.currentThread().getName());
         }
@@ -79,18 +80,20 @@ public final class JourneyMapLeakCleanup {
             return;
         }
         try {
-            Minecraft minecraft = Minecraft.getMinecraft();
+            Minecraft minecraft = ClientAccess.minecraft();
             if (minecraft == null) {
                 CLIENT_CLEANUP_SCHEDULED.set(false);
                 return;
             }
-            minecraft.addScheduledTask(new Runnable() {
+            if (!ClientAccess.schedule(minecraft, new Runnable() {
                 @Override
                 public void run() {
                     CLIENT_CLEANUP_SCHEDULED.set(false);
                     cleanup(reason + " deferred to client thread");
                 }
-            });
+            })) {
+                CLIENT_CLEANUP_SCHEDULED.set(false);
+            }
         } catch (Throwable throwable) {
             CLIENT_CLEANUP_SCHEDULED.set(false);
             logFailure("scheduleClientCleanup", "JourneyMap cleanup client-thread scheduling during " + reason, throwable);

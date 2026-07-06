@@ -1,5 +1,7 @@
 package com.l.gpom.compat.hei;
 
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
+import com.l.gpom.util.ReflectionLookup;
 import mezz.jei.api.ingredients.VanillaTypes;
 import mezz.jei.api.recipe.IRecipeWrapper;
 import mezz.jei.ingredients.Ingredients;
@@ -25,13 +27,6 @@ public final class HeiCraftableRecipeSorter {
     private static final Field PLAYER_INVENTORY = findField(EntityPlayer.class, "field_71071_by", "inventory");
     private static final Field INVENTORY_MAIN = findField(InventoryPlayer.class, "field_70462_a", "mainInventory");
     private static final Field INVENTORY_OFFHAND = findField(InventoryPlayer.class, "field_184439_c", "offHandInventory");
-    private static final Method INVENTORY_SIZE = findMethod(InventoryPlayer.class, new Class<?>[0], "func_70302_i_", "getSizeInventory");
-    private static final Method INVENTORY_STACK_IN_SLOT = findMethod(InventoryPlayer.class, new Class<?>[]{int.class}, "func_70301_a", "getStackInSlot");
-    private static final Method STACK_IS_EMPTY = findMethod(ItemStack.class, new Class<?>[0], "func_190926_b", "isEmpty");
-    private static final Method STACK_GET_COUNT = findMethod(ItemStack.class, new Class<?>[0], "func_190916_E", "getCount");
-    private static final Method STACK_GET_ITEM = findMethod(ItemStack.class, new Class<?>[0], "func_77973_b", "getItem");
-    private static final Method STACK_GET_METADATA = findMethod(ItemStack.class, new Class<?>[0], "func_77960_j", "getMetadata");
-    private static final Method STACK_GET_TAG = findMethod(ItemStack.class, new Class<?>[0], "func_77978_p", "getTagCompound");
     private static final List<List<ItemStack>> EMPTY_INPUTS = Collections.emptyList();
     private static final Map<IRecipeWrapper, List<List<ItemStack>>> INPUT_CACHE =
             Collections.synchronizedMap(new WeakHashMap<IRecipeWrapper, List<List<ItemStack>>>());
@@ -252,13 +247,12 @@ public final class HeiCraftableRecipeSorter {
     }
 
     private static void addInventoryBySlots(List<ItemStack> target, InventoryPlayer inventory) {
-        Object sizeValue = invoke(inventory, INVENTORY_SIZE);
-        if (!(sizeValue instanceof Integer)) {
+        int size = MinecraftMappingCompat.inventorySize(inventory);
+        if (size <= 0) {
             return;
         }
-        int size = (Integer) sizeValue;
         for (int slot = 0; slot < size; slot++) {
-            Object stack = invoke(inventory, INVENTORY_STACK_IN_SLOT, slot);
+            Object stack = MinecraftMappingCompat.inventoryStackInSlot(inventory, slot);
             if (stack instanceof ItemStack) {
                 addInventoryStack(target, (ItemStack) stack);
             }
@@ -312,31 +306,24 @@ public final class HeiCraftableRecipeSorter {
     }
 
     private static boolean isEmptyStack(ItemStack stack) {
-        if (stack == null) {
-            return true;
-        }
-        Object value = invoke(stack, STACK_IS_EMPTY);
-        return value instanceof Boolean ? (Boolean) value : item(stack) == null || count(stack) <= 0;
+        return MinecraftMappingCompat.itemStackIsEmpty(stack);
     }
 
     private static int count(ItemStack stack) {
-        Object value = invoke(stack, STACK_GET_COUNT);
-        return value instanceof Integer ? (Integer) value : 1;
+        int count = MinecraftMappingCompat.itemStackCount(stack);
+        return count > 0 || isEmptyStack(stack) ? count : 1;
     }
 
     private static Item item(ItemStack stack) {
-        Object value = invoke(stack, STACK_GET_ITEM);
-        return value instanceof Item ? (Item) value : null;
+        return MinecraftMappingCompat.itemStackItem(stack);
     }
 
     private static int metadata(ItemStack stack) {
-        Object value = invoke(stack, STACK_GET_METADATA);
-        return value instanceof Integer ? (Integer) value : 0;
+        return MinecraftMappingCompat.itemStackMetadata(stack);
     }
 
     private static NBTTagCompound tag(ItemStack stack) {
-        Object value = invoke(stack, STACK_GET_TAG);
-        return value instanceof NBTTagCompound ? (NBTTagCompound) value : null;
+        return MinecraftMappingCompat.itemStackTagCompound(stack);
     }
 
     private static Object fieldValue(Object target, Field field) {
@@ -362,37 +349,19 @@ public final class HeiCraftableRecipeSorter {
     }
 
     private static Field findField(Class<?> owner, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Field field = type.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                    // Try the next runtime/dev name, then the superclass.
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Method findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Method method = type.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                    // Try the next runtime/dev name, then the superclass.
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
 }

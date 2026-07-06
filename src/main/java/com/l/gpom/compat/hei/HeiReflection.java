@@ -1,5 +1,6 @@
 package com.l.gpom.compat.hei;
 
+import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.Slot;
@@ -67,20 +68,11 @@ final class HeiReflection {
     }
 
     private static Field findField(Class<?> owner, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Field field = type.getDeclaredField(name);
-                    field.setAccessible(true);
-                    return field;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                    // Try the next runtime/dev name, then the superclass.
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findField(owner, names);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 
     private static Object invoke(Object target, Class<?>[] parameterTypes, String srgName, String mcpName, Object... args) {
@@ -96,19 +88,10 @@ final class HeiReflection {
     }
 
     private static Method findMethod(Class<?> owner, Class<?>[] parameterTypes, String... names) {
-        Class<?> type = owner;
-        while (type != null) {
-            for (String name : names) {
-                try {
-                    Method method = type.getDeclaredMethod(name, parameterTypes);
-                    method.setAccessible(true);
-                    return method;
-                } catch (ReflectiveOperationException | RuntimeException ignored) {
-                    // Try the next runtime/dev name, then the superclass.
-                }
-            }
-            type = type.getSuperclass();
+        try {
+            return ReflectionLookup.findMethod(owner, names, parameterTypes);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return null;
         }
-        return null;
     }
 }

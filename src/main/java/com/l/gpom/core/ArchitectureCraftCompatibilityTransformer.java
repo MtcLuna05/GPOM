@@ -19,12 +19,15 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
     private static final String BLOCK_ARCHITECTURE = "com.elytradev.architecture.common.block.BlockArchitecture";
     private static final String BLOCK_SHAPE = "com.elytradev.architecture.common.block.BlockShape";
     private static final String RENDER_TARGET_WORLD = "com.elytradev.architecture.client.render.target.RenderTargetWorld";
+    private static final String TILE_SAWBENCH = "com.elytradev.architecture.common.tile.TileSawbench";
     private static final String HELPER = "com/l/gpom/compat/architecturecraft/ArchitectureCraftHitboxCompat";
+    private static final String MATERIAL_HELPER = "com/l/gpom/compat/architecturecraft/ArchitectureCraftMaterialCompat";
     private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
     private static final String BOUNDING_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
     private static final String SELECTED_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
     private static final String SIDE_RENDER_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/EnumFacing;)Z";
     private static final String LIGHT_VERTEX_DESC = "(Lcom/elytradev/architecture/common/helpers/Vector3;)V";
+    private static final String ACCEPTABLE_MATERIAL_DESC = "(Lnet/minecraft/block/Block;)Z";
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -51,6 +54,10 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
                         GpomEarlyConfig.architectureCraftParentMaterialOcclusionEnabled()
                 );
             }
+            if (GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialsEnabled()
+                    && TILE_SAWBENCH.equals(className)) {
+                return patchTileSawbench(basicClass);
+            }
         } catch (Throwable ignored) {
         }
         return basicClass;
@@ -59,6 +66,12 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
     private static byte[] patchRenderTargetWorld(byte[] basicClass) {
         ClassNode node = readNode(basicClass);
         replaceMethod(node, fastLightVertexMethod());
+        return writeNode(node);
+    }
+
+    private static byte[] patchTileSawbench(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        replaceMethod(node, acceptableMaterialMethod());
         return writeNode(node);
     }
 
@@ -149,6 +162,21 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
                 HELPER,
                 "baseShouldSideBeRendered",
                 "(Lnet/minecraft/block/Block;" + SIDE_RENDER_DESC.substring(1),
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.IRETURN));
+        return method;
+    }
+
+    private static MethodNode acceptableMaterialMethod() {
+        MethodNode method = new MethodNode(Opcodes.ACC_PROTECTED, "isAcceptableMaterial", ACCEPTABLE_MATERIAL_DESC, null, null);
+        InsnList instructions = method.instructions;
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                MATERIAL_HELPER,
+                "isAcceptableSawbenchMaterial",
+                ACCEPTABLE_MATERIAL_DESC,
                 false
         ));
         instructions.add(new InsnNode(Opcodes.IRETURN));

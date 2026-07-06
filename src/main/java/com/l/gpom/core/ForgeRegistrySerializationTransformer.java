@@ -1,6 +1,7 @@
 package com.l.gpom.core;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -130,7 +131,9 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
             if (changed <= 0) {
                 return basicClass;
             }
-            GPOM.LOGGER.info("[FmlParallelLoading] Serialized {} OreDictionary access method(s)", changed);
+            if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
+                GPOM.LOGGER.info("[FmlParallelLoading] Serialized {} OreDictionary access method(s)", changed);
+            }
             return write(node);
         } catch (Throwable throwable) {
             GPOM.LOGGER.warn("[FmlParallelLoading] Failed to install OreDictionary serialization; continuing without it", throwable);
