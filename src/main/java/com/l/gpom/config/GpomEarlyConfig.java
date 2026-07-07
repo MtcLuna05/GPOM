@@ -217,7 +217,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.architecturecraft.parentMaterialOcclusion.enabled", "false");
         DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.enabled", "false");
         DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.allowlist", ARCHITECTURECRAFT_DEFAULT_ADDITIONAL_MATERIALS);
-        DEFAULTS.setProperty("gpom.framed.materialStateStorage.enabled", "true");
+        DEFAULTS.setProperty("gpom.framed.materialStateStorage.enabled", "false");
         DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
@@ -1180,7 +1180,7 @@ public final class GpomEarlyConfig {
             case "gpom.architecturecraft.additionalSawbenchMaterials.allowlist":
                 return "Comma-separated block registry ids additionally allowed as ArchitectureCraft sawbench materials when the additional-materials patch is enabled. Tile-entity blocks are still rejected for save safety.";
             case "gpom.framed.materialStateStorage.enabled":
-                return "Stores a versioned GPOM material-state payload on Blockcraftery and ArchitectureCraft tiles/items so render-side compat can preserve metadata, properties, and layer hints without changing vanilla save fields.";
+                return "Stores a versioned GPOM material-state payload on Blockcraftery and ArchitectureCraft tiles/items so render-side compat can preserve metadata, properties, and layer hints. Disabled by default because it writes extra persistent NBT.";
             case "gpom.blockcraftery.accurateHitboxes":
                 return "Adds optional Blockcraftery ray-hitbox fixes for editable slants, corners, and copied-block cubes. No-op when Blockcraftery is absent.";
             case "gpom.blockcraftery.parentMaterialOcclusion.enabled":
