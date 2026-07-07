@@ -5,6 +5,7 @@ import com.l.gpom.compat.betterportals.BetterPortalsClientWorldCleanup;
 import com.l.gpom.compat.jecalculation.JecPinnedCraftOverlay;
 import com.l.gpom.compat.journeymap.JourneyMapLeakCleanupEvents;
 import com.l.gpom.compat.journeymap.JourneyMapWaypointDimensionDropupEvents;
+import com.l.gpom.compat.mousetweaks.MouseTweaksDragCompat;
 import com.l.gpom.compat.thaumcraft.ThaumcraftResearchClientProbe;
 import com.l.gpom.compat.randomthings.client.RandomThingsRuneClientEvents;
 import com.l.gpom.client.ClientOnlyModeEvents;
@@ -26,6 +27,7 @@ public final class ClientProxy extends CommonProxy {
         WorldLifecycleProfilerEvents.register();
         AdvancedRocketryOxygenOverlayHandoffGuard.register();
         RandomThingsRuneClientEvents.register(event);
+        MouseTweaksDragCompat.register();
     }
 
     @Override

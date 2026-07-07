@@ -422,11 +422,17 @@ public final class HeiQuickCraftNetwork {
             return;
         }
         TileEntity tile = (TileEntity) target;
-        tile.markDirty();
-        World world = tile.getWorld();
-        BlockPos pos = tile.getPos();
+        MinecraftMappingCompat.tileEntityMarkDirty(tile);
+        World world = MinecraftMappingCompat.tileEntityWorld(tile);
+        BlockPos pos = MinecraftMappingCompat.tileEntityPos(tile);
         if (world != null && pos != null) {
-            world.notifyBlockUpdate(pos, world.getBlockState(pos), world.getBlockState(pos), 3);
+            MinecraftMappingCompat.worldNotifyBlockUpdate(
+                    world,
+                    pos,
+                    MinecraftMappingCompat.worldBlockState(world, pos),
+                    MinecraftMappingCompat.worldBlockState(world, pos),
+                    3
+            );
         }
     }
 
@@ -436,7 +442,12 @@ public final class HeiQuickCraftNetwork {
             task.run();
             return;
         }
-        FMLCommonHandler.instance().getMinecraftServerInstance().addScheduledTask(task);
+        Object scheduled = MinecraftMappingCompat.invoke(server, "minecraftServer.addScheduledTask",
+                new Class<?>[]{Runnable.class}, new Object[]{task},
+                "func_152344_a", "addScheduledTask");
+        if (scheduled == null) {
+            task.run();
+        }
     }
 
     private static final class TransferPlan {

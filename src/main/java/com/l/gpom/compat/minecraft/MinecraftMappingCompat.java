@@ -19,12 +19,14 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.SPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.SoundEvent;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
@@ -32,6 +34,7 @@ import net.minecraft.world.GameRules;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -49,6 +52,7 @@ public final class MinecraftMappingCompat {
     public static final Class<?>[] NO_TYPES = new Class<?>[0];
     public static final Object[] NO_ARGS = new Object[0];
     private static volatile Constructor<SPacketSetSlot> setSlotPacketConstructor;
+    private static volatile Class<?> glStateManagerClass;
 
     private MinecraftMappingCompat() {
     }
@@ -222,6 +226,36 @@ public final class MinecraftMappingCompat {
         return value instanceof World ? (World) value : null;
     }
 
+    public static double entityPosX(Entity entity) {
+        Object value = fieldValue(entity, "entity.posX", "field_70165_t", "posX");
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
+    public static double entityPosY(Entity entity) {
+        Object value = fieldValue(entity, "entity.posY", "field_70163_u", "posY");
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
+    public static double entityPosZ(Entity entity) {
+        Object value = fieldValue(entity, "entity.posZ", "field_70161_v", "posZ");
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
+    public static double entityPrevPosX(Entity entity) {
+        Object value = fieldValue(entity, "entity.prevPosX", "field_70169_q", "prevPosX");
+        return value instanceof Number ? ((Number) value).doubleValue() : entityPosX(entity);
+    }
+
+    public static double entityPrevPosY(Entity entity) {
+        Object value = fieldValue(entity, "entity.prevPosY", "field_70167_r", "prevPosY");
+        return value instanceof Number ? ((Number) value).doubleValue() : entityPosY(entity);
+    }
+
+    public static double entityPrevPosZ(Entity entity) {
+        Object value = fieldValue(entity, "entity.prevPosZ", "field_70166_s", "prevPosZ");
+        return value instanceof Number ? ((Number) value).doubleValue() : entityPosZ(entity);
+    }
+
     public static UUID playerUniqueId(EntityPlayer player) {
         Object value = invoke(player, "player.getUniqueID", noTypes(), noArgs(), "func_110124_au", "getUniqueID");
         return value instanceof UUID ? (UUID) value : null;
@@ -371,6 +405,38 @@ public final class MinecraftMappingCompat {
         return value instanceof Block ? (Block) value : null;
     }
 
+    public static ResourceLocation blockRegistryName(Block block) {
+        Object value = invoke(block, "block.getRegistryName", noTypes(), noArgs(), "getRegistryName");
+        if (value instanceof ResourceLocation) {
+            return (ResourceLocation) value;
+        }
+        return block == null ? null : ForgeRegistries.BLOCKS.getKey(block);
+    }
+
+    public static boolean blockHasTileEntity(Block block) {
+        Object value = invoke(block, "block.hasTileEntity", noTypes(), noArgs(), "func_149716_u", "hasTileEntity");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static BlockRenderLayer blockRenderLayer(Block block) {
+        Object value = invoke(block, "block.getRenderLayer", noTypes(), noArgs(), "func_180664_k", "getRenderLayer");
+        return value instanceof BlockRenderLayer ? (BlockRenderLayer) value : null;
+    }
+
+    public static boolean blockCanRenderInLayer(Block block, IBlockState state, BlockRenderLayer layer) {
+        Object value = invoke(block, "block.canRenderInLayer",
+                new Class<?>[]{IBlockState.class, BlockRenderLayer.class}, new Object[]{state, layer},
+                "canRenderInLayer");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static int blockMetaFromState(Block block, IBlockState state) {
+        Object value = invoke(block, "block.getMetaFromState",
+                new Class<?>[]{IBlockState.class}, new Object[]{state},
+                "func_176201_c", "getMetaFromState");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
     public static boolean blockStateSideSolid(IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
         Object value = invoke(state, "blockState.isSideSolid",
                 new Class<?>[]{IBlockAccess.class, BlockPos.class, EnumFacing.class}, new Object[]{world, pos, side},
@@ -448,7 +514,7 @@ public final class MinecraftMappingCompat {
         return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
     }
 
-    private static double vecY(Vec3d vec) {
+    public static double vecY(Vec3d vec) {
         Object value = fieldValue(vec, "vec3d.y", "field_72448_b", "y", "yCoord");
         return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
     }
@@ -466,6 +532,56 @@ public final class MinecraftMappingCompat {
     public static Vec3d rayTraceHitVec(RayTraceResult result) {
         Object value = fieldValue(result, "rayTraceResult.hitVec", "field_72307_f", "hitVec");
         return value instanceof Vec3d ? (Vec3d) value : null;
+    }
+
+    public static EnumFacing rayTraceSideHit(RayTraceResult result) {
+        Object value = fieldValue(result, "rayTraceResult.sideHit", "field_178784_b", "sideHit");
+        return value instanceof EnumFacing ? (EnumFacing) value : null;
+    }
+
+    public static void glPushMatrix() {
+        invokeStatic(glStateManagerClass(), "glStateManager.pushMatrix", noTypes(), noArgs(), "func_179094_E", "pushMatrix");
+    }
+
+    public static void glPopMatrix() {
+        invokeStatic(glStateManagerClass(), "glStateManager.popMatrix", noTypes(), noArgs(), "func_179121_F", "popMatrix");
+    }
+
+    public static void glDisableTexture2D() {
+        invokeStatic(glStateManagerClass(), "glStateManager.disableTexture2D", noTypes(), noArgs(), "func_179090_x", "disableTexture2D");
+    }
+
+    public static void glEnableTexture2D() {
+        invokeStatic(glStateManagerClass(), "glStateManager.enableTexture2D", noTypes(), noArgs(), "func_179098_w", "enableTexture2D");
+    }
+
+    public static void glDisableLighting() {
+        invokeStatic(glStateManagerClass(), "glStateManager.disableLighting", noTypes(), noArgs(), "func_179140_f", "disableLighting");
+    }
+
+    public static void glEnableLighting() {
+        invokeStatic(glStateManagerClass(), "glStateManager.enableLighting", noTypes(), noArgs(), "func_179145_e", "enableLighting");
+    }
+
+    public static void glEnableBlend() {
+        invokeStatic(glStateManagerClass(), "glStateManager.enableBlend", noTypes(), noArgs(), "func_179147_l", "enableBlend");
+    }
+
+    public static void glDisableBlend() {
+        invokeStatic(glStateManagerClass(), "glStateManager.disableBlend", noTypes(), noArgs(), "func_179084_k", "disableBlend");
+    }
+
+    public static void glTryBlendFuncSeparate(int srcFactor, int dstFactor, int srcFactorAlpha, int dstFactorAlpha) {
+        invokeStatic(glStateManagerClass(), "glStateManager.tryBlendFuncSeparate",
+                new Class<?>[]{int.class, int.class, int.class, int.class},
+                new Object[]{srcFactor, dstFactor, srcFactorAlpha, dstFactorAlpha},
+                "func_179120_a", "tryBlendFuncSeparate");
+    }
+
+    public static void glDepthMask(boolean flag) {
+        invokeStatic(glStateManagerClass(), "glStateManager.depthMask",
+                new Class<?>[]{boolean.class}, new Object[]{flag},
+                "func_179132_a", "depthMask");
     }
 
     public static boolean rayTraceIsBlock(RayTraceResult result) {
@@ -493,6 +609,35 @@ public final class MinecraftMappingCompat {
     public static IBlockState blockDefaultState(Block block) {
         Object value = invoke(block, "block.getDefaultState", noTypes(), noArgs(), "func_176223_P", "getDefaultState");
         return value instanceof IBlockState ? (IBlockState) value : null;
+    }
+
+    public static boolean blockStateIsOpaqueCube(IBlockState state) {
+        Object value = invoke(state, "blockState.isOpaqueCube", noTypes(), noArgs(), "func_185914_p", "isOpaqueCube");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static double aabbMinX(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.minX", "field_72340_a", "minX");
+    }
+
+    public static double aabbMinY(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.minY", "field_72338_b", "minY");
+    }
+
+    public static double aabbMinZ(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.minZ", "field_72339_c", "minZ");
+    }
+
+    public static double aabbMaxX(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.maxX", "field_72336_d", "maxX");
+    }
+
+    public static double aabbMaxY(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.maxY", "field_72337_e", "maxY");
+    }
+
+    public static double aabbMaxZ(AxisAlignedBB box) {
+        return doubleField(box, "axisAlignedBB.maxZ", "field_72334_f", "maxZ");
     }
 
     public static Integer worldDimension(World world) {
@@ -546,6 +691,22 @@ public final class MinecraftMappingCompat {
         }
     }
 
+    private static Class<?> glStateManagerClass() {
+        Class<?> cached = glStateManagerClass;
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            cached = Class.forName("net.minecraft.client.renderer.GlStateManager", false,
+                    MinecraftMappingCompat.class.getClassLoader());
+            glStateManagerClass = cached;
+            return cached;
+        } catch (Throwable throwable) {
+            logOnce(MinecraftMappingCompat.class, "glStateManager.class", "could not resolve", throwable);
+            return null;
+        }
+    }
+
     public static Object staticFieldValue(Class<?> ownerClass, String purpose, String... names) {
         Field field = findField(ownerClass, purpose, names);
         if (field == null) {
@@ -575,7 +736,15 @@ public final class MinecraftMappingCompat {
         }
     }
 
+    private static double doubleField(Object owner, String purpose, String... names) {
+        Object value = fieldValue(owner, purpose, names);
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
     public static Object invokeStatic(Class<?> ownerClass, String purpose, Class<?>[] parameterTypes, Object[] args, String... names) {
+        if (ownerClass == null) {
+            return null;
+        }
         Method method = findMethod(ownerClass, purpose, parameterTypes, names);
         if (method == null) {
             return null;

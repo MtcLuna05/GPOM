@@ -46,12 +46,14 @@ public final class RandomThingsRuneCommonEvents {
             return;
         }
         float hitX = 0.5F;
+        float hitY = 0.5F;
         float hitZ = 0.5F;
         if (hit != null && pos != null) {
             hitX = (float) (MinecraftMappingCompat.vecX(hit) - MinecraftMappingCompat.blockPosX(pos));
+            hitY = (float) (MinecraftMappingCompat.vecY(hit) - MinecraftMappingCompat.blockPosY(pos));
             hitZ = (float) (MinecraftMappingCompat.vecZ(hit) - MinecraftMappingCompat.blockPosZ(pos));
         }
-        EnumActionResult result = RandomThingsRuneCompat.toggleConnectionWithEmptyHand(player, world, pos, event.getHand(), hitX, hitZ);
+        EnumActionResult result = RandomThingsRuneCompat.toggleConnectionWithEmptyHand(player, world, pos, event.getHand(), event.getFace(), hitX, hitY, hitZ);
         if (result != null) {
             event.setUseBlock(Event.Result.DENY);
             event.setUseItem(Event.Result.DENY);

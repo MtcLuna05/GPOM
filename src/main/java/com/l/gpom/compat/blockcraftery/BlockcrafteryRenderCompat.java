@@ -40,11 +40,12 @@ public final class BlockcrafteryRenderCompat {
         }
 
         try {
-            Block block = copied.getBlock();
-            return block.canRenderInLayer(copied, currentLayer) ? currentLayer : null;
+            Block block = MinecraftMappingCompat.blockStateBlock(copied);
+            return MinecraftMappingCompat.blockCanRenderInLayer(block, copied, currentLayer) ? currentLayer : null;
         } catch (RuntimeException | LinkageError ignored) {
             try {
-                return copied.getBlock().getRenderLayer() == currentLayer ? currentLayer : null;
+                Block block = MinecraftMappingCompat.blockStateBlock(copied);
+                return MinecraftMappingCompat.blockRenderLayer(block) == currentLayer ? currentLayer : null;
             } catch (RuntimeException | LinkageError ignoredAgain) {
                 return null;
             }
@@ -59,7 +60,7 @@ public final class BlockcrafteryRenderCompat {
 
         Block block;
         try {
-            block = copied.getBlock();
+            block = MinecraftMappingCompat.blockStateBlock(copied);
         } catch (RuntimeException | LinkageError ignored) {
             return currentLayer == BlockRenderLayer.SOLID;
         }
@@ -75,7 +76,7 @@ public final class BlockcrafteryRenderCompat {
         }
 
         try {
-            return block.canRenderInLayer(copied, currentLayer);
+            return MinecraftMappingCompat.blockCanRenderInLayer(block, copied, currentLayer);
         } catch (RuntimeException | LinkageError ignored) {
             return declaredLayer == null && currentLayer == BlockRenderLayer.SOLID;
         }
@@ -83,7 +84,7 @@ public final class BlockcrafteryRenderCompat {
 
     private static BlockRenderLayer declaredRenderLayer(Block block) {
         try {
-            return block.getRenderLayer();
+            return MinecraftMappingCompat.blockRenderLayer(block);
         } catch (RuntimeException | LinkageError ignored) {
             return null;
         }
@@ -128,21 +129,21 @@ public final class BlockcrafteryRenderCompat {
         int[] tints = new int[] {0};
         boolean useFallbackTexture = true;
 
-        Block copiedBlock = copied == null ? null : copied.getBlock();
+        Block copiedBlock = copied == null ? null : MinecraftMappingCompat.blockStateBlock(copied);
         Object airValue = MinecraftMappingCompat.staticFieldValue(Blocks.class, "blocks.air", "field_150350_a", "AIR");
         Block air = airValue instanceof Block ? (Block) airValue : ForgeRegistries.BLOCKS.getValue(new net.minecraft.util.ResourceLocation("minecraft", "air"));
         if (copiedBlock != null && copiedBlock != air) {
             IBakedModel copiedModel = ClientAccess.modelForState(ClientAccess.minecraft(), copied);
             if (copiedModel != null) {
-                sprites[0] = copiedModel.getParticleTexture();
-                List<BakedQuad> copiedQuads = copiedModel.getQuads(copied, side, rand);
+                sprites[0] = particle(copiedModel);
+                List<BakedQuad> copiedQuads = modelQuads(copiedModel, copied, side, rand);
                 if (!copiedQuads.isEmpty()) {
                     sprites = new TextureAtlasSprite[copiedQuads.size()];
                     tints = new int[copiedQuads.size()];
                     for (int index = 0; index < copiedQuads.size(); index++) {
                         BakedQuad quad = copiedQuads.get(index);
-                        tints[index] = quad.hasTintIndex() ? quad.getTintIndex() : -1;
-                        sprites[index] = quad.getSprite();
+                        tints[index] = quadHasTintIndex(quad) ? quadTintIndex(quad) : -1;
+                        sprites[index] = quadSprite(quad);
                     }
                 }
                 useFallbackTexture = false;
@@ -168,11 +169,12 @@ public final class BlockcrafteryRenderCompat {
             return false;
         }
         try {
-            Block block = copied.getBlock();
-            return block.canRenderInLayer(copied, layer);
+            Block block = MinecraftMappingCompat.blockStateBlock(copied);
+            return MinecraftMappingCompat.blockCanRenderInLayer(block, copied, layer);
         } catch (RuntimeException | LinkageError ignored) {
             try {
-                return copied.getBlock().getRenderLayer() == layer;
+                Block block = MinecraftMappingCompat.blockStateBlock(copied);
+                return MinecraftMappingCompat.blockRenderLayer(block) == layer;
             } catch (RuntimeException | LinkageError ignoredAgain) {
                 return false;
             }
@@ -181,7 +183,7 @@ public final class BlockcrafteryRenderCompat {
 
     private static IBlockState copiedState(IExtendedBlockState hostState) {
         try {
-            Block hostBlock = ((IBlockState) hostState).getBlock();
+            Block hostBlock = MinecraftMappingCompat.blockStateBlock((IBlockState) hostState);
             Method method = cachedMethod(STATE_PROPERTY_METHODS, hostBlock.getClass(), "getStateProperty");
             Object property = method.invoke(hostBlock);
             if (!(property instanceof IUnlistedProperty)) {
@@ -205,15 +207,39 @@ public final class BlockcrafteryRenderCompat {
     }
 
     private static TextureAtlasSprite particle(Object model) {
-        try {
-            return (TextureAtlasSprite) model.getClass().getMethod("getParticleTexture").invoke(model);
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
-            try {
-                return (TextureAtlasSprite) model.getClass().getMethod("func_177554_e").invoke(model);
-            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignoredAgain) {
-                return ClientAccess.missingSprite(ClientAccess.minecraft());
-            }
-        }
+        Object value = MinecraftMappingCompat.invoke(model, "bakedModel.getParticleTexture",
+                MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                "func_177554_e", "getParticleTexture");
+        return value instanceof TextureAtlasSprite ? (TextureAtlasSprite) value : ClientAccess.missingSprite(ClientAccess.minecraft());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<BakedQuad> modelQuads(Object model, IBlockState state, EnumFacing side, long rand) {
+        Object value = MinecraftMappingCompat.invoke(model, "bakedModel.getQuads",
+                new Class<?>[]{IBlockState.class, EnumFacing.class, long.class}, new Object[]{state, side, rand},
+                "func_188616_a", "getQuads");
+        return value instanceof List ? (List<BakedQuad>) value : java.util.Collections.<BakedQuad>emptyList();
+    }
+
+    private static TextureAtlasSprite quadSprite(BakedQuad quad) {
+        Object value = MinecraftMappingCompat.invoke(quad, "bakedQuad.getSprite",
+                MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                "func_187508_a", "getSprite");
+        return value instanceof TextureAtlasSprite ? (TextureAtlasSprite) value : ClientAccess.missingSprite(ClientAccess.minecraft());
+    }
+
+    private static boolean quadHasTintIndex(BakedQuad quad) {
+        Object value = MinecraftMappingCompat.invoke(quad, "bakedQuad.hasTintIndex",
+                MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                "func_178212_b", "hasTintIndex");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    private static int quadTintIndex(BakedQuad quad) {
+        Object value = MinecraftMappingCompat.invoke(quad, "bakedQuad.getTintIndex",
+                MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                "func_178211_c", "getTintIndex");
+        return value instanceof Number ? ((Number) value).intValue() : -1;
     }
 
     private static TextureAtlasSprite[] repeatedSprites(TextureAtlasSprite sprite) {

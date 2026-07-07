@@ -8,6 +8,7 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.FrameNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
@@ -24,9 +25,14 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
     private static final String SLANT = "epicsquid.blockcraftery.block.BlockEditableSlant";
     private static final String CORNER = "epicsquid.blockcraftery.block.BlockEditableCorner";
     private static final String MODEL_EDITABLE = "epicsquid.blockcraftery.model.BakedModelEditable";
+    private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String WORLD = "net.minecraft.world.World";
     private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryHitboxCompat";
     private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
+    private static final String FRAMED_HELPER = "com/l/gpom/compat/framed/FramedMaterialData";
+    private static final String FRAMED_ACCESS = "com/l/gpom/compat/framed/FramedMaterialDataAccess";
+    private static final String NBT_COMPOUND = "Lnet/minecraft/nbt/NBTTagCompound;";
+    private static final String BLOCK_STATE = "Lnet/minecraft/block/state/IBlockState;";
     private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
     private static final String SELECTED_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
     private static final String BOUNDING_BOX_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;)Lnet/minecraft/util/math/AxisAlignedBB;";
@@ -51,8 +57,12 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
             boolean parentMaterialOcclusion = GpomEarlyConfig.blockcrafteryParentMaterialOcclusionEnabled();
             boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled()
                     && !OptionalModRuntime.ausmPresent();
-            if (!hitboxes && !modelLayerCompat) {
+            boolean framedMaterialStorage = GpomEarlyConfig.framedMaterialStateStorageEnabled();
+            if (!hitboxes && !modelLayerCompat && !framedMaterialStorage) {
                 return basicClass;
+            }
+            if (framedMaterialStorage && TILE_EDITABLE_BLOCK.equals(className)) {
+                return patchTileEditableBlock(basicClass);
             }
             if (hitboxes && CUBE.equals(className)) {
                 return patchCube(basicClass, parentMaterialOcclusion);
@@ -69,6 +79,151 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
         } catch (Throwable ignored) {
         }
         return basicClass;
+    }
+
+    private static byte[] patchTileEditableBlock(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        boolean changed = addFramedMaterialAccess(node);
+        changed |= patchTileRead(node);
+        changed |= patchTileWrite(node);
+        return changed ? writeNode(node) : basicClass;
+    }
+
+    private static boolean addFramedMaterialAccess(ClassNode node) {
+        boolean changed = false;
+        if (!node.interfaces.contains(FRAMED_ACCESS)) {
+            node.interfaces.add(FRAMED_ACCESS);
+            changed = true;
+        }
+        if (findField(node, "gpom$framedMaterialData", NBT_COMPOUND) == null) {
+            node.fields.add(new FieldNode(
+                    Opcodes.ACC_PRIVATE,
+                    "gpom$framedMaterialData",
+                    NBT_COMPOUND,
+                    null,
+                    null
+            ));
+            changed = true;
+        }
+        if (findMethod(node, "gpom$getFramedMaterialData", "()" + NBT_COMPOUND) == null) {
+            node.methods.add(framedMaterialGetter());
+            changed = true;
+        }
+        if (findMethod(node, "gpom$setFramedMaterialData", "(" + NBT_COMPOUND + ")V") == null) {
+            node.methods.add(framedMaterialSetter());
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean patchTileRead(ClassNode node) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("func_145839_a") || !method.desc.equals("(" + NBT_COMPOUND + ")V")) {
+                continue;
+            }
+
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.RETURN) {
+                    continue;
+                }
+
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "read",
+                        "(L" + FRAMED_ACCESS + ";" + NBT_COMPOUND + ")V",
+                        false
+                ));
+                method.instructions.insertBefore(instruction, injected);
+                changed = true;
+                break;
+            }
+        }
+        return changed;
+    }
+
+    private static boolean patchTileWrite(ClassNode node) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("func_189515_b") || !method.desc.equals("(" + NBT_COMPOUND + ")" + NBT_COMPOUND)) {
+                continue;
+            }
+
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.ARETURN) {
+                    continue;
+                }
+
+                int returnLocal = method.maxLocals;
+                method.maxLocals = returnLocal + 1;
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ASTORE, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new org.objectweb.asm.tree.FieldInsnNode(
+                        Opcodes.GETFIELD,
+                        node.name,
+                        "state",
+                        BLOCK_STATE
+                ));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "writeBlockcraftery",
+                        "(L" + FRAMED_ACCESS + ";" + NBT_COMPOUND + BLOCK_STATE + ")V",
+                        false
+                ));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, returnLocal));
+                method.instructions.insertBefore(instruction, injected);
+                changed = true;
+                break;
+            }
+        }
+        return changed;
+    }
+
+    private static MethodNode framedMaterialGetter() {
+        MethodNode method = new MethodNode(
+                Opcodes.ACC_PUBLIC,
+                "gpom$getFramedMaterialData",
+                "()" + NBT_COMPOUND,
+                null,
+                null
+        );
+        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        method.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETFIELD,
+                TILE_EDITABLE_BLOCK.replace('.', '/'),
+                "gpom$framedMaterialData",
+                NBT_COMPOUND
+        ));
+        method.instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static MethodNode framedMaterialSetter() {
+        MethodNode method = new MethodNode(
+                Opcodes.ACC_PUBLIC,
+                "gpom$setFramedMaterialData",
+                "(" + NBT_COMPOUND + ")V",
+                null,
+                null
+        );
+        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        method.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        method.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.PUTFIELD,
+                TILE_EDITABLE_BLOCK.replace('.', '/'),
+                "gpom$framedMaterialData",
+                NBT_COMPOUND
+        ));
+        method.instructions.add(new InsnNode(Opcodes.RETURN));
+        return method;
     }
 
     private static byte[] patchWorld(byte[] basicClass) {
@@ -302,6 +457,24 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
         }
         MethodInsnNode method = (MethodInsnNode) instruction;
         return method.owner.equals(owner) && method.name.equals(name) && method.desc.equals(desc);
+    }
+
+    private static FieldNode findField(ClassNode node, String name, String desc) {
+        for (FieldNode field : node.fields) {
+            if (field.name.equals(name) && field.desc.equals(desc)) {
+                return field;
+            }
+        }
+        return null;
+    }
+
+    private static MethodNode findMethod(ClassNode node, String name, String desc) {
+        for (MethodNode method : node.methods) {
+            if (method.name.equals(name) && method.desc.equals(desc)) {
+                return method;
+            }
+        }
+        return null;
     }
 
     private static void loadArgs(InsnList instructions, int count) {

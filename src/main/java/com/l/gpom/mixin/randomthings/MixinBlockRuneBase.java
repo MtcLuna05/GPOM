@@ -8,6 +8,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.EnumActionResult;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
@@ -19,6 +20,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(targets = "lumien.randomthings.block.BlockRuneBase", remap = false)
 public abstract class MixinBlockRuneBase {
+    @Inject(method = "func_189540_a", at = @At("HEAD"), cancellable = true, require = 0)
+    private void gpom$keepRunesAttachedToConfiguredFace(IBlockState state, World world, BlockPos pos, Block blockIn, BlockPos fromPos,
+                                                        CallbackInfo ci) {
+        if (RandomThingsRuneCompat.handleNeighborChange(world, pos)) {
+            ci.cancel();
+        }
+    }
+
     @Inject(method = "func_180639_a", at = @At("HEAD"), cancellable = true, require = 0)
     private void gpom$openRuneBlockSettings(World world, BlockPos pos, IBlockState state, EntityPlayer player, EnumHand hand, EnumFacing facing,
                                             float hitX, float hitY, float hitZ, CallbackInfoReturnable<Boolean> cir) {
@@ -31,7 +40,7 @@ public abstract class MixinBlockRuneBase {
             }
             return;
         }
-        EnumActionResult result = RandomThingsRuneCompat.toggleConnectionWithEmptyHand(player, world, pos, hand, hitX, hitZ);
+        EnumActionResult result = RandomThingsRuneCompat.toggleConnectionWithEmptyHand(player, world, pos, hand, facing, hitX, hitY, hitZ);
         if (result != null) {
             cir.setReturnValue(result == EnumActionResult.SUCCESS);
         }
@@ -69,5 +78,17 @@ public abstract class MixinBlockRuneBase {
         if (custom != state) {
             cir.setReturnValue(custom);
         }
+    }
+
+    @Inject(method = "func_185496_a", at = @At("HEAD"), cancellable = true, require = 0)
+    private void gpom$getFaceAwareRuneBoundingBox(IBlockState state, IBlockAccess world, BlockPos pos,
+                                                  CallbackInfoReturnable<AxisAlignedBB> cir) {
+        cir.setReturnValue(RandomThingsRuneCompat.boundingBox(world, pos));
+    }
+
+    @Inject(method = "func_180640_a", at = @At("HEAD"), cancellable = true, require = 0)
+    private void gpom$getFaceAwareRuneSelectedBoundingBox(IBlockState state, World world, BlockPos pos,
+                                                          CallbackInfoReturnable<AxisAlignedBB> cir) {
+        cir.setReturnValue(RandomThingsRuneCompat.selectedBoundingBox(world, pos));
     }
 }

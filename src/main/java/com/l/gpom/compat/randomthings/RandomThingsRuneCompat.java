@@ -24,6 +24,7 @@ import net.minecraft.util.EnumHand;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.SoundCategory;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.IBlockAccess;
@@ -51,6 +52,7 @@ public final class RandomThingsRuneCompat {
     private static final String OCCUPIED_KEY = "gpomRuneOccupied";
     private static final String DISCONNECTED_EDGES_KEY = "gpomRuneDisconnectedEdges";
     private static final String CONNECTION_EDGES_KEY = "gpomRuneConnectionEdges";
+    private static final String FACE_KEY = "gpomRuneFace";
     private static final String PATTERN_PIXELS_KEY = "gpomRunePatternPixels";
     private static final String PATTERN_OCCUPIED_KEY = "gpomRunePatternOccupied";
     private static final String PATTERN_DISCONNECTED_EDGES_KEY = "gpomRunePatternDisconnectedEdges";
@@ -62,8 +64,9 @@ public final class RandomThingsRuneCompat {
     private static final int[] OPPOSITE = {SOUTH, WEST, NORTH, EAST};
     private static final EnumFacing[] HORIZONTAL = {EnumFacing.NORTH, EnumFacing.EAST, EnumFacing.SOUTH, EnumFacing.WEST};
     private static final int RENDER_METADATA_MARKER = 1 << 8;
-    private static final float CONNECTION_QUAD_Y = 0.30F / 16.0F;
     private static final float RUNE_QUAD_Y = 0.34F / 16.0F;
+    private static final float CONNECTION_QUAD_Y = RUNE_QUAD_Y;
+    private static final double SELECTION_THICKNESS = 0.0625D;
     private static final long MANUAL_TOGGLE_REPEAT_MS = 800L;
     private static final Map<int[][], RenderConnectionState> RENDER_CONNECTIONS = Collections.synchronizedMap(new WeakHashMap<int[][], RenderConnectionState>());
     private static final Map<String, Long> RECENT_MANUAL_TOGGLES = Collections.synchronizedMap(new HashMap<String, Long>());
@@ -128,6 +131,7 @@ public final class RandomThingsRuneCompat {
                 || MinecraftMappingCompat.nbtHasKey(compound, PIXELS_KEY)
                 || MinecraftMappingCompat.nbtHasKey(compound, DISCONNECTED_EDGES_KEY)
                 || MinecraftMappingCompat.nbtHasKey(compound, CONNECTION_EDGES_KEY)
+                || MinecraftMappingCompat.nbtHasKey(compound, FACE_KEY)
                 || listSize > 4;
         if (!enabled() && !custom) {
             return false;
@@ -163,13 +167,15 @@ public final class RandomThingsRuneCompat {
         access.gpom$setRuneDataRaw(data);
         access.gpom$setRuneDisconnectedEdges(connections);
         access.gpom$setRuneConnectionMetadata(true);
+        access.gpom$setRuneFace(readFace(compound));
         return true;
     }
 
     public static void writeRuneData(GpomRuneDataAccess access, NBTTagCompound compound, boolean sync) {
         int[][] data = normalizeData(access.gpom$getRuneDataRaw(), 4);
         int[] connections = normalizeSideArray(access.gpom$getRuneDisconnectedEdges(), data.length);
-        boolean custom = access.gpom$hasRuneConnectionMetadata() || data.length != 4 || hasAnySide(connections);
+        EnumFacing face = runeFace(access);
+        boolean custom = access.gpom$hasRuneConnectionMetadata() || data.length != 4 || hasAnySide(connections) || face != EnumFacing.UP;
         if (!custom) {
             return;
         }
@@ -179,11 +185,18 @@ public final class RandomThingsRuneCompat {
                 "func_74768_a", "setInteger");
         clearLegacyRuneStorage(compound);
         writeCompactPixels(compound, PIXELS_KEY, OCCUPIED_KEY, data, connections);
+        if (face != EnumFacing.UP) {
+            MinecraftMappingCompat.invoke(compound, "nbt.setString",
+                    new Class<?>[]{String.class, String.class}, new Object[]{FACE_KEY, face.name()},
+                    "func_74778_a", "setString");
+        } else {
+            MinecraftMappingCompat.invoke(compound, "nbt.removeTag", new Class<?>[]{String.class}, new Object[]{FACE_KEY}, "func_82580_o", "removeTag");
+        }
     }
 
     public static EnumActionResult onRuneDustUse(EntityPlayer player, World world, BlockPos pos, EnumHand hand, EnumFacing facing,
                                                 float hitX, float hitY, float hitZ) {
-        if (!shouldUseCustomPlacement() || facing != EnumFacing.UP) {
+        if (!shouldUseCustomPlacement() || facing == null) {
             return null;
         }
 
@@ -210,28 +223,29 @@ public final class RandomThingsRuneCompat {
             return null;
         }
         TileEntity runeTile = null;
-        BlockPos runePos = pos;
+        BlockPos runePos = MinecraftMappingCompat.blockPosOffset(pos, facing);
         boolean created = false;
         if (isRuneBase(MinecraftMappingCompat.blockStateBlock(targetState))) {
+            runePos = pos;
             runeTile = MinecraftMappingCompat.worldTileEntity(world, pos);
-        } else if (MinecraftMappingCompat.blockStateSideSolid(targetState, world, pos, EnumFacing.UP)) {
-            BlockPos replacePos = MinecraftMappingCompat.blockPosOffset(pos, facing);
-            IBlockState replaceState = MinecraftMappingCompat.worldBlockState(world, replacePos);
+        } else if (MinecraftMappingCompat.blockStateSideSolid(targetState, world, pos, facing)) {
+            IBlockState replaceState = MinecraftMappingCompat.worldBlockState(world, runePos);
             Block block = MinecraftMappingCompat.blockStateBlock(replaceState);
-            if (block != null && (MinecraftMappingCompat.blockIsAir(block, replaceState, world, replacePos)
-                    || MinecraftMappingCompat.blockIsReplaceable(block, world, replacePos))) {
+            if (block != null && isRuneBase(block)) {
+                runeTile = MinecraftMappingCompat.worldTileEntity(world, runePos);
+            } else if (block != null && (MinecraftMappingCompat.blockIsAir(block, replaceState, world, runePos)
+                    || MinecraftMappingCompat.blockIsReplaceable(block, world, runePos))) {
                 Block runeBlock = runeBaseBlock();
                 if (runeBlock == null) {
                     return null;
                 }
                 if (!MinecraftMappingCompat.worldIsRemote(world)) {
                     IBlockState runeState = MinecraftMappingCompat.blockDefaultState(runeBlock);
-                    if (runeState == null || !MinecraftMappingCompat.worldSetBlockState(world, replacePos, runeState)) {
+                    if (runeState == null || !MinecraftMappingCompat.worldSetBlockState(world, runePos, runeState)) {
                         return EnumActionResult.FAIL;
                     }
                 }
-                runePos = replacePos;
-                runeTile = MinecraftMappingCompat.worldTileEntity(world, replacePos);
+                runeTile = MinecraftMappingCompat.worldTileEntity(world, runePos);
                 created = true;
             }
         }
@@ -250,8 +264,9 @@ public final class RandomThingsRuneCompat {
         access.gpom$setRuneDataRaw(data);
         access.gpom$setRuneDisconnectedEdges(connections);
         access.gpom$setRuneConnectionMetadata(true);
+        access.gpom$setRuneFace(facing);
 
-        CellHit cell = cellFromHit(data.length, hitX, hitZ);
+        CellHit cell = cellFromHit(data.length, facing, hitX, hitY, hitZ);
         int current = data[cell.x][cell.z];
         if (current == rune) {
             return EnumActionResult.FAIL;
@@ -293,7 +308,11 @@ public final class RandomThingsRuneCompat {
 
         Vec3d hit = MinecraftMappingCompat.vecSubtract(MinecraftMappingCompat.rayTraceHitVec(result),
                 new Vec3d(MinecraftMappingCompat.blockPosX(pos), MinecraftMappingCompat.blockPosY(pos), MinecraftMappingCompat.blockPosZ(pos)));
-        CellHit cell = cellFromHit(data.length, (float) MinecraftMappingCompat.vecX(hit), (float) MinecraftMappingCompat.vecZ(hit));
+        EnumFacing face = runeFace(access);
+        CellHit cell = cellFromHit(data.length, face,
+                (float) MinecraftMappingCompat.vecX(hit),
+                (float) MinecraftMappingCompat.vecY(hit),
+                (float) MinecraftMappingCompat.vecZ(hit));
         int rune = data[cell.x][cell.z];
         if (rune == -1) {
             return Boolean.FALSE;
@@ -383,15 +402,16 @@ public final class RandomThingsRuneCompat {
         int[] connections = normalizeSideArray(access.gpom$getRuneDisconnectedEdges(), data.length);
         access.gpom$setRuneDataRaw(data);
         access.gpom$setRuneDisconnectedEdges(connections);
-        boolean[] edgeConnections = buildEdgeConnections(world, pos, data, connections);
-        int[][] renderData = encodeRenderData(data, connections, access.gpom$hasRuneConnectionMetadata() || data.length != 4 || hasAnySide(connections));
-        RENDER_CONNECTIONS.put(renderData, new RenderConnectionState(connections, data.length));
+        EnumFacing face = runeFace(access);
+        boolean[] edgeConnections = buildEdgeConnections(world, pos, data, connections, face);
+        int[][] renderData = renderColorData(data);
+        RENDER_CONNECTIONS.put(renderData, new RenderConnectionState(connections, data.length, face));
         return extended.withProperty(runeDataProperty, renderData).withProperty(connectionDataProperty, edgeConnections);
     }
 
     public static List<BakedQuad> renderRuneModel(IBlockState state, EnumFacing side, long rand,
                                                   TextureAtlasSprite runeBaseSprite, TextureAtlasSprite runeBaseFlatSprite) {
-        if (side != EnumFacing.UP || !(state instanceof IExtendedBlockState)) {
+        if (!(state instanceof IExtendedBlockState)) {
             return null;
         }
         int[][] data = findRuneData((IExtendedBlockState) state);
@@ -399,10 +419,6 @@ public final class RandomThingsRuneCompat {
         if (data == null || data.length == 0 || data[0].length == 0 || edgeConnections == null) {
             return Collections.emptyList();
         }
-        if (!shouldUseCustomRendering(data)) {
-            return null;
-        }
-
         TextureAtlasSprite sprite = flatRunesEnabled() ? runeBaseFlatSprite : runeBaseSprite;
         if (sprite == null) {
             return Collections.emptyList();
@@ -410,6 +426,14 @@ public final class RandomThingsRuneCompat {
 
         int size = data.length;
         RenderConnectionState renderState = RENDER_CONNECTIONS.get(data);
+        EnumFacing renderFace = renderState == null ? EnumFacing.UP : renderState.face;
+        boolean customRender = shouldUseCustomRendering(data) || renderFace != EnumFacing.UP;
+        if (!customRender) {
+            return null;
+        }
+        if (side != renderFace) {
+            return Collections.emptyList();
+        }
         int[] disconnected = renderState != null && renderState.size == size
                 ? renderState.disconnectedEdges
                 : connectionsFromRenderData(data);
@@ -426,42 +450,38 @@ public final class RandomThingsRuneCompat {
                 }
                 float textureU = random.nextInt(8) * 2.0F;
                 float textureV = random.nextInt(8) * 2.0F;
-                RandomThingsRuneSettings.RuneSettings setting = settingCache[rune];
-                if (setting == null) {
-                    setting = RandomThingsRuneSettings.client(rune);
-                    settingCache[rune] = setting;
-                }
-                float scale = setting.visualScale / 100.0F;
-                float padding = setting.visualPadding / 100.0F;
-                float piece = cell * Math.max(0.08F, Math.min(0.8F, scale));
-                float inset = Math.max(0.0F, Math.min(cell * 0.46F, cell * padding));
-                piece = Math.min(piece, cell - inset * 2.0F);
-                if (piece <= 0.0F) {
-                    piece = cell * 0.5F;
-                    inset = (cell - piece) * 0.5F;
-                }
-                float x1 = x * cell + inset;
-                float z1 = z * cell + inset;
-                float x2 = x1 + piece;
-                float z2 = z1 + piece;
-                addQuad(quads, createQuad(x1, x2, z1, z2, RUNE_QUAD_Y, rune, sprite, textureU, textureV, 2.0F, 2.0F));
-                float connectionHalf = piece * 0.5F;
-                float cx = (x1 + x2) * 0.5F;
-                float cz = (z1 + z2) * 0.5F;
+                PixelBounds pixel = pixelBounds(x, z, cell, runeSetting(settingCache, rune));
+                addQuad(quads, createQuad(pixel.x1, pixel.x2, pixel.z1, pixel.z2, RUNE_QUAD_Y, renderFace, rune, sprite, textureU, textureV, 2.0F, 2.0F));
 
                 if (z == 0 && connects(data, disconnected, x, z, NORTH, edgeConnections)) {
-                    addConnectionQuads(quads, random, cx - connectionHalf, cx + connectionHalf, z * cell - cell * 0.5F, z1, rune, rune, sprite, 1.0F, 2.0F);
+                    addConnectionQuads(quads, random, pixel.cx - pixel.connectionHalf, pixel.cx + pixel.connectionHalf,
+                            z * cell - cell * 0.5F, pixel.z1, renderFace, rune, rune, sprite, 1.0F, 2.0F);
                 }
                 if (connects(data, disconnected, x, z, EAST, edgeConnections)) {
                     int otherRune = x + 1 < size ? runeColor(data[x + 1][z]) : rune;
-                    addConnectionQuads(quads, random, x2, (x + 1) * cell + cell * 0.5F, cz - connectionHalf, cz + connectionHalf, rune, otherRune, sprite, 2.0F, 1.0F);
+                    float endX = (x + 1) * cell + cell * 0.5F;
+                    if (x + 1 < size && otherRune != -1) {
+                        endX = pixelBounds(x + 1, z, cell, runeSetting(settingCache, otherRune)).x1;
+                    }
+                    if (endX > pixel.x2) {
+                        addConnectionQuads(quads, random, pixel.x2, endX, pixel.cz - pixel.connectionHalf,
+                                pixel.cz + pixel.connectionHalf, renderFace, rune, otherRune, sprite, 2.0F, 1.0F);
+                    }
                 }
                 if (connects(data, disconnected, x, z, SOUTH, edgeConnections)) {
                     int otherRune = z + 1 < size ? runeColor(data[x][z + 1]) : rune;
-                    addConnectionQuads(quads, random, cx - connectionHalf, cx + connectionHalf, z2, (z + 1) * cell + cell * 0.5F, rune, otherRune, sprite, 1.0F, 2.0F);
+                    float endZ = (z + 1) * cell + cell * 0.5F;
+                    if (z + 1 < size && otherRune != -1) {
+                        endZ = pixelBounds(x, z + 1, cell, runeSetting(settingCache, otherRune)).z1;
+                    }
+                    if (endZ > pixel.z2) {
+                        addConnectionQuads(quads, random, pixel.cx - pixel.connectionHalf, pixel.cx + pixel.connectionHalf,
+                                pixel.z2, endZ, renderFace, rune, otherRune, sprite, 1.0F, 2.0F);
+                    }
                 }
                 if (x == 0 && connects(data, disconnected, x, z, WEST, edgeConnections)) {
-                    addConnectionQuads(quads, random, x * cell - cell * 0.5F, x1, cz - connectionHalf, cz + connectionHalf, rune, rune, sprite, 2.0F, 1.0F);
+                    addConnectionQuads(quads, random, x * cell - cell * 0.5F, pixel.x1,
+                            pixel.cz - pixel.connectionHalf, pixel.cz + pixel.connectionHalf, renderFace, rune, rune, sprite, 2.0F, 1.0F);
                 }
             }
         }
@@ -529,9 +549,12 @@ public final class RandomThingsRuneCompat {
             return null;
         }
         IBlockState state = MinecraftMappingCompat.worldBlockState(world, pos);
-        BlockPos runePos = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.UP);
+        if (facing == null) {
+            return EnumActionResult.FAIL;
+        }
+        BlockPos runePos = MinecraftMappingCompat.blockPosOffset(pos, facing);
         if (state == null || !MinecraftMappingCompat.worldIsAirBlock(world, runePos)
-                || !MinecraftMappingCompat.blockStateSideSolid(state, world, pos, EnumFacing.UP)) {
+                || !MinecraftMappingCompat.blockStateSideSolid(state, world, pos, facing)) {
             return EnumActionResult.FAIL;
         }
         PatternData pattern = readPattern(tag);
@@ -575,6 +598,7 @@ public final class RandomThingsRuneCompat {
             if (access != null) {
                 access.gpom$setRuneDataRaw(actual);
                 access.gpom$setRuneDisconnectedEdges(normalizeSideArray(pattern.connectionEdges, actual.length));
+                access.gpom$setRuneFace(facing);
                 syncRuneTile((TileEntity) access);
             }
         }
@@ -665,6 +689,114 @@ public final class RandomThingsRuneCompat {
 
     private static GpomRuneDataAccess asAccess(Object tile) {
         return tile instanceof GpomRuneDataAccess ? (GpomRuneDataAccess) tile : null;
+    }
+
+    public static EnumFacing runeFaceAt(IBlockAccess world, BlockPos pos) {
+        return runeFace(asAccess(MinecraftMappingCompat.worldTileEntity(world, pos)));
+    }
+
+    public static AxisAlignedBB boundingBox(IBlockAccess world, BlockPos pos) {
+        return localRuneBox(runeFaceAt(world, pos));
+    }
+
+    public static AxisAlignedBB selectedBoundingBox(World world, BlockPos pos) {
+        AxisAlignedBB local = boundingBox(world, pos);
+        return new AxisAlignedBB(
+                MinecraftMappingCompat.aabbMinX(local) + MinecraftMappingCompat.blockPosX(pos),
+                MinecraftMappingCompat.aabbMinY(local) + MinecraftMappingCompat.blockPosY(pos),
+                MinecraftMappingCompat.aabbMinZ(local) + MinecraftMappingCompat.blockPosZ(pos),
+                MinecraftMappingCompat.aabbMaxX(local) + MinecraftMappingCompat.blockPosX(pos),
+                MinecraftMappingCompat.aabbMaxY(local) + MinecraftMappingCompat.blockPosY(pos),
+                MinecraftMappingCompat.aabbMaxZ(local) + MinecraftMappingCompat.blockPosZ(pos)
+        );
+    }
+
+    public static boolean handleNeighborChange(World world, BlockPos pos) {
+        GpomRuneDataAccess access = asAccess(MinecraftMappingCompat.worldTileEntity(world, pos));
+        if (access == null) {
+            return false;
+        }
+        EnumFacing face = runeFace(access);
+        BlockPos supportPos = MinecraftMappingCompat.blockPosOffset(pos, opposite(face));
+        IBlockState supportState = MinecraftMappingCompat.worldBlockState(world, supportPos);
+        if (supportState == null || !MinecraftMappingCompat.blockStateSideSolid(supportState, world, supportPos, face)) {
+            MinecraftMappingCompat.worldSetBlockToAir(world, pos);
+        }
+        return true;
+    }
+
+    private static AxisAlignedBB localRuneBox(EnumFacing face) {
+        double thickness = SELECTION_THICKNESS;
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        switch (renderFace) {
+            case DOWN:
+                return new AxisAlignedBB(0.0D, 1.0D - thickness, 0.0D, 1.0D, 1.0D, 1.0D);
+            case NORTH:
+                return new AxisAlignedBB(0.0D, 0.0D, 1.0D - thickness, 1.0D, 1.0D, 1.0D);
+            case SOUTH:
+                return new AxisAlignedBB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, thickness);
+            case WEST:
+                return new AxisAlignedBB(1.0D - thickness, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
+            case EAST:
+                return new AxisAlignedBB(0.0D, 0.0D, 0.0D, thickness, 1.0D, 1.0D);
+            case UP:
+            default:
+                return new AxisAlignedBB(0.0D, 0.0D, 0.0D, 1.0D, thickness, 1.0D);
+        }
+    }
+
+    private static EnumFacing readFace(NBTTagCompound compound) {
+        if (compound == null || !MinecraftMappingCompat.nbtHasKey(compound, FACE_KEY)) {
+            return EnumFacing.UP;
+        }
+        try {
+            Object value = MinecraftMappingCompat.invoke(compound, "nbt.getString",
+                    new Class<?>[]{String.class}, new Object[]{FACE_KEY},
+                    "func_74779_i", "getString");
+            return value instanceof String ? EnumFacing.valueOf((String) value) : EnumFacing.UP;
+        } catch (IllegalArgumentException ignored) {
+            return EnumFacing.UP;
+        }
+    }
+
+    private static EnumFacing runeFace(GpomRuneDataAccess access) {
+        return access == null ? EnumFacing.UP : (access.gpom$getRuneFace() == null ? EnumFacing.UP : access.gpom$getRuneFace());
+    }
+
+    private static EnumFacing localEdgeFacing(EnumFacing face, int direction) {
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        if (renderFace == EnumFacing.NORTH || renderFace == EnumFacing.SOUTH) {
+            return direction == NORTH ? EnumFacing.UP
+                    : direction == EAST ? EnumFacing.EAST
+                    : direction == SOUTH ? EnumFacing.DOWN
+                    : EnumFacing.WEST;
+        }
+        if (renderFace == EnumFacing.EAST || renderFace == EnumFacing.WEST) {
+            return direction == NORTH ? EnumFacing.UP
+                    : direction == EAST ? EnumFacing.SOUTH
+                    : direction == SOUTH ? EnumFacing.DOWN
+                    : EnumFacing.NORTH;
+        }
+        return HORIZONTAL[direction];
+    }
+
+    private static EnumFacing opposite(EnumFacing face) {
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        switch (renderFace) {
+            case DOWN:
+                return EnumFacing.UP;
+            case NORTH:
+                return EnumFacing.SOUTH;
+            case SOUTH:
+                return EnumFacing.NORTH;
+            case WEST:
+                return EnumFacing.EAST;
+            case EAST:
+                return EnumFacing.WEST;
+            case UP:
+            default:
+                return EnumFacing.DOWN;
+        }
     }
 
     private static int clampGridSize(int size) {
@@ -924,8 +1056,43 @@ public final class RandomThingsRuneCompat {
         return new CellHit(x, z, localX, localZ);
     }
 
+    public static CellHit cellFromHit(int size, EnumFacing face, float hitX, float hitY, float hitZ) {
+        float u;
+        float v;
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        switch (renderFace) {
+            case NORTH:
+            case SOUTH:
+                u = hitX;
+                v = 1.0F - hitY;
+                break;
+            case EAST:
+            case WEST:
+                u = hitZ;
+                v = 1.0F - hitY;
+                break;
+            case DOWN:
+            case UP:
+            default:
+                u = hitX;
+                v = hitZ;
+                break;
+        }
+        return cellFromHit(size, u, v);
+    }
+
+    public static int[] cellCoordinatesFromHit(int size, EnumFacing face, float hitX, float hitY, float hitZ) {
+        CellHit cell = cellFromHit(size, face, hitX, hitY, hitZ);
+        return new int[]{cell.x, cell.z};
+    }
+
     public static EnumActionResult toggleConnectionWithEmptyHand(EntityPlayer player, World world, BlockPos pos, EnumHand hand,
                                                                  float hitX, float hitZ) {
+        return toggleConnectionWithEmptyHand(player, world, pos, hand, EnumFacing.UP, hitX, 1.0F, hitZ);
+    }
+
+    public static EnumActionResult toggleConnectionWithEmptyHand(EntityPlayer player, World world, BlockPos pos, EnumHand hand,
+                                                                 EnumFacing facing, float hitX, float hitY, float hitZ) {
         if (!enabled() || player == null || pos == null) {
             return null;
         }
@@ -934,14 +1101,15 @@ public final class RandomThingsRuneCompat {
             return null;
         }
         BlockPos runePos = pos;
+        EnumFacing face = facing == null ? EnumFacing.UP : facing;
         Block blockAtPos = MinecraftMappingCompat.blockStateBlock(MinecraftMappingCompat.worldBlockState(world, runePos));
         if (!isRuneBase(blockAtPos)) {
-            BlockPos above = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.UP);
-            Block blockAbove = above == null ? null : MinecraftMappingCompat.blockStateBlock(MinecraftMappingCompat.worldBlockState(world, above));
-            if (above == null || !isRuneBase(blockAbove)) {
+            BlockPos attached = MinecraftMappingCompat.blockPosOffset(pos, face);
+            Block blockAttached = attached == null ? null : MinecraftMappingCompat.blockStateBlock(MinecraftMappingCompat.worldBlockState(world, attached));
+            if (attached == null || !isRuneBase(blockAttached)) {
                 return null;
             }
-            runePos = above;
+            runePos = attached;
         }
         if (MinecraftMappingCompat.worldIsRemote(world)) {
             return EnumActionResult.SUCCESS;
@@ -955,7 +1123,8 @@ public final class RandomThingsRuneCompat {
         int[] connections = normalizeSideArray(access.gpom$getRuneDisconnectedEdges(), data.length);
         access.gpom$setRuneDataRaw(data);
         access.gpom$setRuneDisconnectedEdges(connections);
-        CellHit cell = cellFromHit(data.length, hitX, hitZ);
+        face = isRuneBase(blockAtPos) ? runeFace(access) : face;
+        CellHit cell = cellFromHit(data.length, face, hitX, hitY, hitZ);
         boolean toggled = toggleNearestConnection(player, world, runePos, data, connections, cell, tile);
         return toggled ? EnumActionResult.SUCCESS : EnumActionResult.FAIL;
     }
@@ -968,30 +1137,38 @@ public final class RandomThingsRuneCompat {
         }
         int[] order = edgeOrder(cell.localX, cell.localZ);
         for (int direction : order) {
-            Neighbor neighbor = neighbor(world, pos, data.length, cell.x, cell.z, direction);
-            if (neighbor == null || neighbor.data[neighbor.x][neighbor.z] == -1) {
+            Object[] neighbor = neighbor(world, pos, data.length, cell.x, cell.z, direction, runeFace(asAccess(tile)));
+            if (neighbor == null) {
+                continue;
+            }
+            TileEntity neighborTile = (TileEntity) neighbor[0];
+            int[][] neighborData = (int[][]) neighbor[1];
+            int[] neighborDisconnected = (int[]) neighbor[2];
+            int neighborX = ((Integer) neighbor[3]).intValue();
+            int neighborZ = ((Integer) neighbor[4]).intValue();
+            if (neighborData[neighborX][neighborZ] == -1) {
                 continue;
             }
             boolean localBefore = sideConnected(connections, data.length, cell.x, cell.z, direction);
-            boolean neighborBefore = sideConnected(neighbor.disconnected, neighbor.data.length, neighbor.x, neighbor.z, OPPOSITE[direction]);
+            boolean neighborBefore = sideConnected(neighborDisconnected, neighborData.length, neighborX, neighborZ, OPPOSITE[direction]);
             boolean currentlyConnected = localBefore && neighborBefore;
             boolean connect = !currentlyConnected;
-            if (isRepeatedManualToggle(player, pos, cell.x, cell.z, MinecraftMappingCompat.tileEntityPos(neighbor.tile), neighbor.x, neighbor.z)) {
+            if (isRepeatedManualToggle(player, pos, cell.x, cell.z, MinecraftMappingCompat.tileEntityPos(neighborTile), neighborX, neighborZ)) {
                 return true;
             }
             setSide(connections, data.length, cell.x, cell.z, direction, connect);
-            setSide(neighbor.disconnected, neighbor.data.length, neighbor.x, neighbor.z, OPPOSITE[direction], connect);
+            setSide(neighborDisconnected, neighborData.length, neighborX, neighborZ, OPPOSITE[direction], connect);
             GpomRuneDataAccess localAccess = asAccess(tile);
             if (localAccess != null) {
                 localAccess.gpom$setRuneConnectionMetadata(true);
             }
-            GpomRuneDataAccess neighborAccess = asAccess(neighbor.tile);
+            GpomRuneDataAccess neighborAccess = asAccess(neighborTile);
             if (neighborAccess != null) {
                 neighborAccess.gpom$setRuneConnectionMetadata(true);
             }
             syncRuneTile(tile);
-            if (neighbor.tile != tile) {
-                syncRuneTile(neighbor.tile);
+            if (neighborTile != tile) {
+                syncRuneTile(neighborTile);
             }
             return true;
         }
@@ -1052,38 +1229,41 @@ public final class RandomThingsRuneCompat {
         return directions;
     }
 
-    private static Neighbor neighbor(World world, BlockPos pos, int size, int x, int z, int direction) {
+    private static Object[] neighbor(World world, BlockPos pos, int size, int x, int z, int direction, EnumFacing face) {
         int nx = x;
         int nz = z;
         BlockPos npos = pos;
         if (direction == NORTH) {
             nz--;
             if (nz < 0) {
-                npos = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.NORTH);
+                npos = MinecraftMappingCompat.blockPosOffset(pos, localEdgeFacing(face, NORTH));
                 nz = size - 1;
             }
         } else if (direction == EAST) {
             nx++;
             if (nx >= size) {
-                npos = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.EAST);
+                npos = MinecraftMappingCompat.blockPosOffset(pos, localEdgeFacing(face, EAST));
                 nx = 0;
             }
         } else if (direction == SOUTH) {
             nz++;
             if (nz >= size) {
-                npos = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.SOUTH);
+                npos = MinecraftMappingCompat.blockPosOffset(pos, localEdgeFacing(face, SOUTH));
                 nz = 0;
             }
         } else if (direction == WEST) {
             nx--;
             if (nx < 0) {
-                npos = MinecraftMappingCompat.blockPosOffset(pos, EnumFacing.WEST);
+                npos = MinecraftMappingCompat.blockPosOffset(pos, localEdgeFacing(face, WEST));
                 nx = size - 1;
             }
         }
         TileEntity neighborTile = MinecraftMappingCompat.worldTileEntity(world, npos);
         GpomRuneDataAccess access = asAccess(neighborTile);
         if (access == null) {
+            return null;
+        }
+        if (runeFace(access) != (face == null ? EnumFacing.UP : face)) {
             return null;
         }
         int[][] neighborData = normalizeData(access.gpom$getRuneDataRaw(), size);
@@ -1093,7 +1273,7 @@ public final class RandomThingsRuneCompat {
         if (nx >= neighborData.length || nz >= neighborData.length) {
             return null;
         }
-        return new Neighbor(neighborTile, neighborData, neighborDisconnected, nx, nz);
+        return new Object[]{neighborTile, neighborData, neighborDisconnected, Integer.valueOf(nx), Integer.valueOf(nz)};
     }
 
     private static void setSide(int[] sides, int size, int x, int z, int direction, boolean connected) {
@@ -1128,6 +1308,17 @@ public final class RandomThingsRuneCompat {
             }
         }
         return encoded;
+    }
+
+    private static int[][] renderColorData(int[][] data) {
+        int size = data.length;
+        int[][] colors = emptyGrid(size);
+        for (int x = 0; x < size; x++) {
+            for (int z = 0; z < size; z++) {
+                colors[x][z] = runeColor(data[x][z]);
+            }
+        }
+        return colors;
     }
 
     private static int[] connectionsFromRenderData(int[][] data) {
@@ -1209,13 +1400,17 @@ public final class RandomThingsRuneCompat {
         MinecraftMappingCompat.worldSpawnEntity(world, entity);
     }
 
-    private static boolean[] buildEdgeConnections(IBlockAccess world, BlockPos pos, int[][] data, int[] sides) {
+    private static boolean[] buildEdgeConnections(IBlockAccess world, BlockPos pos, int[][] data, int[] sides, EnumFacing face) {
         boolean[] edgeConnections = new boolean[data.length * 4];
         int size = data.length;
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
         for (int direction = 0; direction < HORIZONTAL.length; direction++) {
-            BlockPos neighborPos = MinecraftMappingCompat.blockPosOffset(pos, HORIZONTAL[direction]);
+            BlockPos neighborPos = MinecraftMappingCompat.blockPosOffset(pos, localEdgeFacing(renderFace, direction));
             GpomRuneDataAccess access = asAccess(MinecraftMappingCompat.worldTileEntity(world, neighborPos));
             if (access == null) {
+                continue;
+            }
+            if (runeFace(access) != renderFace) {
                 continue;
             }
             int[][] other = normalizeData(access.gpom$getRuneDataRaw(), size);
@@ -1284,29 +1479,30 @@ public final class RandomThingsRuneCompat {
     }
 
     private static void addConnectionQuads(List<BakedQuad> quads, Random random, float x1, float x2, float z1, float z2,
+                                           EnumFacing face,
                                            int tintIndex, int otherTintIndex, TextureAtlasSprite sprite, float uSize, float vSize) {
         if (otherTintIndex < 0 || otherTintIndex == tintIndex) {
-            addQuad(quads, createRandomizedConnectionQuad(random, x1, x2, z1, z2, tintIndex, sprite, uSize, vSize));
+            addQuad(quads, createRandomizedConnectionQuad(random, x1, x2, z1, z2, face, tintIndex, sprite, uSize, vSize));
             return;
         }
         float u = random.nextInt(8) * 2.0F;
         float v = random.nextInt(8) * 2.0F;
         if (Math.abs(x2 - x1) >= Math.abs(z2 - z1)) {
             float middle = (x1 + x2) * 0.5F;
-            addQuad(quads, createQuad(x1, middle, z1, z2, CONNECTION_QUAD_Y, tintIndex, sprite, u, v, uSize * 0.5F, vSize));
-            addQuad(quads, createQuad(middle, x2, z1, z2, CONNECTION_QUAD_Y, otherTintIndex, sprite, u + uSize * 0.5F, v, uSize * 0.5F, vSize));
+            addQuad(quads, createQuad(x1, middle, z1, z2, CONNECTION_QUAD_Y, face, tintIndex, sprite, u, v, uSize * 0.5F, vSize));
+            addQuad(quads, createQuad(middle, x2, z1, z2, CONNECTION_QUAD_Y, face, otherTintIndex, sprite, u + uSize * 0.5F, v, uSize * 0.5F, vSize));
         } else {
             float middle = (z1 + z2) * 0.5F;
-            addQuad(quads, createQuad(x1, x2, z1, middle, CONNECTION_QUAD_Y, tintIndex, sprite, u, v, uSize, vSize * 0.5F));
-            addQuad(quads, createQuad(x1, x2, middle, z2, CONNECTION_QUAD_Y, otherTintIndex, sprite, u, v + vSize * 0.5F, uSize, vSize * 0.5F));
+            addQuad(quads, createQuad(x1, x2, z1, middle, CONNECTION_QUAD_Y, face, tintIndex, sprite, u, v, uSize, vSize * 0.5F));
+            addQuad(quads, createQuad(x1, x2, middle, z2, CONNECTION_QUAD_Y, face, otherTintIndex, sprite, u, v + vSize * 0.5F, uSize, vSize * 0.5F));
         }
     }
 
     private static BakedQuad createRandomizedConnectionQuad(Random random, float x1, float x2, float z1, float z2,
-                                                            int tintIndex, TextureAtlasSprite sprite, float uSize, float vSize) {
+                                                            EnumFacing face, int tintIndex, TextureAtlasSprite sprite, float uSize, float vSize) {
         float u = random.nextInt(8) * 2.0F;
         float v = random.nextInt(8) * 2.0F;
-        return createQuad(x1, x2, z1, z2, CONNECTION_QUAD_Y, tintIndex, sprite, u, v, uSize, vSize);
+        return createQuad(x1, x2, z1, z2, CONNECTION_QUAD_Y, face, tintIndex, sprite, u, v, uSize, vSize);
     }
 
     private static void addQuad(List<BakedQuad> quads, BakedQuad quad) {
@@ -1315,7 +1511,7 @@ public final class RandomThingsRuneCompat {
         }
     }
 
-    private static BakedQuad createQuad(float x1, float x2, float z1, float z2, float y, int tintIndex,
+    private static BakedQuad createQuad(float x1, float x2, float z1, float z2, float y, EnumFacing face, int tintIndex,
                                         TextureAtlasSprite sprite, float u, float v, float uSize, float vSize) {
         VertexFormat format = itemVertexFormat();
         if (format == null) {
@@ -1325,12 +1521,15 @@ public final class RandomThingsRuneCompat {
         float v1 = v;
         float u2 = u + uSize;
         float v2 = v + vSize;
-        return new BakedQuad(Ints.concat(
-                vertexToInts(x1, y, z1, -1, sprite, u1, v1),
-                vertexToInts(x1, y, z2, -1, sprite, u1, v2),
-                vertexToInts(x2, y, z2, -1, sprite, u2, v2),
-                vertexToInts(x2, y, z1, -1, sprite, u2, v1)
-        ), tintIndex, EnumFacing.UP, sprite, false, format);
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        int normal = normal(renderFace);
+        int[] a = vertexToInts(x1, y, z1, normal, sprite, u1, v1, renderFace);
+        int[] b = vertexToInts(x1, y, z2, normal, sprite, u1, v2, renderFace);
+        int[] c = vertexToInts(x2, y, z2, normal, sprite, u2, v2, renderFace);
+        int[] d = vertexToInts(x2, y, z1, normal, sprite, u2, v1, renderFace);
+        boolean reverse = renderFace == EnumFacing.DOWN || renderFace == EnumFacing.NORTH || renderFace == EnumFacing.EAST;
+        return new BakedQuad(reverse ? Ints.concat(a, d, c, b) : Ints.concat(a, b, c, d),
+                tintIndex, renderFace, sprite, false, format);
     }
 
     private static VertexFormat itemVertexFormat() {
@@ -1363,17 +1562,55 @@ public final class RandomThingsRuneCompat {
         return null;
     }
 
-    private static int[] vertexToInts(float x, float y, float z, int color, TextureAtlasSprite sprite, float u, float v) {
-        int normal = 127 << 8;
+    private static int[] vertexToInts(float x, float y, float z, int normal, TextureAtlasSprite sprite, float u, float v, EnumFacing face) {
+        float[] pos = faceVertex(x, y, z, face);
         return new int[]{
-                Float.floatToRawIntBits(x),
-                Float.floatToRawIntBits(y),
-                Float.floatToRawIntBits(z),
-                color,
+                Float.floatToRawIntBits(pos[0]),
+                Float.floatToRawIntBits(pos[1]),
+                Float.floatToRawIntBits(pos[2]),
+                -1,
                 Float.floatToRawIntBits(MinecraftMappingCompat.textureInterpolatedU(sprite, u)),
                 Float.floatToRawIntBits(MinecraftMappingCompat.textureInterpolatedV(sprite, v)),
                 normal
         };
+    }
+
+    private static float[] faceVertex(float u, float depth, float v, EnumFacing face) {
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        switch (renderFace) {
+            case DOWN:
+                return new float[]{u, 1.0F - depth, v};
+            case NORTH:
+                return new float[]{u, 1.0F - v, 1.0F - depth};
+            case SOUTH:
+                return new float[]{u, 1.0F - v, depth};
+            case WEST:
+                return new float[]{1.0F - depth, 1.0F - v, u};
+            case EAST:
+                return new float[]{depth, 1.0F - v, u};
+            case UP:
+            default:
+                return new float[]{u, depth, v};
+        }
+    }
+
+    private static int normal(EnumFacing face) {
+        EnumFacing renderFace = face == null ? EnumFacing.UP : face;
+        switch (renderFace) {
+            case DOWN:
+                return 129 << 8;
+            case NORTH:
+                return 129 << 16;
+            case SOUTH:
+                return 127 << 16;
+            case WEST:
+                return 129;
+            case EAST:
+                return 127;
+            case UP:
+            default:
+                return 127 << 8;
+        }
     }
 
     private static boolean flatRunesEnabled() {
@@ -1541,6 +1778,51 @@ public final class RandomThingsRuneCompat {
         }
     }
 
+    private static RandomThingsRuneSettings.RuneSettings runeSetting(RandomThingsRuneSettings.RuneSettings[] cache, int rune) {
+        int index = RandomThingsRuneSettings.clampRune(rune);
+        RandomThingsRuneSettings.RuneSettings setting = cache[index];
+        if (setting == null) {
+            setting = RandomThingsRuneSettings.client(index);
+            cache[index] = setting;
+        }
+        return setting;
+    }
+
+    private static PixelBounds pixelBounds(int x, int z, float cell, RandomThingsRuneSettings.RuneSettings setting) {
+        float scale = setting.visualScale / 100.0F;
+        float padding = setting.visualPadding / 100.0F;
+        float piece = cell * Math.max(0.08F, Math.min(0.8F, scale));
+        float inset = Math.max(0.0F, Math.min(cell * 0.46F, cell * padding));
+        piece = Math.min(piece, cell - inset * 2.0F);
+        if (piece <= 0.0F) {
+            piece = cell * 0.5F;
+            inset = (cell - piece) * 0.5F;
+        }
+        float x1 = x * cell + inset;
+        float z1 = z * cell + inset;
+        return new PixelBounds(x1, z1, x1 + piece, z1 + piece, piece * 0.5F);
+    }
+
+    private static final class PixelBounds {
+        final float x1;
+        final float z1;
+        final float x2;
+        final float z2;
+        final float cx;
+        final float cz;
+        final float connectionHalf;
+
+        PixelBounds(float x1, float z1, float x2, float z2, float connectionHalf) {
+            this.x1 = x1;
+            this.z1 = z1;
+            this.x2 = x2;
+            this.z2 = z2;
+            this.cx = (x1 + x2) * 0.5F;
+            this.cz = (z1 + z2) * 0.5F;
+            this.connectionHalf = connectionHalf;
+        }
+    }
+
     private static final class CellHit {
         final int x;
         final int z;
@@ -1552,22 +1834,6 @@ public final class RandomThingsRuneCompat {
             this.z = z;
             this.localX = localX;
             this.localZ = localZ;
-        }
-    }
-
-    private static final class Neighbor {
-        final TileEntity tile;
-        final int[][] data;
-        final int[] disconnected;
-        final int x;
-        final int z;
-
-        Neighbor(TileEntity tile, int[][] data, int[] disconnected, int x, int z) {
-            this.tile = tile;
-            this.data = data;
-            this.disconnected = disconnected;
-            this.x = x;
-            this.z = z;
         }
     }
 
@@ -1584,10 +1850,12 @@ public final class RandomThingsRuneCompat {
     private static final class RenderConnectionState {
         final int[] disconnectedEdges;
         final int size;
+        final EnumFacing face;
 
-        RenderConnectionState(int[] disconnectedEdges, int size) {
+        RenderConnectionState(int[] disconnectedEdges, int size, EnumFacing face) {
             this.disconnectedEdges = disconnectedEdges.clone();
             this.size = size;
+            this.face = face == null ? EnumFacing.UP : face;
         }
     }
 }

@@ -20,7 +20,7 @@ public final class ArchitectureCraftMaterialCompat {
             return false;
         }
 
-        ResourceLocation registryName = block.getRegistryName();
+        ResourceLocation registryName = MinecraftMappingCompat.blockRegistryName(block);
         String name = registryName == null ? "" : registryName.toString().toLowerCase(Locale.ROOT);
         Object glassValue = MinecraftMappingCompat.staticFieldValue(Blocks.class, "blocks.glass", "field_150359_w", "GLASS");
         Object glassPaneValue = MinecraftMappingCompat.staticFieldValue(Blocks.class, "blocks.glassPane", "field_150410_aZ", "GLASS_PANE");
@@ -33,11 +33,11 @@ public final class ArchitectureCraftMaterialCompat {
             return true;
         }
 
-        IBlockState defaultState = block.getDefaultState();
-        if (defaultState.isOpaqueCube() && !block.hasTileEntity()) {
+        IBlockState defaultState = MinecraftMappingCompat.blockDefaultState(block);
+        if (MinecraftMappingCompat.blockStateIsOpaqueCube(defaultState) && !MinecraftMappingCompat.blockHasTileEntity(block)) {
             return true;
         }
 
-        return !block.hasTileEntity() && GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialAllowlist().contains(name);
+        return !MinecraftMappingCompat.blockHasTileEntity(block) && GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialAllowlist().contains(name);
     }
 }

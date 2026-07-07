@@ -36,6 +36,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             "net/minecraft/client/Minecraft.class",
             "net/minecraft/server/integrated/IntegratedServer$3.class"
     };
+    private static final String[] INTEGRATED_SERVER_SHUTDOWN_OUTER_TARGETS = {
+            "net/minecraft/client/Minecraft.class",
+            "net/minecraft/server/integrated/IntegratedServer.class"
+    };
     private static final String[] AGRICRAFT_CHANNEL_TARGETS = {
             "com/infinityraider/agricraft/blocks/irrigation/AbstractBlockWaterChannel.class",
             "com/infinityraider/agricraft/api/v1/misc/IAgriConnectable.class"
@@ -60,6 +64,9 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     };
     private static final String[] RANDOM_THINGS_RUNE_CLIENT_TARGETS = {
             "lumien/randomthings/client/models/blocks/ModelRune.class"
+    };
+    private static final String[] ARCHITECTURECRAFT_FRAMED_MATERIAL_TARGETS = {
+            "com/elytradev/architecture/common/tile/TileShape.class"
     };
     @Override
     public void onLoad(String mixinPackage) {
@@ -137,6 +144,18 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             return present;
         }
+        if (mixinClassName.equals("com.l.gpom.mixin.client.MixinIntegratedServerShutdownNullPlayerTaskGuard")) {
+            if (GpomSide.isDedicatedServerLaunch()) {
+                logSideSkip(mixinClassName, "integrated-client-only mixin on dedicated server");
+                return false;
+            }
+            boolean present = allResourcesPresent(INTEGRATED_SERVER_SHUTDOWN_OUTER_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM IntegratedServer Cleanup] mixin={} targetsPresent={}",
+                        mixinClassName, present);
+            }
+            return present;
+        }
         if (mixinClassName.equals("com.l.gpom.mixin.agricraft.MixinWorldAgriCraftChannelBulkPlacement")) {
             boolean enabled = GpomEarlyConfig.agriCraftRefreshChannelsAfterBulkPlacementEnabled();
             boolean present = enabled && allResourcesPresent(AGRICRAFT_CHANNEL_TARGETS);
@@ -190,6 +209,15 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
                         mixinClassName, enabled, present);
             }
             return enabled && present;
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.architecturecraft.MixinTileShapeFramedMaterialData")) {
+            boolean enabled = GpomEarlyConfig.framedMaterialStateStorageEnabled();
+            boolean present = enabled && allResourcesPresent(ARCHITECTURECRAFT_FRAMED_MATERIAL_TARGETS);
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM Framed Material Data] mixin={} enabled={} targetsPresent={}",
+                        mixinClassName, enabled, present);
+            }
+            return present;
         }
         return true;
     }

@@ -31,14 +31,15 @@ public final class RandomThingsRuneNetwork {
         NETWORK.registerMessage(SettingsHandler.class, SettingsMessage.class, 0, Side.SERVER);
     }
 
-    public static void sendClientSettingsToServer() {
+    public static boolean sendClientSettingsToServer() {
         if (!registered || !GpomRemoteEnvironment.serverFeaturesAllowed()) {
-            return;
+            return false;
         }
         RandomThingsRuneSettings.RuneSettings[] settings = RandomThingsRuneSettings.clientSnapshot();
         for (int rune = 0; rune < settings.length; rune++) {
             NETWORK.sendToServer(new SettingsMessage(rune, settings[rune]));
         }
+        return true;
     }
 
     public static void sendClientSettingToServer(int rune, RandomThingsRuneSettings.RuneSettings settings) {

@@ -3,6 +3,7 @@ package com.l.gpom.mixin.randomthings;
 import com.l.gpom.compat.randomthings.GpomRuneDataAccess;
 import com.l.gpom.compat.randomthings.RandomThingsRuneCompat;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.EnumFacing;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -20,6 +21,9 @@ public abstract class MixinTileEntityRuneBase implements GpomRuneDataAccess {
 
     @Unique
     private boolean gpom$runeConnectionMetadata;
+
+    @Unique
+    private EnumFacing gpom$runeFace = EnumFacing.UP;
 
     @Inject(method = "<init>", at = @At("RETURN"), require = 0)
     private void gpom$initializeCustomRuneGrid(CallbackInfo ci) {
@@ -66,5 +70,15 @@ public abstract class MixinTileEntityRuneBase implements GpomRuneDataAccess {
     @Override
     public void gpom$setRuneConnectionMetadata(boolean hasMetadata) {
         this.gpom$runeConnectionMetadata = hasMetadata;
+    }
+
+    @Override
+    public EnumFacing gpom$getRuneFace() {
+        return this.gpom$runeFace == null ? EnumFacing.UP : this.gpom$runeFace;
+    }
+
+    @Override
+    public void gpom$setRuneFace(EnumFacing face) {
+        this.gpom$runeFace = face == null ? EnumFacing.UP : face;
     }
 }
