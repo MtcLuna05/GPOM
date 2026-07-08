@@ -195,12 +195,17 @@ public final class BlockcrafteryCompat {
             BlockPos pos,
             EnumFacing side
     ) {
-        if (sameNonSolidMaterialNeighborCoversSide(hostBlock, hostState, world, pos, side)) {
+        BlockPos hostPos = renderHostPos(hostBlock, pos, side);
+        if (hostPos == null) {
+            return true;
+        }
+        if (sameNonSolidMaterialNeighborCoversSide(hostBlock, hostState, world, hostPos, side)) {
             return false;
         }
         return copiedBlockBoolean(
                 hostBlock,
                 world,
+                hostPos,
                 pos,
                 SHOULD_SIDE_RENDER_METHODS,
                 "shouldSideBeRendered",
@@ -224,6 +229,7 @@ public final class BlockcrafteryCompat {
         return copiedBlockBoolean(
                 hostBlock,
                 world,
+                pos,
                 pos,
                 DOES_SIDE_BLOCK_RENDERING_METHODS,
                 "doesSideBlockRendering",
@@ -278,14 +284,15 @@ public final class BlockcrafteryCompat {
     private static boolean copiedBlockBoolean(
             Block hostBlock,
             IBlockAccess world,
-            BlockPos pos,
+            BlockPos hostPos,
+            BlockPos queryPos,
             ConcurrentMap<Class<?>, Method> cache,
             String mcpName,
             String srgName,
             boolean fallback,
             EnumFacing side
     ) {
-        IBlockState copied = copiedState(hostBlock, world, pos);
+        IBlockState copied = copiedState(hostBlock, world, hostPos);
         Block copiedBlock = blockFromState(copied);
         if (copiedBlock == null) {
             return fallback;
@@ -302,7 +309,7 @@ public final class BlockcrafteryCompat {
                     BlockPos.class,
                     EnumFacing.class
             );
-            Object value = method.invoke(copiedBlock, copied, FramedBlockEffectiveState.wrap(world), pos, side);
+            Object value = method.invoke(copiedBlock, copied, FramedBlockEffectiveState.wrap(world), queryPos, side);
             return value instanceof Boolean ? (Boolean) value : fallback;
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return fallback;
@@ -566,7 +573,19 @@ public final class BlockcrafteryCompat {
     }
 
     private static EnumFacing materialCullSide(Block hostBlock, EnumFacing renderSide) {
-        return isBlockcrafteryShape(hostBlock) ? opposite(renderSide) : renderSide;
+        return renderSide;
+    }
+
+    private static BlockPos renderHostPos(Block hostBlock, BlockPos pos, EnumFacing side) {
+        return isBlockcrafteryShape(hostBlock) ? hostPosForRenderedSide(pos, side) : pos;
+    }
+
+    private static BlockPos hostPosForRenderedSide(BlockPos neighborPos, EnumFacing side) {
+        if (neighborPos == null || side == null) {
+            return null;
+        }
+        BlockPos hostPos = MinecraftMappingCompat.blockPosOffset(neighborPos, opposite(side));
+        return hostPos == neighborPos ? null : hostPos;
     }
 
     private static boolean sameMaterialState(IBlockState first, IBlockState second) {
