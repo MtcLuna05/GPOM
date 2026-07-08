@@ -93,7 +93,14 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
             ClassNode node = read(basicClass);
             int changed = 0;
             int registerQueuePatches = 0;
+            int snapshotMigrationPatches = 0;
             for (MethodNode method : node.methods) {
+                if (isGameDataInjectSnapshot(method)) {
+                    if (patchGameDataInjectSnapshotMigration(method)) {
+                        snapshotMigrationPatches++;
+                    }
+                    continue;
+                }
                 if (isGameDataRegisterImpl(method)) {
                     if (patchGameDataRegisterImplWorkerQueue(method)) {
                         registerQueuePatches++;
@@ -104,13 +111,14 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
                     changed++;
                 }
             }
-            if (changed <= 0 && registerQueuePatches <= 0) {
+            if (changed <= 0 && registerQueuePatches <= 0 && snapshotMigrationPatches <= 0) {
                 return basicClass;
             }
             GPOM.LOGGER.info(
-                    "[FmlParallelLoading] Serialized {} GameData registry mutation method(s) and queue-patched {} register_impl method(s)",
+                    "[FmlParallelLoading] Serialized {} GameData registry mutation method(s), queue-patched {} register_impl method(s), and installed {} registry snapshot migration hook(s)",
                     changed,
-                    registerQueuePatches
+                    registerQueuePatches,
+                    snapshotMigrationPatches
             );
             return write(node);
         } catch (Throwable throwable) {
@@ -350,6 +358,29 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
     private static boolean isGameDataRegisterImpl(MethodNode method) {
         return "register_impl".equals(method.name)
                 && "(Lnet/minecraftforge/registries/IForgeRegistryEntry;)Lnet/minecraftforge/registries/IForgeRegistryEntry;".equals(method.desc);
+    }
+
+    private static boolean isGameDataInjectSnapshot(MethodNode method) {
+        return "injectSnapshot".equals(method.name)
+                && "(Ljava/util/Map;ZZ)Lcom/google/common/collect/Multimap;".equals(method.desc);
+    }
+
+    private static boolean patchGameDataInjectSnapshotMigration(MethodNode method) {
+        if (hasHelperCall(method, "normalizeSnapshot")) {
+            return false;
+        }
+
+        InsnList injected = new InsnList();
+        injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        injected.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                "com/l/gpom/optimization/BlockcrafteryRegistryMigration",
+                "normalizeSnapshot",
+                "(Ljava/util/Map;)V",
+                false
+        ));
+        method.instructions.insert(injected);
+        return true;
     }
 
     private static boolean patchGameDataRegisterImplWorkerQueue(MethodNode method) {

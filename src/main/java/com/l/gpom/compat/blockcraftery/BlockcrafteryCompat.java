@@ -1,6 +1,7 @@
 package com.l.gpom.compat.blockcraftery;
 
 import com.l.gpom.compat.framed.FramedBlockEffectiveState;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.material.Material;
@@ -24,7 +25,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-public final class BlockcrafteryHitboxCompat {
+public final class BlockcrafteryCompat {
     private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String BLOCKCRAFTERY_BLOCK_PACKAGE = "epicsquid.blockcraftery.block.";
     private static final String BLOCKCRAFTERY_SLANT = "epicsquid.blockcraftery.block.BlockEditableSlant";
@@ -40,6 +41,7 @@ public final class BlockcrafteryHitboxCompat {
     private static final ConcurrentMap<Class<?>, Method> COLLISION_RAY_TRACE_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> DEFAULT_STATE_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> DOES_SIDE_BLOCK_RENDERING_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> BLOCK_FACE_SHAPE_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> INTERCEPT_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> MATERIAL_REPLACEABLE_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> SELECTED_BOX_METHODS = new ConcurrentHashMap<>();
@@ -55,7 +57,7 @@ public final class BlockcrafteryHitboxCompat {
 
     private static volatile Field tileStateField;
 
-    private BlockcrafteryHitboxCompat() {
+    private BlockcrafteryCompat() {
     }
 
     public static RayTraceResult rayTraceShape(
@@ -193,6 +195,9 @@ public final class BlockcrafteryHitboxCompat {
             BlockPos pos,
             EnumFacing side
     ) {
+        if (sameNonSolidMaterialNeighborCoversSide(hostBlock, hostState, world, pos, side)) {
+            return false;
+        }
         return copiedBlockBoolean(
                 hostBlock,
                 world,
@@ -212,6 +217,9 @@ public final class BlockcrafteryHitboxCompat {
             BlockPos pos,
             EnumFacing side
     ) {
+        if (sameNonSolidMaterialNeighborCoversSide(hostBlock, hostState, world, pos, side)) {
+            return true;
+        }
         boolean fallback = copiedShouldSideBeRendered(hostBlock, hostState, world, pos, side);
         return copiedBlockBoolean(
                 hostBlock,
@@ -338,6 +346,246 @@ public final class BlockcrafteryHitboxCompat {
         return best;
     }
 
+    private static boolean sameNonSolidMaterialNeighborCoversSide(
+            Block hostBlock,
+            IBlockState hostState,
+            IBlockAccess world,
+            BlockPos pos,
+            EnumFacing side
+    ) {
+        if (world == null || pos == null || side == null) {
+            return false;
+        }
+        IBlockState copied = copiedState(hostBlock, world, pos);
+        if (copied == null || solidRenderState(copied)) {
+            return false;
+        }
+        EnumFacing cullSide = materialCullSide(hostBlock, side);
+        if (!shapeFaceCanCull(hostBlock, hostState, world, pos, cullSide)) {
+            return false;
+        }
+        BlockPos neighborPos = MinecraftMappingCompat.blockPosOffset(pos, cullSide);
+        if (neighborPos == null || neighborPos == pos) {
+            return false;
+        }
+        IBlockState neighbor = FramedBlockEffectiveState.state(world, neighborPos);
+        if (neighbor == null) {
+            neighbor = blockState(world, neighborPos);
+        }
+        if (!sameMaterialState(copied, neighbor)) {
+            return false;
+        }
+        return neighborCoversHostSide(hostBlock, hostState, world, pos, cullSide, neighborPos);
+    }
+
+    private static boolean neighborCoversHostSide(
+            Block hostBlock,
+            IBlockState hostState,
+            IBlockAccess world,
+            BlockPos pos,
+            EnumFacing side,
+            BlockPos neighborPos
+    ) {
+        List<AxisAlignedBB> hostBoxes = localBoxes(hostBlock, hostState, world, pos);
+        IBlockState neighborHostState = blockState(world, neighborPos);
+        Block neighborHostBlock = blockFromState(neighborHostState);
+        if (neighborHostBlock == null) {
+            return false;
+        }
+        if (!shapeFaceCanCull(neighborHostBlock, neighborHostState, world, neighborPos, opposite(side))) {
+            return false;
+        }
+        List<AxisAlignedBB> neighborBoxes = localBoxes(neighborHostBlock, neighborHostState, world, neighborPos);
+        boolean touchesRenderedSide = false;
+        for (AxisAlignedBB hostBox : hostBoxes) {
+            if (!touchesSide(hostBox, side, false)) {
+                continue;
+            }
+            touchesRenderedSide = true;
+            if (!coveredByNeighbor(hostBox, neighborBoxes, side)) {
+                return false;
+            }
+        }
+        return touchesRenderedSide;
+    }
+
+    private static List<AxisAlignedBB> localBoxes(Block block, IBlockState state, IBlockAccess world, BlockPos pos) {
+        if (isBlockcrafteryShape(block)) {
+            List<AxisAlignedBB> boxes = localShapeBoxes(block, state, world, pos);
+            if (!boxes.isEmpty()) {
+                return boxes;
+            }
+        }
+        List<AxisAlignedBB> boxes = new ArrayList<>(1);
+        AxisAlignedBB box = blockBoundingBox(block, state, world, pos);
+        boxes.add(box == null ? FULL_BLOCK : box);
+        return boxes;
+    }
+
+    private static List<AxisAlignedBB> localShapeBoxes(Block block, IBlockState state, IBlockAccess world, BlockPos pos) {
+        List<AxisAlignedBB> local = new ArrayList<>();
+        World shapeWorld = world instanceof World ? (World) world : null;
+        for (AxisAlignedBB worldBox : shapeBoxes(block, state, shapeWorld, pos)) {
+            AxisAlignedBB localBox = localizeBox(worldBox, pos);
+            if (localBox != null) {
+                local.add(localBox);
+            }
+        }
+        return local;
+    }
+
+    private static AxisAlignedBB localizeBox(AxisAlignedBB worldBox, BlockPos pos) {
+        try {
+            double x = blockPosX(pos);
+            double y = blockPosY(pos);
+            double z = blockPosZ(pos);
+            return new AxisAlignedBB(
+                    minX(worldBox) - x,
+                    minY(worldBox) - y,
+                    minZ(worldBox) - z,
+                    maxX(worldBox) - x,
+                    maxY(worldBox) - y,
+                    maxZ(worldBox) - z
+            );
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
+    }
+
+    private static AxisAlignedBB blockBoundingBox(Block block, IBlockState state, IBlockAccess world, BlockPos pos) {
+        try {
+            Method method = cachedMethod(
+                    BOUNDING_BOX_METHODS,
+                    block.getClass(),
+                    "getBoundingBox",
+                    "func_185496_a",
+                    IBlockState.class,
+                    IBlockAccess.class,
+                    BlockPos.class
+            );
+            Object value = method.invoke(block, state, world, pos);
+            return value instanceof AxisAlignedBB ? (AxisAlignedBB) value : FULL_BLOCK;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return FULL_BLOCK;
+        }
+    }
+
+    private static boolean coveredByNeighbor(AxisAlignedBB hostBox, List<AxisAlignedBB> neighborBoxes, EnumFacing side) {
+        for (AxisAlignedBB neighborBox : neighborBoxes) {
+            if (touchesSide(neighborBox, side, true) && coversPerpendicularAxes(neighborBox, hostBox, side)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean touchesSide(AxisAlignedBB box, EnumFacing side, boolean neighbor) {
+        try {
+            switch (side) {
+                case DOWN:
+                    return neighbor ? maxY(box) >= 1.0D - EPSILON : minY(box) <= EPSILON;
+                case UP:
+                    return neighbor ? minY(box) <= EPSILON : maxY(box) >= 1.0D - EPSILON;
+                case NORTH:
+                    return neighbor ? maxZ(box) >= 1.0D - EPSILON : minZ(box) <= EPSILON;
+                case SOUTH:
+                    return neighbor ? minZ(box) <= EPSILON : maxZ(box) >= 1.0D - EPSILON;
+                case WEST:
+                    return neighbor ? maxX(box) >= 1.0D - EPSILON : minX(box) <= EPSILON;
+                case EAST:
+                    return neighbor ? minX(box) <= EPSILON : maxX(box) >= 1.0D - EPSILON;
+                default:
+                    return false;
+            }
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private static boolean coversPerpendicularAxes(AxisAlignedBB covering, AxisAlignedBB covered, EnumFacing side) {
+        try {
+            switch (side) {
+                case DOWN:
+                case UP:
+                    return minX(covering) <= minX(covered) + EPSILON
+                            && maxX(covering) >= maxX(covered) - EPSILON
+                            && minZ(covering) <= minZ(covered) + EPSILON
+                            && maxZ(covering) >= maxZ(covered) - EPSILON;
+                case NORTH:
+                case SOUTH:
+                    return minX(covering) <= minX(covered) + EPSILON
+                            && maxX(covering) >= maxX(covered) - EPSILON
+                            && minY(covering) <= minY(covered) + EPSILON
+                            && maxY(covering) >= maxY(covered) - EPSILON;
+                case WEST:
+                case EAST:
+                    return minY(covering) <= minY(covered) + EPSILON
+                            && maxY(covering) >= maxY(covered) - EPSILON
+                            && minZ(covering) <= minZ(covered) + EPSILON
+                            && maxZ(covering) >= maxZ(covered) - EPSILON;
+                default:
+                    return false;
+            }
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private static boolean solidRenderState(IBlockState state) {
+        try {
+            return MinecraftMappingCompat.blockStateIsOpaqueCube(state);
+        } catch (RuntimeException | LinkageError ignored) {
+            return true;
+        }
+    }
+
+    private static boolean shapeFaceCanCull(Block block, IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
+        if (!isBlockcrafteryShape(block)) {
+            return true;
+        }
+        if (state == null || world == null || pos == null || side == null) {
+            return false;
+        }
+
+        try {
+            Method method = cachedMethod(
+                    BLOCK_FACE_SHAPE_METHODS,
+                    block.getClass(),
+                    "getBlockFaceShape",
+                    "func_193383_a",
+                    IBlockAccess.class,
+                    IBlockState.class,
+                    BlockPos.class,
+                    EnumFacing.class
+            );
+            Object value = method.invoke(block, world, state, pos, side);
+            return value instanceof Enum && "SOLID".equals(((Enum<?>) value).name());
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
+    }
+
+    private static EnumFacing materialCullSide(Block hostBlock, EnumFacing renderSide) {
+        return isBlockcrafteryShape(hostBlock) ? opposite(renderSide) : renderSide;
+    }
+
+    private static boolean sameMaterialState(IBlockState first, IBlockState second) {
+        Block firstBlock = blockFromState(first);
+        Block secondBlock = blockFromState(second);
+        if (firstBlock == null || secondBlock == null || firstBlock != secondBlock) {
+            return false;
+        }
+        if (first.equals(second)) {
+            return true;
+        }
+        try {
+            return MinecraftMappingCompat.blockMetaFromState(firstBlock, first)
+                    == MinecraftMappingCompat.blockMetaFromState(secondBlock, second);
+        } catch (RuntimeException | LinkageError ignored) {
+            return false;
+        }
+    }
+
     private static IBlockState copiedState(Block hostBlock, IBlockAccess world, BlockPos pos) {
         TileEntity tile = tileEntity(world, pos);
         if (tile == null || !TILE_EDITABLE_BLOCK.equals(tile.getClass().getName())) {
@@ -401,7 +649,7 @@ public final class BlockcrafteryHitboxCompat {
         }
     }
 
-    private static IBlockState blockState(World world, BlockPos pos) {
+    private static IBlockState blockState(IBlockAccess world, BlockPos pos) {
         try {
             Method method = cachedMethod(
                     WORLD_BLOCK_STATE_METHODS,
@@ -509,6 +757,27 @@ public final class BlockcrafteryHitboxCompat {
     private static boolean isBlockcrafteryShape(Block block) {
         String className = block.getClass().getName();
         return BLOCKCRAFTERY_SLANT.equals(className) || BLOCKCRAFTERY_CORNER.equals(className);
+    }
+
+    private static EnumFacing opposite(EnumFacing side) {
+        if (side == null) {
+            return EnumFacing.UP;
+        }
+        switch (side) {
+            case DOWN:
+                return EnumFacing.UP;
+            case UP:
+                return EnumFacing.DOWN;
+            case NORTH:
+                return EnumFacing.SOUTH;
+            case SOUTH:
+                return EnumFacing.NORTH;
+            case WEST:
+                return EnumFacing.EAST;
+            case EAST:
+            default:
+                return EnumFacing.WEST;
+        }
     }
 
     private static AxisAlignedBB fullWorldBox(BlockPos pos) {

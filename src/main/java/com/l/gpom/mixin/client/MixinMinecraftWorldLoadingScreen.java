@@ -402,12 +402,12 @@ public abstract class MixinMinecraftWorldLoadingScreen {
                 && gpom$getPlayer() != null
                 && gpom$getCurrentScreen() == null) {
             WorldLoadingProgress.markWaitingForFirstWorldRender();
-            if (WorldLoadingProgress.finishIfFirstWorldRenderTimedOut(15_000L)) {
+            if (WorldLoadingProgress.finishIfFirstWorldRenderTimedOut(GpomEarlyConfig.worldLoadingScreenFirstWorldRenderTimeoutMillis())) {
                 return;
             }
         }
         if (WorldLoadingProgress.isActive()) {
-            WorldLoadingProgress.safeRenderCurrentMinecraft(-1, false);
+            WorldLoadingProgress.safeRenderCurrentMinecraft(-1, true);
         }
     }
 
@@ -419,10 +419,17 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return;
         }
         WorldLoadingProgress.update(stage, detail, progress);
+        if (gpom$isWorldBoundBeforePlayer()) {
+            return;
+        }
         LoadingScreenRenderer renderer = gpom$getLoadingScreen();
         if (renderer == null || !gpom$callLoadingScreen(renderer, stage, detail)) {
             WorldLoadingProgress.safeRenderCurrentMinecraft(progress, true);
         }
+    }
+
+    private boolean gpom$isWorldBoundBeforePlayer() {
+        return gpom$getWorld() != null && gpom$getPlayer() == null;
     }
 
     private boolean gpom$isVanillaWorldLoadingScreen(GuiScreen screen) {

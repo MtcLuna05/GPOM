@@ -1,6 +1,7 @@
 package com.l.gpom.proxy;
 
 import com.l.gpom.GPOM;
+import com.l.gpom.compat.blockcraftery.BlockcrafteryOrphanFrameRecoveryEvents;
 import com.l.gpom.compat.bloodmagic.BloodMagicWorldMapRecoveryEvents;
 import com.l.gpom.compat.hei.HeiQuickCraftNetwork;
 import com.l.gpom.compat.randomthings.RandomThingsRuneCommonEvents;
@@ -21,6 +22,7 @@ public class CommonProxy {
         HeiQuickCraftNetwork.registerIfNeeded();
         RandomThingsRuneCommonEvents.registerIfNeeded();
         RandomThingsRuneNetwork.registerIfNeeded();
+        BlockcrafteryOrphanFrameRecoveryEvents.registerIfNeeded();
         MissingMappingRepairs.register();
         BloodMagicWorldMapRecoveryEvents.register();
         ThaumcraftResearchRecoveryEvents.register();

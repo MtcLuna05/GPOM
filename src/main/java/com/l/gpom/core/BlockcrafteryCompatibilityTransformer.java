@@ -20,14 +20,21 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.Iterator;
 
-public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
+public final class BlockcrafteryCompatibilityTransformer implements IClassTransformer {
     private static final String CUBE = "epicsquid.blockcraftery.block.BlockEditableCube";
+    private static final String SLAB = "epicsquid.blockcraftery.block.BlockEditableSlab";
+    private static final String STAIRS = "epicsquid.blockcraftery.block.BlockEditableStairs";
     private static final String SLANT = "epicsquid.blockcraftery.block.BlockEditableSlant";
     private static final String CORNER = "epicsquid.blockcraftery.block.BlockEditableCorner";
+    private static final String FENCE = "epicsquid.blockcraftery.block.BlockEditableFence";
+    private static final String WALL = "epicsquid.blockcraftery.block.BlockEditableWall";
+    private static final String DOOR = "epicsquid.blockcraftery.block.BlockEditableDoor";
+    private static final String TRAP_DOOR = "epicsquid.blockcraftery.block.BlockEditableTrapDoor";
+    private static final String PRESSURE_PLATE = "epicsquid.blockcraftery.block.BlockEditablePressurePlate";
     private static final String MODEL_EDITABLE = "epicsquid.blockcraftery.model.BakedModelEditable";
     private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String WORLD = "net.minecraft.world.World";
-    private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryHitboxCompat";
+    private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryCompat";
     private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
     private static final String FRAMED_HELPER = "com/l/gpom/compat/framed/FramedMaterialData";
     private static final String FRAMED_ACCESS = "com/l/gpom/compat/framed/FramedMaterialDataAccess";
@@ -55,10 +62,11 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
         try {
             boolean hitboxes = GpomEarlyConfig.blockcrafteryAccurateHitboxesEnabled();
             boolean parentMaterialOcclusion = GpomEarlyConfig.blockcrafteryParentMaterialOcclusionEnabled();
+            boolean modelNullSideCull = false;
             boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled()
                     && !OptionalModRuntime.ausmPresent();
             boolean framedMaterialStorage = GpomEarlyConfig.framedMaterialStateStorageEnabled();
-            if (!hitboxes && !modelLayerCompat && !framedMaterialStorage) {
+            if (!hitboxes && !modelLayerCompat && !modelNullSideCull && !framedMaterialStorage) {
                 return basicClass;
             }
             if (framedMaterialStorage && TILE_EDITABLE_BLOCK.equals(className)) {
@@ -68,13 +76,16 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
                 return patchCube(basicClass, parentMaterialOcclusion);
             }
             if (hitboxes && (SLANT.equals(className) || CORNER.equals(className))) {
-                return patchShapedBlock(basicClass);
+                return patchShapedBlock(basicClass, parentMaterialOcclusion);
+            }
+            if (hitboxes && parentMaterialOcclusion && isEditableBlock(className)) {
+                return patchEditableSideRenderOcclusion(basicClass);
             }
             if (hitboxes && WORLD.equals(className)) {
                 return patchWorld(basicClass);
             }
-            if (modelLayerCompat && MODEL_EDITABLE.equals(className)) {
-                return patchEditableModel(basicClass);
+            if ((modelLayerCompat || modelNullSideCull) && MODEL_EDITABLE.equals(className)) {
+                return patchEditableModel(basicClass, modelLayerCompat, modelNullSideCull);
             }
         } catch (Throwable ignored) {
         }
@@ -233,19 +244,35 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
         return changed ? writeNode(node) : basicClass;
     }
 
-    private static byte[] patchEditableModel(byte[] basicClass) {
+    private static byte[] patchEditableModel(byte[] basicClass, boolean modelLayerCompat, boolean modelNullSideCull) {
         ClassNode node = readNode(basicClass);
-        boolean changed = patchModelGetQuadsMethod(node, "func_188616_a");
-        changed |= patchModelGetQuadsMethod(node, "getQuads");
+        boolean changed = false;
+        if (modelNullSideCull) {
+            replaceMethod(node, modelGetQuadsMethod("func_188616_a"));
+            replaceMethod(node, modelGetQuadsMethod("getQuads"));
+            changed = true;
+        } else if (modelLayerCompat) {
+            changed |= patchModelGetQuadsMethod(node, "func_188616_a");
+            changed |= patchModelGetQuadsMethod(node, "getQuads");
+        }
         return changed ? writeNode(node) : basicClass;
     }
 
-    private static byte[] patchShapedBlock(byte[] basicClass) {
+    private static byte[] patchShapedBlock(byte[] basicClass, boolean parentMaterialOcclusion) {
         ClassNode node = readNode(basicClass);
         replaceMethod(node, shapedRayTraceMethod("func_180636_a"));
         replaceMethod(node, shapedRayTraceMethod("collisionRayTrace"));
         replaceMethod(node, shapedSelectedBoxMethod("func_180640_a"));
         replaceMethod(node, shapedSelectedBoxMethod("getSelectedBoundingBox"));
+        if (parentMaterialOcclusion) {
+            addEditableSideRenderOcclusion(node);
+        }
+        return writeNode(node);
+    }
+
+    private static byte[] patchEditableSideRenderOcclusion(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        addEditableSideRenderOcclusion(node);
         return writeNode(node);
     }
 
@@ -263,6 +290,11 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
             replaceMethod(node, cubeSideMethod("doesSideBlockRendering", "copiedDoesSideBlockRendering"));
         }
         return writeNode(node);
+    }
+
+    private static void addEditableSideRenderOcclusion(ClassNode node) {
+        replaceMethod(node, cubeSideMethod("func_176225_a", "copiedShouldSideBeRendered"));
+        replaceMethod(node, cubeSideMethod("shouldSideBeRendered", "copiedShouldSideBeRendered"));
     }
 
     private static MethodNode shapedRayTraceMethod(String name) {
@@ -355,6 +387,34 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
         return method;
     }
 
+    private static MethodNode modelGetQuadsMethod(String name) {
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, name, GET_QUADS_DESC, null, null);
+        InsnList instructions = method.instructions;
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new VarInsnNode(Opcodes.LLOAD, 3));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                RENDER_HELPER,
+                "getQuads",
+                "(Ljava/lang/Object;Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/util/EnumFacing;J)Ljava/util/List;",
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static boolean isEditableBlock(String className) {
+        return SLAB.equals(className)
+                || STAIRS.equals(className)
+                || FENCE.equals(className)
+                || WALL.equals(className)
+                || DOOR.equals(className)
+                || TRAP_DOOR.equals(className)
+                || PRESSURE_PLATE.equals(className);
+    }
+
     private static boolean patchMayPlaceMethod(ClassNode node, String name) {
         boolean changed = false;
         for (MethodNode method : node.methods) {
@@ -439,6 +499,43 @@ public final class BlockcrafteryHitboxTransformer implements IClassTransformer {
             }
         }
         return changed;
+    }
+
+    private static boolean patchModelNullSideCullMethod(ClassNode node, String name) {
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals(name) || !method.desc.equals(GET_QUADS_DESC)) {
+                continue;
+            }
+
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (!(instruction instanceof VarInsnNode)
+                        || instruction.getOpcode() != Opcodes.ASTORE
+                        || ((VarInsnNode) instruction).var != 6) {
+                    continue;
+                }
+
+                LabelNode originalCode = new LabelNode();
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                injected.add(new JumpInsnNode(Opcodes.IFNONNULL, originalCode));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 6));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        RENDER_HELPER,
+                        "isNonSolidCopiedMaterial",
+                        "(Lnet/minecraft/block/state/IBlockState;)Z",
+                        false
+                ));
+                injected.add(new JumpInsnNode(Opcodes.IFEQ, originalCode));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 5));
+                injected.add(new InsnNode(Opcodes.ARETURN));
+                injected.add(originalCode);
+                injected.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+                method.instructions.insert(instruction, injected);
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isBlockGetRenderLayer(AbstractInsnNode instruction) {

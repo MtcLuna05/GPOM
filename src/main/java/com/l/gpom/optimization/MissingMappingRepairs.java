@@ -44,18 +44,36 @@ public final class MissingMappingRepairs {
     ));
 
     private static final Set<String> BLOCKCRAFTERY_EDITABLE_BLOCKS = new HashSet<>(Arrays.asList(
+            "editable_block",
             "editable_slab",
             "editable_double_slab",
+            "editable_slant",
+            "editable_outer_corner",
+            "editable_inner_corner",
             "editable_wall",
             "editable_fence",
             "editable_stairs",
+            "editable_trap_door",
             "editable_door",
+            "editable_pressure_plate_all",
+            "editable_pressure_plate_mobs",
+            "editable_pressure_plate_player",
+            "editable_pressure_plate_items",
+            "editable_block_reinforced",
             "editable_slab_reinforced",
             "editable_double_slab_reinforced",
+            "editable_slant_reinforced",
+            "editable_outer_corner_reinforced",
+            "editable_inner_corner_reinforced",
             "editable_wall_reinforced",
             "editable_fence_reinforced",
             "editable_stairs_reinforced",
-            "editable_door_reinforced"
+            "editable_trap_door_reinforced",
+            "editable_door_reinforced",
+            "editable_pressure_plate_all_reinforced",
+            "editable_pressure_plate_items_reinforced",
+            "editable_pressure_plate_mobs_reinforced",
+            "editable_pressure_plate_player_reinforced"
     ));
     private static final Set<String> IGNORED_MISSING_SOUND_NAMESPACES =
             GpomEarlyConfig.registryIgnoredMissingSoundEventNamespaces();
@@ -91,12 +109,7 @@ public final class MissingMappingRepairs {
             } else if (isMysticalLibAoAGrass(key)) {
                 remap(mapping, ForgeRegistries.BLOCKS, new ResourceLocation("aoa3", path(key)), "block");
             } else if (isMysticalLibBlockcrafteryEditableBlock(key)) {
-                mapping.ignore();
-                GPOM.LOGGER.warn(
-                        "[MissingMappingRepairs] Ignored stale duplicate Blockcraftery/MysticalLib block mapping {}; live blockcraftery:{} entry already exists",
-                        key,
-                        path(key)
-                );
+                remap(mapping, ForgeRegistries.BLOCKS, blockcrafteryKey(key), "block");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.BLOCKS, "block");
             } else if (isIgnoredMissingBlockItemNamespace(key)) {
@@ -126,6 +139,8 @@ public final class MissingMappingRepairs {
                 remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("modularmachinery", "blockfactorycontroller"), "item");
             } else if (isMysticalLibAoAGrass(key)) {
                 remap(mapping, ForgeRegistries.ITEMS, new ResourceLocation("aoa3", path(key)), "item");
+            } else if (isMysticalLibBlockcrafteryEditableBlock(key)) {
+                remap(mapping, ForgeRegistries.ITEMS, blockcrafteryKey(key), "item");
             } else if (isAoAGrass(key) || isBlockcrafteryEditableBlock(key)) {
                 remapSameKey(mapping, ForgeRegistries.ITEMS, "item");
             } else if (isIgnoredMissingBlockItemNamespace(key)) {
@@ -220,6 +235,10 @@ public final class MissingMappingRepairs {
 
     private static boolean isBlockcrafteryEditableBlock(ResourceLocation key) {
         return key != null && "blockcraftery".equals(namespace(key)) && BLOCKCRAFTERY_EDITABLE_BLOCKS.contains(path(key));
+    }
+
+    private static ResourceLocation blockcrafteryKey(ResourceLocation key) {
+        return new ResourceLocation("blockcraftery", path(key));
     }
 
     private static boolean isAdvancedRocketryWirelessTransciever(ResourceLocation key) {

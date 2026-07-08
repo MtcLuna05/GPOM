@@ -34,12 +34,14 @@ import net.minecraft.world.GameRules;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -335,6 +337,27 @@ public final class MinecraftMappingCompat {
         invoke(tile, "tileEntity.markDirty", noTypes(), noArgs(), "func_70296_d", "markDirty");
     }
 
+    @SuppressWarnings("unchecked")
+    public static Map<BlockPos, TileEntity> chunkTileEntityMap(Chunk chunk) {
+        Object value = invoke(chunk, "chunk.getTileEntityMap", noTypes(), noArgs(), "func_177434_r", "getTileEntityMap");
+        return value instanceof Map ? (Map<BlockPos, TileEntity>) value : null;
+    }
+
+    public static NBTTagCompound tileEntityWriteToNbt(TileEntity tile, NBTTagCompound tag) {
+        Object value = invoke(tile, "tileEntity.writeToNBT",
+                new Class<?>[]{NBTTagCompound.class},
+                new Object[]{tag},
+                "func_189515_b", "writeToNBT");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : tag;
+    }
+
+    public static void tileEntityReadFromNbt(TileEntity tile, NBTTagCompound tag) {
+        invoke(tile, "tileEntity.readFromNBT",
+                new Class<?>[]{NBTTagCompound.class},
+                new Object[]{tag},
+                "func_145839_a", "readFromNBT");
+    }
+
     public static void worldNotifyBlockUpdate(World world, BlockPos pos, IBlockState oldState, IBlockState newState, int flags) {
         invoke(world, "world.notifyBlockUpdate",
                 new Class<?>[]{BlockPos.class, IBlockState.class, IBlockState.class, int.class},
@@ -360,6 +383,21 @@ public final class MinecraftMappingCompat {
         Object value = invoke(world, "world.setBlockState", new Class<?>[]{BlockPos.class, IBlockState.class}, new Object[]{pos, state},
                 "func_175656_a", "setBlockState");
         return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static boolean worldSetBlockState(World world, BlockPos pos, IBlockState state, int flags) {
+        Object value = invoke(world, "world.setBlockStateFlags",
+                new Class<?>[]{BlockPos.class, IBlockState.class, int.class},
+                new Object[]{pos, state, flags},
+                "func_180501_a", "setBlockState");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static void worldSetTileEntity(World world, BlockPos pos, TileEntity tile) {
+        invoke(world, "world.setTileEntity",
+                new Class<?>[]{BlockPos.class, TileEntity.class},
+                new Object[]{pos, tile},
+                "func_175690_a", "setTileEntity");
     }
 
     public static boolean worldSetBlockToAir(World world, BlockPos pos) {

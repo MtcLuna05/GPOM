@@ -66,7 +66,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.BetterPortalsCompatibilityTransformer",
                 "com.l.gpom.core.JourneyMapBetterPortalsTeleportTransformer",
                 "com.l.gpom.core.ArchitectureCraftCompatibilityTransformer",
-                "com.l.gpom.core.BlockcrafteryHitboxTransformer",
+                "com.l.gpom.core.BlockcrafteryCompatibilityTransformer",
                 "com.l.gpom.core.JecVolatileNbtTransformer",
                 "com.l.gpom.core.ScannableConfigSyncTransformer",
                 "com.l.gpom.core.SfmLightweightSearchCacheTransformer",

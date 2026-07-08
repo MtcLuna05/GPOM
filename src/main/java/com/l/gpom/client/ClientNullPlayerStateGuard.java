@@ -23,6 +23,10 @@ public final class ClientNullPlayerStateGuard {
         return state(minecraft, false).unsafeGameplayFrame;
     }
 
+    public static boolean isWorldBoundWithoutPlayer(Minecraft minecraft) {
+        return state(minecraft, true).worldBoundWithoutPlayer;
+    }
+
     public static boolean isUnsafeCurrentClientGameplayFrame() {
         try {
             return isUnsafeGameplayFrame(Minecraft.getMinecraft());
@@ -84,9 +88,11 @@ public final class ClientNullPlayerStateGuard {
 
         Object world = fieldValue(minecraft, worldField, "field_71441_e", "world");
         Object player = fieldValue(minecraft, playerField, "field_71439_g", "player");
+        boolean worldBoundWithoutPlayer = world != null && player == null;
         boolean noWorldOrPlayer = world == null || player == null;
         boolean unsafe = noWorldOrPlayer && fieldValue(minecraft, currentScreenField, "field_71462_r", "currentScreen") == null;
         state.minecraft = minecraft;
+        state.worldBoundWithoutPlayer = worldBoundWithoutPlayer;
         state.noWorldOrPlayer = noWorldOrPlayer;
         state.unsafeGameplayFrame = unsafe;
         state.expiresAt = now + CACHE_NANOS;
@@ -129,6 +135,7 @@ public final class ClientNullPlayerStateGuard {
     private static final class State {
         Minecraft minecraft;
         long expiresAt;
+        boolean worldBoundWithoutPlayer = false;
         boolean noWorldOrPlayer = true;
         boolean unsafeGameplayFrame = true;
     }

@@ -32,6 +32,7 @@
   "client": [
     "client.MixinMinecraftMainStartupProfiler",
     "client.MixinMinecraftNullPlayerGameplayGuard",
+    "client.MixinMinecraftScheduledTaskNullPlayerGuard",
     "client.MixinFMLCommonHandlerNullPlayerRenderTickGuard",
     "client.MixinWorldNotifyBlockUpdateSnapshot",
     "client.MixinMinecraftWorldLoadingScreen",

@@ -165,6 +165,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.earlySplash.enabled", "true");
         DEFAULTS.setProperty("gpom.earlySplash.packName", "MeatballCraft");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "true");
+        DEFAULTS.setProperty("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis", "60000");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.enabled", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
@@ -692,6 +693,7 @@ public final class GpomEarlyConfig {
                 "gpom.earlySplash.enabled",
                 "gpom.earlySplash.packName",
                 "gpom.worldLoadingScreen.enabled",
+                "gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis",
                 "gpom.mainMenuStartupTime.enabled"
         );
         writeSection(writer, "Baubles UI", "Optional client-side Baubles inventory layout that moves Bauble slots to a Curios-like side rail and keeps quick-equip validated on the server.",
@@ -1077,6 +1079,8 @@ public final class GpomEarlyConfig {
                 return "Display label shown on the early splash window footer.";
             case "gpom.worldLoadingScreen.enabled":
                 return "Shows GPOM's passive world-entry overlay during blank or early-0% world join periods.";
+            case "gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis":
+                return "Maximum time to keep the world-entry overlay visible while waiting for the first rendered terrain frame. Set 0 to disable the timeout.";
             case "gpom.worldLifecycleProfiler.enabled":
                 return "Logs client world load, unload, and dimension-switch memory/state snapshots.";
             case "gpom.worldLifecycleProfiler.forceGcBeforeSnapshots":
@@ -1563,6 +1567,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.hei.thermalTransposerContainerCache.enabled");
         copySystemPropertyIfAbsent("gpom.hei.pluginProfiler");
         copySystemPropertyIfAbsent("gpom.hei.hotMethodProfiler");
+        copySystemPropertyIfAbsent("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
@@ -1804,6 +1809,10 @@ public final class GpomEarlyConfig {
 
     public static boolean worldLoadingScreenEnabled() {
         return booleanValue("gpom.worldLoadingScreen.enabled");
+    }
+
+    public static int worldLoadingScreenFirstWorldRenderTimeoutMillis() {
+        return intValue("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis", 60000);
     }
 
     public static boolean fastNotifyBlockUpdateEnabled() {
