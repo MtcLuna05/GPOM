@@ -50,7 +50,7 @@ dependencies {
     compileOnly modJarDependency('CodeChickenLib-1.12.2-3.2.3.358-universal.jar', 'codechicken:CodeChickenLib:1.12.2-3.2.3.358:universal')
     compileOnly modJarDependency('HadEnoughItems_1.12.2-4.28.1.jar', 'mezz.jei:jei_1.12.2:4.16.1.302')
     compileOnly modJarDependency('ae2-uel-v0.56.5.jar', 'curse.maven:ae2-extended-life-570458:5378163')
-    compileOnly modJarDependency('AbyssalCraft-1.12.2-1.11.2.jar', 'curse.maven:abyssalcraft-53686:2816242')
+    compileOnly modJarDependency('AbyssalCraft-1.12.2-1.11.2.jar', 'curse.maven:abyssalcraft-53686:6922627')
     compileOnly modJarDependency('Baubles-1.12-1.5.2.jar', 'curse.maven:baubles-227083:2518667')
     compileOnly modJarDependency('EnderCore-1.12.2-0.5.78.jar', 'com.enderio.core:EnderCore:1.12.2-0.5.78')
     compileOnly modJarDependency('EnderIO-1.12.2-5.3.72.jar', 'com.enderio:EnderIO:1.12.2-5.3.72')
