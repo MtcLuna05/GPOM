@@ -99,8 +99,6 @@ public final class ThaumcraftResearchRecoveryEvents {
                             name,
                             scan.source
                     );
-                } else {
-                    debug("{} already has {}; inventoryFound={} source={}", name, GOT_THAUMONOMICON, scan.found, scan.source);
                 }
                 if (scan.found) {
                     recoverFirstSteps(knowledge, player, name, scan.source);

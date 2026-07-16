@@ -7,6 +7,7 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -14,6 +15,8 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.Iterator;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ArchitectureCraftCompatibilityTransformer implements IClassTransformer {
     private static final String BLOCK_ARCHITECTURE = "com.elytradev.architecture.common.block.BlockArchitecture";
@@ -28,6 +31,10 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
     private static final String SIDE_RENDER_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/EnumFacing;)Z";
     private static final String LIGHT_VERTEX_DESC = "(Lcom/elytradev/architecture/common/helpers/Vector3;)V";
     private static final String ACCEPTABLE_MATERIAL_DESC = "(Lnet/minecraft/block/Block;)Z";
+    private static final String RENDER_MARKER = "gpom$architectureCompatRenderTargetWorld";
+    private static final String BLOCK_MARKER = "gpom$architectureCompatBlock";
+    private static final String SAWBENCH_MARKER = "gpom$architectureCompatSawbench";
+    private static final Set<String> FAILED_PATCHES = ConcurrentHashMap.newKeySet();
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -39,44 +46,60 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
         if (className == null) {
             return basicClass;
         }
+        if (FAILED_PATCHES.contains(className)) {
+            return basicClass;
+        }
 
         try {
             if (GpomEarlyConfig.architectureCraftFastShapeLightingEnabled()
                     && !OptionalModRuntime.ausmPresent()
                     && RENDER_TARGET_WORLD.equals(className)) {
-                return patchRenderTargetWorld(basicClass);
+                return patchRenderTargetWorld(basicClass, className);
             }
             if (GpomEarlyConfig.architectureCraftAccurateHitboxesEnabled()
                     && (BLOCK_ARCHITECTURE.equals(className) || BLOCK_SHAPE.equals(className))) {
                 return patchArchitectureBlock(
                         basicClass,
+                        className,
                         BLOCK_SHAPE.equals(className),
                         GpomEarlyConfig.architectureCraftParentMaterialOcclusionEnabled()
                 );
             }
             if (GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialsEnabled()
                     && TILE_SAWBENCH.equals(className)) {
-                return patchTileSawbench(basicClass);
+                return patchTileSawbench(basicClass, className);
             }
         } catch (Throwable ignored) {
+            FAILED_PATCHES.add(className);
         }
         return basicClass;
     }
 
-    private static byte[] patchRenderTargetWorld(byte[] basicClass) {
+    private static byte[] patchRenderTargetWorld(byte[] basicClass, String className) {
         ClassNode node = readNode(basicClass);
+        if (hasMarker(node, RENDER_MARKER)) {
+            return basicClass;
+        }
         replaceMethod(node, fastLightVertexMethod());
+        addMarker(node, RENDER_MARKER);
         return writeNode(node);
     }
 
-    private static byte[] patchTileSawbench(byte[] basicClass) {
+    private static byte[] patchTileSawbench(byte[] basicClass, String className) {
         ClassNode node = readNode(basicClass);
+        if (hasMarker(node, SAWBENCH_MARKER)) {
+            return basicClass;
+        }
         replaceMethod(node, acceptableMaterialMethod());
+        addMarker(node, SAWBENCH_MARKER);
         return writeNode(node);
     }
 
-    private static byte[] patchArchitectureBlock(byte[] basicClass, boolean shapeBlock, boolean parentMaterialOcclusion) {
+    private static byte[] patchArchitectureBlock(byte[] basicClass, String className, boolean shapeBlock, boolean parentMaterialOcclusion) {
         ClassNode node = readNode(basicClass);
+        if (hasMarker(node, BLOCK_MARKER)) {
+            return basicClass;
+        }
         replaceMethod(node, rayTraceMethod("func_180636_a"));
         replaceMethod(node, rayTraceMethod("collisionRayTrace"));
         replaceMethod(node, boundingBoxMethod("func_185496_a"));
@@ -89,6 +112,7 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
             replaceMethod(node, sideMethod("func_176225_a"));
             replaceMethod(node, sideMethod("shouldSideBeRendered"));
         }
+        addMarker(node, BLOCK_MARKER);
         return writeNode(node);
     }
 
@@ -198,6 +222,25 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
             }
         }
         node.methods.add(replacement);
+    }
+
+    private static boolean hasMarker(ClassNode node, String marker) {
+        for (FieldNode field : node.fields) {
+            if (marker.equals(field.name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void addMarker(ClassNode node, String marker) {
+        node.fields.add(new FieldNode(
+                Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_SYNTHETIC,
+                marker,
+                "Z",
+                null,
+                Integer.valueOf(1)
+        ));
     }
 
     private static ClassNode readNode(byte[] basicClass) {

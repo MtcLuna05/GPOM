@@ -136,6 +136,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.logging.asyncProbeLogs.queueSize", "32768");
         DEFAULTS.setProperty("gpom.vintageFix.suppressUcwModelErrorSpam", "true");
         DEFAULTS.setProperty("gpom.vintageFix.skipUcwDefinitionEarlyModelLoad", "true");
+        DEFAULTS.setProperty("gpom.vintageFix.skipInvalidEarlyModelLoadPaths", "true");
         DEFAULTS.setProperty("gpom.ctm.tolerateUnknownRenderLayer", "true");
         DEFAULTS.setProperty("gpom.ctm.suppressTextureMetadataErrorSpam", "true");
         DEFAULTS.setProperty("gpom.cacheInvalidation.denylist", "ausm,gpom");
@@ -166,6 +167,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.earlySplash.packName", "MeatballCraft");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.enabled", "true");
         DEFAULTS.setProperty("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis", "60000");
+        DEFAULTS.setProperty("gpom.mainMenuWorldScreenshot.enabled", "false");
+        DEFAULTS.setProperty("gpom.mainMenuWorldScreenshot.maxWidth", "1920");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.enabled", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots", "false");
         DEFAULTS.setProperty("gpom.worldLifecycleProfiler.delayedSnapshotMillis", "2000,10000,25000");
@@ -205,6 +208,16 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled", "true");
         DEFAULTS.setProperty("gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled", "true");
         DEFAULTS.setProperty("gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks", "120");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.enabled", "true");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.tier0", "overworld");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.tier1", "abyssal_wasteland");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.tier2", "dreadlands");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.tier3", "omothol");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.loadedCrossChunkFormation.enabled", "false");
+        DEFAULTS.setProperty("gpom.abyssalcraft.tieredAltarDimensions.probe.enabled", "false");
+        DEFAULTS.setProperty("gpom.twilightforest.portalCreationDimensions.enabled", "false");
+        DEFAULTS.setProperty("gpom.twilightforest.portalCreationDimensions.allowlist", "");
+        DEFAULTS.setProperty("gpom.twilightforest.portalCreationDimensions.probe.enabled", "false");
         DEFAULTS.setProperty("gpom.betterPortals.fixMissingNewTarget", "true");
         DEFAULTS.setProperty("gpom.betterPortals.remapLegacyAetherBridge", "true");
         DEFAULTS.setProperty("gpom.betterPortals.skipLegacyAetherBridgeIfMissing", "true");
@@ -219,6 +232,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.enabled", "false");
         DEFAULTS.setProperty("gpom.architecturecraft.additionalSawbenchMaterials.allowlist", ARCHITECTURECRAFT_DEFAULT_ADDITIONAL_MATERIALS);
         DEFAULTS.setProperty("gpom.framed.materialStateStorage.enabled", "false");
+        DEFAULTS.setProperty("gpom.buildinggadgets.framedCopyPasteCompat", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
@@ -227,6 +241,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
         DEFAULTS.setProperty("gpom.scannable.skipNegativeOreCacheIds", "true");
         DEFAULTS.setProperty("gpom.dankStorage.portablePickupSync.enabled", "true");
+        DEFAULTS.setProperty("gpom.torohealth.syncCombatHealth.enabled", "true");
         DEFAULTS.setProperty("gpom.randomThings.improvedRunicDust.enabled", "true");
         DEFAULTS.setProperty("gpom.randomThings.improvedRunicDust.guiProbe.enabled", "false");
         DEFAULTS.setProperty("gpom.tileEntity.missingMappingSaveGuard.enabled", "true");
@@ -255,6 +270,8 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.agricraft.fastJsonIo", "true");
         DEFAULTS.setProperty("gpom.agricraft.fastResourceScan", "true");
         DEFAULTS.setProperty("gpom.agricraft.skipJsonWriteback", "true");
+        DEFAULTS.setProperty("gpom.agricraft.skipClientFluidSimulation", "true");
+        DEFAULTS.setProperty("gpom.agricraft.staticSprinklerHeadWhenParticlesDisabled", "true");
         DEFAULTS.setProperty("gpom.agricraft.refreshChannelsAfterBulkPlacement", "true");
         DEFAULTS.setProperty("gpom.openComputersSettingsCache", "true");
         DEFAULTS.setProperty("gpom.openComputers.fastLuaSelection", "true");
@@ -694,6 +711,8 @@ public final class GpomEarlyConfig {
                 "gpom.earlySplash.packName",
                 "gpom.worldLoadingScreen.enabled",
                 "gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis",
+                "gpom.mainMenuWorldScreenshot.enabled",
+                "gpom.mainMenuWorldScreenshot.maxWidth",
                 "gpom.mainMenuStartupTime.enabled"
         );
         writeSection(writer, "Baubles UI", "Optional client-side Baubles inventory layout that moves Bauble slots to a Curios-like side rail and keeps quick-equip validated on the server.",
@@ -745,6 +764,16 @@ public final class GpomEarlyConfig {
                 "gpom.wirelessRedstone.skipNullServerAddonsWorldTick.enabled",
                 "gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled",
                 "gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks",
+                "gpom.abyssalcraft.tieredAltarDimensions.enabled",
+                "gpom.abyssalcraft.tieredAltarDimensions.tier0",
+                "gpom.abyssalcraft.tieredAltarDimensions.tier1",
+                "gpom.abyssalcraft.tieredAltarDimensions.tier2",
+                "gpom.abyssalcraft.tieredAltarDimensions.tier3",
+                "gpom.abyssalcraft.tieredAltarDimensions.loadedCrossChunkFormation.enabled",
+                "gpom.abyssalcraft.tieredAltarDimensions.probe.enabled",
+                "gpom.twilightforest.portalCreationDimensions.enabled",
+                "gpom.twilightforest.portalCreationDimensions.allowlist",
+                "gpom.twilightforest.portalCreationDimensions.probe.enabled",
                 "gpom.betterPortals.fixMissingNewTarget",
                 "gpom.betterPortals.remapLegacyAetherBridge",
                 "gpom.betterPortals.skipLegacyAetherBridgeIfMissing",
@@ -760,6 +789,7 @@ public final class GpomEarlyConfig {
                 "gpom.architecturecraft.additionalSawbenchMaterials.enabled",
                 "gpom.architecturecraft.additionalSawbenchMaterials.allowlist",
                 "gpom.framed.materialStateStorage.enabled",
+                "gpom.buildinggadgets.framedCopyPasteCompat",
                 "gpom.blockcraftery.accurateHitboxes",
                 "gpom.blockcraftery.parentMaterialOcclusion.enabled",
                 "gpom.blockcraftery.modelRenderLayerCompat",
@@ -768,6 +798,7 @@ public final class GpomEarlyConfig {
                 "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
                 "gpom.scannable.skipNegativeOreCacheIds",
                 "gpom.dankStorage.portablePickupSync.enabled",
+                "gpom.torohealth.syncCombatHealth.enabled",
                 "gpom.randomThings.improvedRunicDust.enabled",
                 "gpom.randomThings.improvedRunicDust.guiProbe.enabled",
                 "gpom.tileEntity.missingMappingSaveGuard.enabled",
@@ -800,6 +831,8 @@ public final class GpomEarlyConfig {
                 "gpom.agricraft.fastJsonIo",
                 "gpom.agricraft.fastResourceScan",
                 "gpom.agricraft.skipJsonWriteback",
+                "gpom.agricraft.skipClientFluidSimulation",
+                "gpom.agricraft.staticSprinklerHeadWhenParticlesDisabled",
                 "gpom.openComputersSettingsCache",
                 "gpom.openComputers.fastLuaSelection",
                 "gpom.openComputersCallProfiler",
@@ -1021,6 +1054,8 @@ public final class GpomEarlyConfig {
                 return "Suppresses repeated VintageFix model retrieval stack traces after replacing them with one short GPOM notice per failing model namespace.";
             case "gpom.vintageFix.skipUcwDefinitionEarlyModelLoad":
                 return "Prevents VintageFix from treating Unlimited Chisel Works ucwdefs JSON files as real model JSON during early dynamic model discovery.";
+            case "gpom.vintageFix.skipInvalidEarlyModelLoadPaths":
+                return "Prevents VintageFix from treating root-level mixin/config JSON files as early dynamic model candidates when their names end with model-like suffixes.";
             case "gpom.ctm.tolerateUnknownRenderLayer":
                 return "Lets CTM ignore unknown texture metadata render-layer names such as BLOOM instead of dropping the whole metadata section.";
             case "gpom.ctm.suppressTextureMetadataErrorSpam":
@@ -1081,6 +1116,10 @@ public final class GpomEarlyConfig {
                 return "Shows GPOM's passive world-entry overlay during blank or early-0% world join periods.";
             case "gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis":
                 return "Maximum time to keep the world-entry overlay visible while waiting for the first rendered terrain frame. Set 0 to disable the timeout.";
+            case "gpom.mainMenuWorldScreenshot.enabled":
+                return "Captures the last rendered world frame when leaving a world or closing the game, then uses it as a static main-menu background instead of the vanilla panorama.";
+            case "gpom.mainMenuWorldScreenshot.maxWidth":
+                return "Maximum stored width for the captured main-menu world screenshot. Set 0 to store the full framebuffer size.";
             case "gpom.worldLifecycleProfiler.enabled":
                 return "Logs client world load, unload, and dimension-switch memory/state snapshots.";
             case "gpom.worldLifecycleProfiler.forceGcBeforeSnapshots":
@@ -1157,6 +1196,26 @@ public final class GpomEarlyConfig {
                 return "Suppresses stale Advanced Rocketry no-oxygen HUD warnings for a short client dimension-handoff grace window. No-op when Advanced Rocketry is absent.";
             case "gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks":
                 return "Client ticks to keep clearing stale Advanced Rocketry suffocation warning timestamps after world load/unload or dimension handoff.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.enabled":
+                return "Replaces AbyssalCraft tiered altar/PE block dimension unlock checks with GPOM allowlists. Disable to use AbyssalCraft's original single-dimension checks.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.tier0":
+                return "Comma-separated dimensions accepted for AbyssalCraft tier 0 altar/PE blocks. Values may be numeric ids or aliases: overworld, abyssal_wasteland, dreadlands, omothol.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.tier1":
+                return "Comma-separated dimensions accepted for AbyssalCraft tier 1 altar/PE blocks. Values may be numeric ids or aliases: overworld, abyssal_wasteland, dreadlands, omothol.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.tier2":
+                return "Comma-separated dimensions accepted for AbyssalCraft tier 2 altar/PE blocks. Values may be numeric ids or aliases: overworld, abyssal_wasteland, dreadlands, omothol.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.tier3":
+                return "Comma-separated dimensions accepted for AbyssalCraft tier 3 altar/PE blocks. Values may be numeric ids or aliases: overworld, abyssal_wasteland, dreadlands, omothol.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.loadedCrossChunkFormation.enabled":
+                return "Allows AbyssalCraft ritual altar formation across chunk borders when every altar and pedestal position is already loaded. Disable to keep AbyssalCraft's original same-chunk restriction.";
+            case "gpom.abyssalcraft.tieredAltarDimensions.probe.enabled":
+                return "Logs AbyssalCraft ritual setup dimension/book/candidate decisions for debugging configured tiered altar dimension allowlists. Keep false outside diagnostics.";
+            case "gpom.twilightforest.portalCreationDimensions.enabled":
+                return "Allows GPOM to extend Twilight Forest portal creation to configured extra dimensions while preserving Twilight Forest's original origin/TF/global portal settings.";
+            case "gpom.twilightforest.portalCreationDimensions.allowlist":
+                return "Comma-separated extra dimensions where Twilight Forest portals may be created. Values may be numeric ids or aliases: overworld, twilight_forest, void_world.";
+            case "gpom.twilightforest.portalCreationDimensions.probe.enabled":
+                return "Logs Twilight Forest portal creation dimension-gate and formation decisions for debugging configured extra portal dimensions. Keep false outside diagnostics.";
             case "gpom.betterPortals.fixMissingNewTarget":
                 return "Patches BetterPortals' legacy EntityRenderer @At(\"NEW\") mixin metadata with an explicit Frustum target on newer Mixin runtimes.";
             case "gpom.betterPortals.remapLegacyAetherBridge":
@@ -1203,6 +1262,8 @@ public final class GpomEarlyConfig {
                 return "Skips negative Scannable ore-cache block state ids before they reach BitSet.set, avoiding client disconnect crashes during cache rebuilds. No-op when Scannable is absent.";
             case "gpom.dankStorage.portablePickupSync.enabled":
                 return "Allows Dank Storage portable danks to keep auto-pickup active while their GUI is open and refreshes the open container from the item NBT before slot sync. No-op when Dank Storage is absent.";
+            case "gpom.torohealth.syncCombatHealth.enabled":
+                return "Sends a tiny server-to-attacker health packet after combat damage so ToroHealth's top-left target bar does not keep stale client health at range. No-op when ToroHealth is absent.";
             case "gpom.randomThings.improvedRunicDust.enabled":
                 return "Enables GPOM's optional QuantumThings/RandomThings improved runic dust editor and placement/rendering layer. Per-rune values are edited in game with shift right-click and stored in gpom-rune-dust.properties.";
             case "gpom.randomThings.improvedRunicDust.guiProbe.enabled":
@@ -1259,6 +1320,10 @@ public final class GpomEarlyConfig {
                 return "Avoids redundant AgriCraft resource scans when the same candidate set has already been resolved.";
             case "gpom.agricraft.skipJsonWriteback":
                 return "Skips AgriCraft's startup rewrite of unchanged/default JSON files.";
+            case "gpom.agricraft.skipClientFluidSimulation":
+                return "Skips AgriCraft irrigation channel and tank fluid propagation on the client, relying on the existing server fluid sync packets for visuals.";
+            case "gpom.agricraft.staticSprinklerHeadWhenParticlesDisabled":
+                return "Moves AgriCraft sprinkler heads into static chunk rendering when AgriCraft particles are disabled, preserving the already-static visual while avoiding per-frame tile rendering.";
             case "gpom.agricraft.refreshChannelsAfterBulkPlacement":
                 return "Refreshes AgriCraft irrigation channel connections after bulk block placement by builder wands.";
             case "gpom.openComputersSettingsCache":
@@ -1462,6 +1527,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.construction.genericAutomaticSubscribers.denylist");
         copySystemPropertyIfAbsent("gpom.vintageFix.suppressUcwModelErrorSpam");
         copySystemPropertyIfAbsent("gpom.vintageFix.skipUcwDefinitionEarlyModelLoad");
+        copySystemPropertyIfAbsent("gpom.vintageFix.skipInvalidEarlyModelLoadPaths");
         copySystemPropertyIfAbsent("gpom.ctm.tolerateUnknownRenderLayer");
         copySystemPropertyIfAbsent("gpom.ctm.suppressTextureMetadataErrorSpam");
         copySystemPropertyIfAbsent("gpom.hei.extendedCraftingLowerTierTransfer.enabled");
@@ -1483,6 +1549,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.agricraft.fastJsonIo");
         copySystemPropertyIfAbsent("gpom.agricraft.fastResourceScan");
         copySystemPropertyIfAbsent("gpom.agricraft.skipJsonWriteback");
+        copySystemPropertyIfAbsent("gpom.agricraft.skipClientFluidSimulation");
+        copySystemPropertyIfAbsent("gpom.agricraft.staticSprinklerHeadWhenParticlesDisabled");
         copySystemPropertyIfAbsent("gpom.agricraft.refreshChannelsAfterBulkPlacement");
         copySystemPropertyIfAbsent("gpom.openComputersSettingsCache");
         copySystemPropertyIfAbsent("gpom.openComputers.fastLuaSelection");
@@ -1568,6 +1636,8 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.hei.pluginProfiler");
         copySystemPropertyIfAbsent("gpom.hei.hotMethodProfiler");
         copySystemPropertyIfAbsent("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis");
+        copySystemPropertyIfAbsent("gpom.mainMenuWorldScreenshot.enabled");
+        copySystemPropertyIfAbsent("gpom.mainMenuWorldScreenshot.maxWidth");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.enabled");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.forceGcBeforeSnapshots");
         copySystemPropertyIfAbsent("gpom.worldLifecycleProfiler.delayedSnapshotMillis");
@@ -1603,6 +1673,16 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.codeChickenLib.repairNullModelErrorState");
         copySystemPropertyIfAbsent("gpom.advancedRocketry.oxygenOverlayHandoffGuard.enabled");
         copySystemPropertyIfAbsent("gpom.advancedRocketry.oxygenOverlayHandoffGuard.ticks");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.enabled");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.tier0");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.tier1");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.tier2");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.tier3");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.loadedCrossChunkFormation.enabled");
+        copySystemPropertyIfAbsent("gpom.abyssalcraft.tieredAltarDimensions.probe.enabled");
+        copySystemPropertyIfAbsent("gpom.twilightforest.portalCreationDimensions.enabled");
+        copySystemPropertyIfAbsent("gpom.twilightforest.portalCreationDimensions.allowlist");
+        copySystemPropertyIfAbsent("gpom.twilightforest.portalCreationDimensions.probe.enabled");
         copySystemPropertyIfAbsent("gpom.betterPortals.fixMissingNewTarget");
         copySystemPropertyIfAbsent("gpom.betterPortals.remapLegacyAetherBridge");
         copySystemPropertyIfAbsent("gpom.betterPortals.skipLegacyAetherBridgeIfMissing");
@@ -1616,6 +1696,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.architecturecraft.parentMaterialOcclusion.enabled");
         copySystemPropertyIfAbsent("gpom.architecturecraft.additionalSawbenchMaterials.enabled");
         copySystemPropertyIfAbsent("gpom.architecturecraft.additionalSawbenchMaterials.allowlist");
+        copySystemPropertyIfAbsent("gpom.buildinggadgets.framedCopyPasteCompat");
         copySystemPropertyIfAbsent("gpom.blockcraftery.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.blockcraftery.parentMaterialOcclusion.enabled");
         copySystemPropertyIfAbsent("gpom.blockcraftery.modelRenderLayerCompat");
@@ -1625,6 +1706,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.scannable.skipRedundantConfigOreCacheRebuilds");
         copySystemPropertyIfAbsent("gpom.scannable.skipNegativeOreCacheIds");
         copySystemPropertyIfAbsent("gpom.dankStorage.portablePickupSync.enabled");
+        copySystemPropertyIfAbsent("gpom.torohealth.syncCombatHealth.enabled");
         copySystemPropertyIfAbsent("gpom.randomThings.improvedRunicDust.enabled");
         copySystemPropertyIfAbsent("gpom.randomThings.improvedRunicDust.guiProbe.enabled");
         copySystemPropertyIfAbsent("gpom.tileEntity.missingMappingSaveGuard.enabled");
@@ -1815,6 +1897,14 @@ public final class GpomEarlyConfig {
         return intValue("gpom.worldLoadingScreen.firstWorldRenderTimeoutMillis", 60000);
     }
 
+    public static boolean mainMenuWorldScreenshotEnabled() {
+        return booleanValue("gpom.mainMenuWorldScreenshot.enabled");
+    }
+
+    public static int mainMenuWorldScreenshotMaxWidth() {
+        return intValue("gpom.mainMenuWorldScreenshot.maxWidth", 1920);
+    }
+
     public static boolean fastNotifyBlockUpdateEnabled() {
         return booleanValue("gpom.client.fastNotifyBlockUpdate.enabled");
     }
@@ -2003,6 +2093,14 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.agricraft.refreshChannelsAfterBulkPlacement");
     }
 
+    public static boolean agriCraftSkipClientFluidSimulationEnabled() {
+        return booleanValue("gpom.agricraft.skipClientFluidSimulation");
+    }
+
+    public static boolean agriCraftStaticSprinklerHeadEnabled() {
+        return booleanValue("gpom.agricraft.staticSprinklerHeadWhenParticlesDisabled");
+    }
+
     public static boolean architectureCraftFastShapeLightingEnabled() {
         return booleanValue("gpom.architecturecraft.fastShapeLighting");
     }
@@ -2023,8 +2121,41 @@ public final class GpomEarlyConfig {
         return setValue("gpom.architecturecraft.additionalSawbenchMaterials.allowlist");
     }
 
+    public static boolean abyssalCraftTieredAltarDimensionsEnabled() {
+        return booleanValue("gpom.abyssalcraft.tieredAltarDimensions.enabled");
+    }
+
+    public static Set<String> abyssalCraftTieredAltarDimensionAllowlist(int tier) {
+        int clampedTier = Math.max(0, Math.min(3, tier));
+        return setValue("gpom.abyssalcraft.tieredAltarDimensions.tier" + clampedTier);
+    }
+
+    public static boolean abyssalCraftTieredAltarProbeEnabled() {
+        return booleanValue("gpom.abyssalcraft.tieredAltarDimensions.probe.enabled");
+    }
+
+    public static boolean abyssalCraftTieredAltarLoadedCrossChunkFormationEnabled() {
+        return booleanValue("gpom.abyssalcraft.tieredAltarDimensions.loadedCrossChunkFormation.enabled");
+    }
+
+    public static boolean twilightForestPortalCreationDimensionsEnabled() {
+        return booleanValue("gpom.twilightforest.portalCreationDimensions.enabled");
+    }
+
+    public static Set<String> twilightForestPortalCreationDimensionAllowlist() {
+        return setValue("gpom.twilightforest.portalCreationDimensions.allowlist");
+    }
+
+    public static boolean twilightForestPortalCreationProbeEnabled() {
+        return booleanValue("gpom.twilightforest.portalCreationDimensions.probe.enabled");
+    }
+
     public static boolean framedMaterialStateStorageEnabled() {
         return booleanValue("gpom.framed.materialStateStorage.enabled");
+    }
+
+    public static boolean buildingGadgetsFramedCopyPasteCompatEnabled() {
+        return booleanValue("gpom.buildinggadgets.framedCopyPasteCompat");
     }
 
     public static boolean blockcrafteryAccurateHitboxesEnabled() {
@@ -2057,6 +2188,10 @@ public final class GpomEarlyConfig {
 
     public static boolean dankStoragePortablePickupSyncEnabled() {
         return booleanValue("gpom.dankStorage.portablePickupSync.enabled");
+    }
+
+    public static boolean toroHealthCombatHealthSyncEnabled() {
+        return booleanValue("gpom.torohealth.syncCombatHealth.enabled");
     }
 
     public static boolean randomThingsImprovedRunicDustEnabled() {

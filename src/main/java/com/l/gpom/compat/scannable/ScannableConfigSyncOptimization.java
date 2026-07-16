@@ -3,7 +3,9 @@ package com.l.gpom.compat.scannable;
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -32,9 +34,25 @@ public final class ScannableConfigSyncOptimization {
             "structures",
             "fluidBlacklist"
     };
+    private static final String[] ORE_CACHE_GETTERS = {
+            "getOreBlacklist",
+            "getCommonOres",
+            "getRareOres",
+            "getCommonStates",
+            "getRareStates",
+            "getFluidBlacklist"
+    };
+    private static final String[] ORE_CACHE_STATIC_FIELDS = {
+            "oreColors",
+            "fluidColors"
+    };
 
     private static volatile Field serverSettingsField;
     private static volatile Field[] serverSettingFields;
+    private static volatile Method[] oreCacheGetterMethods;
+    private static volatile Field[] oreCacheStaticFields;
+    private static volatile boolean oreCacheBuilt;
+    private static volatile int lastOreCacheSignature;
 
     private ScannableConfigSyncOptimization() {
     }
@@ -59,6 +77,36 @@ public final class ScannableConfigSyncOptimization {
             return false;
         }
         return false;
+    }
+
+    public static boolean shouldSkipRebuildOreCache(Object provider) {
+        if (!GpomEarlyConfig.scannableSkipRedundantConfigOreCacheRebuildsEnabled()) {
+            return false;
+        }
+        try {
+            int signature = currentOreCacheSignature(provider);
+            if (oreCacheBuilt && signature == lastOreCacheSignature) {
+                if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+                    GPOM.LOGGER.info("[ScannableConfigSync] Skipped redundant ore-cache rebuild");
+                }
+                return true;
+            }
+        } catch (Throwable ignored) {
+            return false;
+        }
+        return false;
+    }
+
+    public static void markRebuildOreCache(Object provider) {
+        if (!GpomEarlyConfig.scannableSkipRedundantConfigOreCacheRebuildsEnabled()) {
+            return;
+        }
+        try {
+            lastOreCacheSignature = currentOreCacheSignature(provider);
+            oreCacheBuilt = true;
+        } catch (Throwable ignored) {
+            oreCacheBuilt = false;
+        }
     }
 
     private static Object currentServerSettings(Object incomingSettings) throws ReflectiveOperationException {
@@ -93,6 +141,51 @@ public final class ScannableConfigSyncOptimization {
         return true;
     }
 
+    private static int currentOreCacheSignature(Object provider) throws ReflectiveOperationException {
+        ClassLoader loader = provider == null ? ScannableConfigSyncOptimization.class.getClassLoader() : provider.getClass().getClassLoader();
+        Class<?> settingsClass = Class.forName(SETTINGS_CLASS, false, loader);
+        Method[] getters = oreCacheGetterMethods;
+        if (getters == null || getters.length == 0 || getters[0].getDeclaringClass() != settingsClass) {
+            getters = resolveOreCacheGetterMethods(settingsClass);
+            oreCacheGetterMethods = getters;
+        }
+        Field[] staticFields = oreCacheStaticFields;
+        if (staticFields == null || staticFields.length == 0 || staticFields[0].getDeclaringClass() != settingsClass) {
+            staticFields = resolveOreCacheStaticFields(settingsClass);
+            oreCacheStaticFields = staticFields;
+        }
+
+        Object[] values = new Object[getters.length + staticFields.length];
+        int index = 0;
+        for (Method getter : getters) {
+            values[index++] = getter.invoke(null);
+        }
+        for (Field field : staticFields) {
+            values[index++] = field.get(null);
+        }
+        return Arrays.deepHashCode(values);
+    }
+
+    private static Method[] resolveOreCacheGetterMethods(Class<?> settingsClass) throws NoSuchMethodException {
+        Method[] methods = new Method[ORE_CACHE_GETTERS.length];
+        for (int i = 0; i < ORE_CACHE_GETTERS.length; i++) {
+            Method method = settingsClass.getDeclaredMethod(ORE_CACHE_GETTERS[i]);
+            method.setAccessible(true);
+            methods[i] = method;
+        }
+        return methods;
+    }
+
+    private static Field[] resolveOreCacheStaticFields(Class<?> settingsClass) throws NoSuchFieldException {
+        Field[] fields = new Field[ORE_CACHE_STATIC_FIELDS.length];
+        for (int i = 0; i < ORE_CACHE_STATIC_FIELDS.length; i++) {
+            Field field = settingsClass.getDeclaredField(ORE_CACHE_STATIC_FIELDS[i]);
+            field.setAccessible(true);
+            fields[i] = field;
+        }
+        return fields;
+    }
+
     private static Field[] resolveServerSettingFields(Class<?> settingsClass) throws NoSuchFieldException {
         Field[] fields = new Field[SERVER_SETTING_FIELDS.length];
         for (int i = 0; i < SERVER_SETTING_FIELDS.length; i++) {
@@ -106,6 +199,18 @@ public final class ScannableConfigSyncOptimization {
     private static boolean valuesEqual(Object first, Object second) {
         if (first instanceof Object[] && second instanceof Object[]) {
             return Arrays.equals((Object[]) first, (Object[]) second);
+        }
+        if (first != null && second != null && first.getClass().isArray() && second.getClass().isArray()) {
+            int length = Array.getLength(first);
+            if (length != Array.getLength(second)) {
+                return false;
+            }
+            for (int i = 0; i < length; i++) {
+                if (!valuesEqual(Array.get(first, i), Array.get(second, i))) {
+                    return false;
+                }
+            }
+            return true;
         }
         return Objects.equals(first, second);
     }

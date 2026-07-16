@@ -28,6 +28,10 @@ public final class LogSpamTransformer implements IClassTransformer {
             "gpom.vintageFix.suppressUcwModelErrorSpam",
             "true"
     ));
+    private static final boolean VINTAGEFIX_SKIP_INVALID_EARLY_MODEL_LOAD_PATHS = Boolean.parseBoolean(System.getProperty(
+            "gpom.vintageFix.skipInvalidEarlyModelLoadPaths",
+            "true"
+    ));
     private static final boolean VINTAGEFIX_SKIP_UCW_DEFINITION_EARLY_MODEL_LOAD = Boolean.parseBoolean(System.getProperty(
             "gpom.vintageFix.skipUcwDefinitionEarlyModelLoad",
             "true"
@@ -65,7 +69,7 @@ public final class LogSpamTransformer implements IClassTransformer {
                 && TargetedModVersions.isUnlimitedChiselWorksClass(className)) {
             return patchUcwTextureStitchSpam(basicClass);
         }
-        if (VINTAGEFIX_SKIP_UCW_DEFINITION_EARLY_MODEL_LOAD
+        if ((VINTAGEFIX_SKIP_UCW_DEFINITION_EARLY_MODEL_LOAD || VINTAGEFIX_SKIP_INVALID_EARLY_MODEL_LOAD_PATHS)
                 && "org.embeddedt.vintagefix.mixin.dynamic_resources.MixinModelManager".equals(className)
                 && TargetedModVersions.isVintageFixClass(className)) {
             return patchVintageFixEarlyModelPathFilter(basicClass);
@@ -396,7 +400,7 @@ public final class LogSpamTransformer implements IClassTransformer {
                     guard.add(new MethodInsnNode(
                             Opcodes.INVOKESTATIC,
                             "com/l/gpom/optimization/ModelLogSpamSuppressor",
-                            "isVintageFixUcwDefinitionPath",
+                            "isVintageFixSkippableEarlyModelPath",
                             "(Ljava/lang/String;)Z",
                             false
                     ));
@@ -406,6 +410,10 @@ public final class LogSpamTransformer implements IClassTransformer {
                     guard.add(continueLabel);
                     method.instructions.insert(guard);
                     changed = true;
+                }
+                if ("doEarlyModelLoading".equals(method.name)
+                        && "(Lnet/minecraft/client/resources/IResourceManager;)V".equals(method.desc)) {
+                    changed |= replaceVintageFixEarlyModelManagerLogs(method);
                 }
             }
             if (!changed) {
@@ -417,6 +425,62 @@ public final class LogSpamTransformer implements IClassTransformer {
         } catch (Throwable ignored) {
             return basicClass;
         }
+    }
+
+    private static boolean replaceVintageFixEarlyModelManagerLogs(MethodNode method) {
+        boolean changed = false;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; ) {
+            AbstractInsnNode next = insn.getNext();
+            if (isVintageFixEarlyModelLoadErrorLog(insn)) {
+                AbstractInsnNode start = findStaticLoggerStart(insn, "org/embeddedt/vintagefix/VintageFix");
+                int throwableLocal = previousAloadVar(insn);
+                int modelLocal = previousAloadVar(insn, 1);
+                if (start != null && modelLocal >= 0 && throwableLocal >= 0) {
+                    InsnList replacement = new InsnList();
+                    replacement.add(new VarInsnNode(Opcodes.ALOAD, modelLocal));
+                    replacement.add(new VarInsnNode(Opcodes.ALOAD, throwableLocal));
+                    replacement.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/ModelLogSpamSuppressor",
+                            "suppressVintageFixEarlyModelLoadError",
+                            "(Ljava/lang/Object;Ljava/lang/Throwable;)V",
+                            false
+                    ));
+                    method.instructions.insertBefore(start, replacement);
+                    AbstractInsnNode cursor = start;
+                    while (cursor != next) {
+                        AbstractInsnNode remove = cursor;
+                        cursor = cursor.getNext();
+                        method.instructions.remove(remove);
+                    }
+                    changed = true;
+                }
+            } else if (isVintageFixInvalidEarlyModelPathWarn(insn)) {
+                AbstractInsnNode start = findStaticLoggerStart(insn, "org/embeddedt/vintagefix/VintageFix");
+                int pathLocal = previousAloadVar(insn);
+                if (start != null && pathLocal >= 0) {
+                    InsnList replacement = new InsnList();
+                    replacement.add(new VarInsnNode(Opcodes.ALOAD, pathLocal));
+                    replacement.add(new MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            "com/l/gpom/optimization/ModelLogSpamSuppressor",
+                            "suppressVintageFixInvalidEarlyModelPath",
+                            "(Ljava/lang/Object;)V",
+                            false
+                    ));
+                    method.instructions.insertBefore(start, replacement);
+                    AbstractInsnNode cursor = start;
+                    while (cursor != next) {
+                        AbstractInsnNode remove = cursor;
+                        cursor = cursor.getNext();
+                        method.instructions.remove(remove);
+                    }
+                    changed = true;
+                }
+            }
+            insn = next;
+        }
+        return changed;
     }
 
     private static byte[] patchCraftTweakerFunctionTypeStdout(byte[] basicClass) {
@@ -781,6 +845,28 @@ public final class LogSpamTransformer implements IClassTransformer {
                 || hasNearbyPreviousLdc(insn, "Error occured while baking model {}", 8));
     }
 
+    private static boolean isVintageFixEarlyModelLoadErrorLog(AbstractInsnNode insn) {
+        if (!(insn instanceof MethodInsnNode) || insn.getOpcode() != Opcodes.INVOKEINTERFACE) {
+            return false;
+        }
+        MethodInsnNode methodInsn = (MethodInsnNode) insn;
+        return "org/apache/logging/log4j/Logger".equals(methodInsn.owner)
+                && "error".equals(methodInsn.name)
+                && "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V".equals(methodInsn.desc)
+                && hasNearbyPreviousLdc(insn, "Early load error for {}", 8);
+    }
+
+    private static boolean isVintageFixInvalidEarlyModelPathWarn(AbstractInsnNode insn) {
+        if (!(insn instanceof MethodInsnNode) || insn.getOpcode() != Opcodes.INVOKEINTERFACE) {
+            return false;
+        }
+        MethodInsnNode methodInsn = (MethodInsnNode) insn;
+        return "org/apache/logging/log4j/Logger".equals(methodInsn.owner)
+                && "warn".equals(methodInsn.name)
+                && "(Ljava/lang/String;Ljava/lang/Object;)V".equals(methodInsn.desc)
+                && hasNearbyPreviousLdc(insn, "Path {} is not a valid model location", 8);
+    }
+
     private static boolean isLoggerErrorThrowable(AbstractInsnNode insn) {
         if (!(insn instanceof MethodInsnNode) || insn.getOpcode() != Opcodes.INVOKEINTERFACE) {
             return false;
@@ -856,9 +942,21 @@ public final class LogSpamTransformer implements IClassTransformer {
     }
 
     private static int previousAloadVar(AbstractInsnNode insn) {
+        return previousAloadVar(insn, 0);
+    }
+
+    private static int previousAloadVar(AbstractInsnNode insn, int ordinal) {
+        int found = 0;
+        int scanned = 0;
         AbstractInsnNode previous = insn.getPrevious();
-        if (previous instanceof VarInsnNode && previous.getOpcode() == Opcodes.ALOAD) {
-            return ((VarInsnNode) previous).var;
+        while (previous != null && scanned++ < 8) {
+            if (previous instanceof VarInsnNode && previous.getOpcode() == Opcodes.ALOAD) {
+                if (found == ordinal) {
+                    return ((VarInsnNode) previous).var;
+                }
+                found++;
+            }
+            previous = previous.getPrevious();
         }
         return -1;
     }

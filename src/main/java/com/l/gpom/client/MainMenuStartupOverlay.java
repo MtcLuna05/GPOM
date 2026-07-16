@@ -8,8 +8,14 @@ import net.minecraft.client.gui.GuiMainMenu;
 import org.lwjgl.opengl.GL11;
 
 import java.lang.reflect.Field;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class MainMenuStartupOverlay {
+    private static final ConcurrentMap<String, Field> SCREEN_INT_FIELDS = new ConcurrentHashMap<>();
+    private static final Set<String> MISSING_SCREEN_INT_FIELDS = ConcurrentHashMap.newKeySet();
+
     private MainMenuStartupOverlay() {
     }
 
@@ -94,12 +100,8 @@ public final class MainMenuStartupOverlay {
 
     private static int screenIntField(Object screen, String primaryName, String fallbackName) {
         try {
-            Field field = findField(screen.getClass(), primaryName);
-            if (field == null) {
-                field = findField(screen.getClass(), fallbackName);
-            }
+            Field field = findCachedField(screen.getClass(), primaryName, fallbackName);
             if (field != null) {
-                field.setAccessible(true);
                 return field.getInt(screen);
             }
         } catch (Throwable ignored) {
@@ -107,16 +109,40 @@ public final class MainMenuStartupOverlay {
         return 0;
     }
 
-    private static Field findField(Class<?> type, String name) {
+    private static Field findCachedField(Class<?> type, String primaryName, String fallbackName) {
+        String key = type.getName() + '#' + primaryName + '#' + fallbackName;
+        Field cached = SCREEN_INT_FIELDS.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        if (MISSING_SCREEN_INT_FIELDS.contains(key)) {
+            return null;
+        }
+
+        Field field = findField(type, primaryName, fallbackName);
+        if (field != null) {
+            Field existing = SCREEN_INT_FIELDS.putIfAbsent(key, field);
+            return existing == null ? field : existing;
+        }
+        MISSING_SCREEN_INT_FIELDS.add(key);
+        return null;
+    }
+
+    private static Field findField(Class<?> type, String... names) {
         Class<?> current = type;
         while (current != null) {
-            try {
-                return current.getDeclaredField(name);
-            } catch (NoSuchFieldException ignored) {
-                current = current.getSuperclass();
-            } catch (Throwable ignored) {
-                return null;
+            for (String name : names) {
+                try {
+                    Field field = current.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (NoSuchFieldException ignored) {
+                    // Try every known runtime name once, then cache the miss.
+                } catch (Throwable ignored) {
+                    return null;
+                }
             }
+            current = current.getSuperclass();
         }
         return null;
     }

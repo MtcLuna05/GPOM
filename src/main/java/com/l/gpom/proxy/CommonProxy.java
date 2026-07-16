@@ -7,6 +7,7 @@ import com.l.gpom.compat.hei.HeiQuickCraftNetwork;
 import com.l.gpom.compat.randomthings.RandomThingsRuneCommonEvents;
 import com.l.gpom.compat.randomthings.RandomThingsRuneNetwork;
 import com.l.gpom.compat.thaumcraft.ThaumcraftResearchRecoveryEvents;
+import com.l.gpom.compat.torohealth.ToroHealthCombatHealthSync;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.optimization.MissingMappingRepairs;
 import com.l.gpom.profiling.RuntimeSinkProfilerEvents;
@@ -22,6 +23,7 @@ public class CommonProxy {
         HeiQuickCraftNetwork.registerIfNeeded();
         RandomThingsRuneCommonEvents.registerIfNeeded();
         RandomThingsRuneNetwork.registerIfNeeded();
+        ToroHealthCombatHealthSync.registerIfNeeded();
         BlockcrafteryOrphanFrameRecoveryEvents.registerIfNeeded();
         MissingMappingRepairs.register();
         BloodMagicWorldMapRecoveryEvents.register();

@@ -22,6 +22,8 @@ public final class ScannableConfigSyncTransformer implements IClassTransformer {
     private static final String SETTINGS_DESC = "(Lli/cil/scannable/common/config/ServerSettings;)V";
     private static final String SETTINGS_HELPER = "com/l/gpom/compat/scannable/ScannableConfigSyncOptimization";
     private static final String SCAN_RESULT_PROVIDER_BLOCK_CLASS = "li.cil.scannable.client.scanning.ScanResultProviderBlock";
+    private static final String REBUILD_ORE_CACHE_METHOD = "rebuildOreCache";
+    private static final String REBUILD_ORE_CACHE_DESC = "()V";
     private static final String BIT_SET_CLASS = "java/util/BitSet";
     private static final String BIT_SET_SET_DESC = "(I)V";
     private static final String ORE_CACHE_HELPER = "com/l/gpom/compat/scannable/ScannableOreCacheGuard";
@@ -36,7 +38,9 @@ public final class ScannableConfigSyncTransformer implements IClassTransformer {
         if (SETTINGS_CLASS.equals(className) && GpomEarlyConfig.scannableSkipRedundantConfigOreCacheRebuildsEnabled()) {
             return transformSettings(basicClass);
         }
-        if (SCAN_RESULT_PROVIDER_BLOCK_CLASS.equals(className) && GpomEarlyConfig.scannableSkipNegativeOreCacheIdsEnabled()) {
+        if (SCAN_RESULT_PROVIDER_BLOCK_CLASS.equals(className)
+                && (GpomEarlyConfig.scannableSkipNegativeOreCacheIdsEnabled()
+                || GpomEarlyConfig.scannableSkipRedundantConfigOreCacheRebuildsEnabled())) {
             return transformOreCache(basicClass);
         }
         return basicClass;
@@ -71,7 +75,14 @@ public final class ScannableConfigSyncTransformer implements IClassTransformer {
             new ClassReader(basicClass).accept(node, 0);
             boolean changed = false;
             for (MethodNode method : node.methods) {
-                changed |= replaceBitSetSets(method);
+                if (GpomEarlyConfig.scannableSkipNegativeOreCacheIdsEnabled()) {
+                    changed |= replaceBitSetSets(method);
+                }
+                if (GpomEarlyConfig.scannableSkipRedundantConfigOreCacheRebuildsEnabled()
+                        && REBUILD_ORE_CACHE_METHOD.equals(method.name)
+                        && REBUILD_ORE_CACHE_DESC.equals(method.desc)) {
+                    changed |= insertOreCacheRebuildGuard(method);
+                }
             }
             if (!changed) {
                 return basicClass;
@@ -102,6 +113,44 @@ public final class ScannableConfigSyncTransformer implements IClassTransformer {
         method.instructions.insert(guard);
     }
 
+    private static boolean insertOreCacheRebuildGuard(MethodNode method) {
+        if (hasHelperCall(method, "shouldSkipRebuildOreCache")) {
+            return false;
+        }
+
+        LabelNode rebuild = new LabelNode();
+        InsnList guard = new InsnList();
+        guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        guard.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                SETTINGS_HELPER,
+                "shouldSkipRebuildOreCache",
+                "(Ljava/lang/Object;)Z",
+                false
+        ));
+        guard.add(new JumpInsnNode(Opcodes.IFEQ, rebuild));
+        guard.add(new InsnNode(Opcodes.RETURN));
+        guard.add(rebuild);
+        guard.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+        method.instructions.insert(guard);
+
+        for (AbstractInsnNode instruction : method.instructions.toArray()) {
+            if (instruction.getOpcode() == Opcodes.RETURN) {
+                InsnList mark = new InsnList();
+                mark.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                mark.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        SETTINGS_HELPER,
+                        "markRebuildOreCache",
+                        "(Ljava/lang/Object;)V",
+                        false
+                ));
+                method.instructions.insertBefore(instruction, mark);
+            }
+        }
+        return true;
+    }
+
     private static boolean replaceBitSetSets(MethodNode method) {
         boolean changed = false;
         for (AbstractInsnNode instruction : method.instructions.toArray()) {
@@ -124,5 +173,17 @@ public final class ScannableConfigSyncTransformer implements IClassTransformer {
             }
         }
         return changed;
+    }
+
+    private static boolean hasHelperCall(MethodNode method, String helperMethod) {
+        for (AbstractInsnNode instruction : method.instructions.toArray()) {
+            if (instruction instanceof MethodInsnNode) {
+                MethodInsnNode call = (MethodInsnNode) instruction;
+                if (SETTINGS_HELPER.equals(call.owner) && helperMethod.equals(call.name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

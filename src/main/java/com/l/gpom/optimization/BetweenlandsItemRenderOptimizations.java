@@ -2,9 +2,9 @@ package com.l.gpom.optimization;
 
 import com.l.gpom.GPOM;
 import com.l.gpom.client.ClientAccess;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.core.TargetedModVersions;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
@@ -527,22 +527,22 @@ public final class BetweenlandsItemRenderOptimizations {
 
     private static void pushRenderState() {
         try {
-            GlStateManager.pushAttrib();
+            MinecraftMappingCompat.glPushAttrib();
         } catch (Throwable ignored) {
         }
         try {
-            GlStateManager.pushMatrix();
+            MinecraftMappingCompat.glPushMatrix();
         } catch (Throwable ignored) {
         }
     }
 
     private static void popRenderState() {
         try {
-            GlStateManager.popMatrix();
+            MinecraftMappingCompat.glPopMatrix();
         } catch (Throwable ignored) {
         }
         try {
-            GlStateManager.popAttrib();
+            MinecraftMappingCompat.glPopAttrib();
         } catch (Throwable ignored) {
         }
         restoreGuiRenderBaseline();
@@ -550,7 +550,7 @@ public final class BetweenlandsItemRenderOptimizations {
 
     private static void restoreGuiRenderBaseline() {
         try {
-            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+            MinecraftMappingCompat.glMatrixMode(GL11.GL_MODELVIEW);
         } catch (Throwable ignored) {
         }
         try {
@@ -558,16 +558,16 @@ public final class BetweenlandsItemRenderOptimizations {
         } catch (Throwable ignored) {
         }
         try {
-            GlStateManager.enableTexture2D();
+            MinecraftMappingCompat.glEnableTexture2D();
         } catch (Throwable ignored) {
         }
         try {
-            GlStateManager.colorMask(true, true, true, true);
+            MinecraftMappingCompat.glColorMask(true, true, true, true);
         } catch (Throwable ignored) {
         }
         try {
-            GlStateManager.resetColor();
-            GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+            MinecraftMappingCompat.glResetColor();
+            MinecraftMappingCompat.glColor(1.0F, 1.0F, 1.0F, 1.0F);
         } catch (Throwable ignored) {
             try {
                 GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);

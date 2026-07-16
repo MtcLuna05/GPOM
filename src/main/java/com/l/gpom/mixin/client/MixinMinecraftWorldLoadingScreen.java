@@ -2,6 +2,7 @@ package com.l.gpom.mixin.client;
 
 import com.l.gpom.client.WorldLoadingProgress;
 import com.l.gpom.client.ClientDimensionHandoffCleanup;
+import com.l.gpom.client.MainMenuWorldScreenshot;
 import com.l.gpom.client.RenderUpdateDeduplicator;
 import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.config.GpomEarlyConfig;
@@ -208,6 +209,9 @@ public abstract class MixinMinecraftWorldLoadingScreen {
     private void gpom$loadWorldStarted(WorldClient worldClient, String message, CallbackInfo ci) {
         gpom$loadWorldStartedAt = RuntimeSinkProfiler.begin();
         WorldClient previousWorld = gpom$getWorld();
+        if (previousWorld != null && worldClient == null) {
+            MainMenuWorldScreenshot.captureBeforeWorldLeaves("Minecraft.loadWorld(null)");
+        }
         WorldLifecycleProfiler.beginLoadWorld((Minecraft) (Object) this, previousWorld, worldClient, message);
         if (previousWorld != null && previousWorld != worldClient) {
             ClientDimensionHandoffCleanup.cleanup("Minecraft loadWorld boundary");
@@ -308,6 +312,22 @@ public abstract class MixinMinecraftWorldLoadingScreen {
         if (worldClient != null) {
             gpom$drawImmediate("Entering world", "Waiting for first client frame", 96);
             WorldLoadingProgress.markWaitingForFirstWorldRender();
+        }
+    }
+
+    @Inject(
+            method = {
+                    "shutdown()V",
+                    "func_71400_g()V",
+                    "shutdownMinecraftApplet()V",
+                    "func_71405_e()V"
+            },
+            at = @At("HEAD"),
+            require = 0
+    )
+    private void gpom$captureWorldScreenshotBeforeShutdown(CallbackInfo ci) {
+        if (gpom$getWorld() != null) {
+            MainMenuWorldScreenshot.captureBeforeWorldLeaves("Minecraft.shutdown");
         }
     }
 

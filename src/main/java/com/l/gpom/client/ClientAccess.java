@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.inventory.GuiInventory;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.client.renderer.BlockRendererDispatcher;
+import net.minecraft.client.renderer.EntityRenderer;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.client.renderer.RenderItem;
 import net.minecraft.client.renderer.block.model.IBakedModel;
@@ -19,6 +20,7 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import org.lwjgl.opengl.Display;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -34,6 +36,7 @@ public final class ClientAccess {
     private static volatile Method drawGradientRectMethod;
     private static volatile Method drawTexturedModalRectMethod;
     private static volatile Method drawModalRectWithCustomSizedTextureMethod;
+    private static volatile Method drawScaledCustomSizeModalRectMethod;
     private static volatile Method getTextureManagerMethod;
     private static volatile Method getBlockRendererDispatcherMethod;
     private static volatile Method getTextureMapBlocksMethod;
@@ -43,9 +46,11 @@ public final class ClientAccess {
     private static volatile Method drawInventoryEntityMethod;
     private static volatile Method getRenderItemMethod;
     private static volatile Method renderItemOverlayMethod;
+    private static volatile Method renderWorldMethod;
     private static volatile Method loadRenderersMethod;
     private static volatile Method i18nFormatMethod;
     private static volatile Method windowClickMethod;
+    private static volatile Method resizeMethod;
     private static volatile Method inventoryCarriedStackMethod;
     private static volatile Field fontRendererField;
     private static volatile Field displayWidthField;
@@ -54,6 +59,7 @@ public final class ClientAccess {
     private static volatile Field currentScreenField;
     private static volatile Field playerControllerField;
     private static volatile Field playerInventoryField;
+    private static volatile Field entityRendererField;
     private static volatile Field renderGlobalField;
 
     private ClientAccess() {
@@ -196,6 +202,31 @@ public final class ClientAccess {
         return intField(minecraft, false);
     }
 
+    public static void syncDisplayResize(Minecraft minecraft) {
+        if (minecraft == null || !isMinecraftThread(minecraft)) {
+            return;
+        }
+        try {
+            if (!Display.isCreated()) {
+                return;
+            }
+            int width = Math.max(1, Display.getWidth());
+            int height = Math.max(1, Display.getHeight());
+            if (width == displayWidth(minecraft) && height == displayHeight(minecraft)) {
+                return;
+            }
+            Method method = resizeMethod;
+            if (method == null) {
+                method = findMethod(Minecraft.class, new Class<?>[] {int.class, int.class}, "func_71370_a", "resize");
+                resizeMethod = method;
+            }
+            if (method != null) {
+                method.invoke(minecraft, width, height);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static int stringWidth(FontRenderer font, String text) {
         if (font == null || text == null) {
             return 0;
@@ -318,6 +349,47 @@ public final class ClientAccess {
             }
             if (method != null) {
                 method.invoke(null, x, y, textureX, textureY, width, height, textureWidth, textureHeight);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void drawScaledCustomSizeModalRect(Gui gui,
+                                                     int x,
+                                                     int y,
+                                                     float textureX,
+                                                     float textureY,
+                                                     int sourceWidth,
+                                                     int sourceHeight,
+                                                     int width,
+                                                     int height,
+                                                     float textureWidth,
+                                                     float textureHeight) {
+        if (gui == null) {
+            return;
+        }
+        try {
+            Method method = drawScaledCustomSizeModalRectMethod;
+            if (method == null) {
+                method = findMethod(Gui.class,
+                        new Class<?>[] {
+                                int.class,
+                                int.class,
+                                float.class,
+                                float.class,
+                                int.class,
+                                int.class,
+                                int.class,
+                                int.class,
+                                float.class,
+                                float.class
+                        },
+                        "func_152125_a",
+                        "drawScaledCustomSizeModalRect");
+                drawScaledCustomSizeModalRectMethod = method;
+            }
+            if (method != null) {
+                method.invoke(null, x, y, textureX, textureY, sourceWidth, sourceHeight, width, height, textureWidth, textureHeight);
             }
         } catch (Throwable ignored) {
         }
@@ -472,6 +544,37 @@ public final class ClientAccess {
                 overlay.invoke(renderer, font, stack, x, y, text);
             }
         } catch (Throwable ignored) {
+        }
+    }
+
+    public static boolean renderWorldOnly(Minecraft minecraft) {
+        if (minecraft == null) {
+            return false;
+        }
+        try {
+            Field field = entityRendererField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71460_t", "entityRenderer");
+                entityRendererField = field;
+            }
+            Object renderer = field == null ? null : field.get(minecraft);
+            if (!(renderer instanceof EntityRenderer)) {
+                return false;
+            }
+            Method method = renderWorldMethod;
+            if (method == null) {
+                method = findMethod(EntityRenderer.class, new Class<?>[] {float.class, long.class},
+                        "func_78471_a",
+                        "renderWorld");
+                renderWorldMethod = method;
+            }
+            if (method == null) {
+                return false;
+            }
+            method.invoke(renderer, 1.0F, System.nanoTime());
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 

@@ -4,6 +4,7 @@ import com.l.gpom.GPOM;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -15,13 +16,18 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.item.crafting.Ingredient;
+import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
+import net.minecraft.nbt.NBTUtil;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.SPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.DamageSource;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.EnumHand;
+import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.NonNullList;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.SoundCategory;
@@ -30,6 +36,7 @@ import net.minecraft.util.math.AxisAlignedBB;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.text.ITextComponent;
 import net.minecraft.world.GameRules;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
@@ -116,6 +123,118 @@ public final class MinecraftMappingCompat {
         }
         Object value = invoke(tag, "nbt.getIntArray", new Class<?>[]{String.class}, new Object[]{key}, "func_74759_k", "getIntArray");
         return value instanceof int[] ? (int[]) value : new int[0];
+    }
+
+    public static boolean nbtIsEmpty(NBTTagCompound tag) {
+        if (tag == null) {
+            return true;
+        }
+        Object value = invoke(tag, "nbt.hasNoTags", noTypes(), noArgs(), "func_82582_d", "hasNoTags", "isEmpty");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static void nbtSetInteger(NBTTagCompound tag, String key, int value) {
+        if (tag != null) {
+            invoke(tag, "nbt.setInteger", new Class<?>[]{String.class, int.class}, new Object[]{key, value},
+                    "func_74768_a", "setInteger");
+        }
+    }
+
+    public static int nbtGetInteger(NBTTagCompound tag, String key) {
+        if (tag == null) {
+            return 0;
+        }
+        Object value = invoke(tag, "nbt.getInteger", new Class<?>[]{String.class}, new Object[]{key},
+                "func_74762_e", "getInteger");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static void nbtSetString(NBTTagCompound tag, String key, String value) {
+        if (tag != null) {
+            invoke(tag, "nbt.setString", new Class<?>[]{String.class, String.class}, new Object[]{key, value},
+                    "func_74778_a", "setString");
+        }
+    }
+
+    public static String nbtGetString(NBTTagCompound tag, String key) {
+        if (tag == null) {
+            return "";
+        }
+        Object value = invoke(tag, "nbt.getString", new Class<?>[]{String.class}, new Object[]{key},
+                "func_74779_i", "getString");
+        return value instanceof String ? (String) value : "";
+    }
+
+    public static void nbtSetTag(NBTTagCompound tag, String key, NBTBase value) {
+        if (tag != null && value != null) {
+            invoke(tag, "nbt.setTag", new Class<?>[]{String.class, NBTBase.class}, new Object[]{key, value},
+                    "func_74782_a", "setTag");
+        }
+    }
+
+    public static void nbtRemoveTag(NBTTagCompound tag, String key) {
+        if (tag != null) {
+            invoke(tag, "nbt.removeTag", new Class<?>[]{String.class}, new Object[]{key}, "func_82580_o", "removeTag");
+        }
+    }
+
+    public static NBTTagCompound nbtGetCompoundTag(NBTTagCompound tag, String key) {
+        if (tag == null) {
+            return new NBTTagCompound();
+        }
+        Object value = invoke(tag, "nbt.getCompoundTag", new Class<?>[]{String.class}, new Object[]{key},
+                "func_74775_l", "getCompoundTag");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : new NBTTagCompound();
+    }
+
+    public static NBTTagList nbtGetTagList(NBTTagCompound tag, String key, int type) {
+        if (tag == null) {
+            return new NBTTagList();
+        }
+        Object value = invoke(tag, "nbt.getTagList", new Class<?>[]{String.class, int.class}, new Object[]{key, type},
+                "func_150295_c", "getTagList");
+        return value instanceof NBTTagList ? (NBTTagList) value : new NBTTagList();
+    }
+
+    public static NBTTagCompound nbtCopy(NBTTagCompound tag) {
+        if (tag == null) {
+            return new NBTTagCompound();
+        }
+        Object value = invoke(tag, "nbt.copy", noTypes(), noArgs(), "func_74737_b", "copy");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : new NBTTagCompound();
+    }
+
+    public static BlockPos nbtUtilReadBlockPos(NBTTagCompound tag) {
+        if (tag == null) {
+            return null;
+        }
+        Object value = invokeStatic(NBTUtil.class, "nbtUtil.readBlockPos",
+                new Class<?>[]{NBTTagCompound.class}, new Object[]{tag}, "func_186861_c", "getPosFromTag");
+        return value instanceof BlockPos ? (BlockPos) value : null;
+    }
+
+    public static void nbtListAppend(NBTTagList list, NBTBase value) {
+        if (list != null && value != null) {
+            invoke(list, "nbtList.appendTag", new Class<?>[]{NBTBase.class}, new Object[]{value},
+                    "func_74742_a", "appendTag");
+        }
+    }
+
+    public static int nbtListSize(NBTTagList list) {
+        if (list == null) {
+            return 0;
+        }
+        Object value = invoke(list, "nbtList.tagCount", noTypes(), noArgs(), "func_74745_c", "tagCount");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static NBTTagCompound nbtListCompoundAt(NBTTagList list, int index) {
+        if (list == null) {
+            return new NBTTagCompound();
+        }
+        Object value = invoke(list, "nbtList.getCompoundTagAt", new Class<?>[]{int.class}, new Object[]{index},
+                "func_150305_b", "getCompoundTagAt");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : new NBTTagCompound();
     }
 
     public static boolean itemStackHasTagCompound(ItemStack stack) {
@@ -228,6 +347,16 @@ public final class MinecraftMappingCompat {
         return value instanceof World ? (World) value : null;
     }
 
+    public static World entityWorld(Entity entity) {
+        Object value = fieldValue(entity, "entity.world", "field_70170_p", "world");
+        return value instanceof World ? (World) value : null;
+    }
+
+    public static Integer entityDimension(Entity entity) {
+        Object value = fieldValue(entity, "entity.dimension", "field_71093_bK", "dimension");
+        return value instanceof Number ? ((Number) value).intValue() : null;
+    }
+
     public static double entityPosX(Entity entity) {
         Object value = fieldValue(entity, "entity.posX", "field_70165_t", "posX");
         return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
@@ -256,6 +385,38 @@ public final class MinecraftMappingCompat {
     public static double entityPrevPosZ(Entity entity) {
         Object value = fieldValue(entity, "entity.prevPosZ", "field_70166_s", "prevPosZ");
         return value instanceof Number ? ((Number) value).doubleValue() : entityPosZ(entity);
+    }
+
+    public static int entityId(Entity entity) {
+        Object value = invoke(entity, "entity.getEntityId", noTypes(), noArgs(), "func_145782_y", "getEntityId");
+        return value instanceof Number ? ((Number) value).intValue() : -1;
+    }
+
+    public static Entity worldEntityById(World world, int entityId) {
+        Object value = invoke(world, "world.getEntityByID", new Class<?>[]{int.class}, new Object[]{entityId},
+                "func_73045_a", "getEntityByID");
+        return value instanceof Entity ? (Entity) value : null;
+    }
+
+    public static float livingHealth(EntityLivingBase entity) {
+        Object value = invoke(entity, "living.getHealth", noTypes(), noArgs(), "func_110143_aJ", "getHealth");
+        return value instanceof Number ? ((Number) value).floatValue() : 0.0F;
+    }
+
+    public static float livingMaxHealth(EntityLivingBase entity) {
+        Object value = invoke(entity, "living.getMaxHealth", noTypes(), noArgs(), "func_110138_aP", "getMaxHealth");
+        return value instanceof Number ? ((Number) value).floatValue() : Math.max(1.0F, livingHealth(entity));
+    }
+
+    public static void livingSetHealth(EntityLivingBase entity, float health) {
+        invoke(entity, "living.setHealth", new Class<?>[]{float.class}, new Object[]{health},
+                "func_70606_j", "setHealth");
+    }
+
+    public static Entity damageSourceTrueSource(DamageSource source) {
+        Object value = invoke(source, "damageSource.getTrueSource", noTypes(), noArgs(),
+                "func_76346_g", "getTrueSource");
+        return value instanceof Entity ? (Entity) value : null;
     }
 
     public static UUID playerUniqueId(EntityPlayer player) {
@@ -303,6 +464,15 @@ public final class MinecraftMappingCompat {
         }
         Object value = fieldValue(capabilities, "playerCapabilities.isCreativeMode", "field_75098_d", "isCreativeMode");
         return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static void playerSendStatusMessage(EntityPlayer player, ITextComponent message, boolean actionBar) {
+        if (player == null || message == null) {
+            return;
+        }
+        invoke(player, "player.sendStatusMessage",
+                new Class<?>[]{ITextComponent.class, boolean.class}, new Object[]{message, actionBar},
+                "func_146105_b", "sendStatusMessage");
     }
 
     public static IBlockState worldBlockState(World world, BlockPos pos) {
@@ -356,6 +526,14 @@ public final class MinecraftMappingCompat {
                 new Class<?>[]{NBTTagCompound.class},
                 new Object[]{tag},
                 "func_145839_a", "readFromNBT");
+    }
+
+    public static NBTTagCompound tileEntityCustomData(TileEntity tile) {
+        if (tile == null) {
+            return new NBTTagCompound();
+        }
+        Object value = invoke(tile, "tileEntity.getTileData", noTypes(), noArgs(), "getTileData");
+        return value instanceof NBTTagCompound ? (NBTTagCompound) value : new NBTTagCompound();
     }
 
     public static void worldNotifyBlockUpdate(World world, BlockPos pos, IBlockState oldState, IBlockState newState, int flags) {
@@ -412,6 +590,12 @@ public final class MinecraftMappingCompat {
         return value instanceof Boolean && (Boolean) value;
     }
 
+    public static boolean worldIsBlockLoaded(World world, BlockPos pos) {
+        Object value = invoke(world, "world.isBlockLoaded", new Class<?>[]{BlockPos.class}, new Object[]{pos},
+                "func_175667_e", "isBlockLoaded");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
     public static RayTraceResult worldRayTraceBlocks(World world, Vec3d start, Vec3d end, boolean stopOnLiquid,
                                                      boolean ignoreBlockWithoutBoundingBox, boolean returnLastUncollidableBlock) {
         Object value = invoke(world, "world.rayTraceBlocks",
@@ -438,6 +622,17 @@ public final class MinecraftMappingCompat {
                 "func_184133_a", "playSound");
     }
 
+    public static void worldSpawnParticle(World world, EnumParticleTypes particle, double x, double y, double z,
+                                          double velocityX, double velocityY, double velocityZ) {
+        if (world == null || particle == null) {
+            return;
+        }
+        invoke(world, "world.spawnParticle",
+                new Class<?>[]{EnumParticleTypes.class, double.class, double.class, double.class, double.class, double.class, double.class, int[].class},
+                new Object[]{particle, x, y, z, velocityX, velocityY, velocityZ, new int[0]},
+                "func_175688_a", "spawnParticle");
+    }
+
     public static Block blockStateBlock(IBlockState state) {
         Object value = invoke(state, "blockState.getBlock", noTypes(), noArgs(), "func_177230_c", "getBlock");
         return value instanceof Block ? (Block) value : null;
@@ -449,6 +644,14 @@ public final class MinecraftMappingCompat {
             return (ResourceLocation) value;
         }
         return block == null ? null : ForgeRegistries.BLOCKS.getKey(block);
+    }
+
+    public static ResourceLocation itemRegistryName(Item item) {
+        Object value = invoke(item, "item.getRegistryName", noTypes(), noArgs(), "getRegistryName");
+        if (value instanceof ResourceLocation) {
+            return (ResourceLocation) value;
+        }
+        return item == null ? null : ForgeRegistries.ITEMS.getKey(item);
     }
 
     public static boolean blockHasTileEntity(Block block) {
@@ -585,6 +788,14 @@ public final class MinecraftMappingCompat {
         invokeStatic(glStateManagerClass(), "glStateManager.popMatrix", noTypes(), noArgs(), "func_179121_F", "popMatrix");
     }
 
+    public static void glPushAttrib() {
+        invokeStatic(glStateManagerClass(), "glStateManager.pushAttrib", noTypes(), noArgs(), "func_179123_a", "pushAttrib");
+    }
+
+    public static void glPopAttrib() {
+        invokeStatic(glStateManagerClass(), "glStateManager.popAttrib", noTypes(), noArgs(), "func_179099_b", "popAttrib");
+    }
+
     public static void glDisableTexture2D() {
         invokeStatic(glStateManagerClass(), "glStateManager.disableTexture2D", noTypes(), noArgs(), "func_179090_x", "disableTexture2D");
     }
@@ -622,6 +833,30 @@ public final class MinecraftMappingCompat {
                 "func_179132_a", "depthMask");
     }
 
+    public static void glMatrixMode(int mode) {
+        invokeStatic(glStateManagerClass(), "glStateManager.matrixMode",
+                new Class<?>[]{int.class}, new Object[]{mode},
+                "func_179128_n", "matrixMode");
+    }
+
+    public static void glColorMask(boolean red, boolean green, boolean blue, boolean alpha) {
+        invokeStatic(glStateManagerClass(), "glStateManager.colorMask",
+                new Class<?>[]{boolean.class, boolean.class, boolean.class, boolean.class},
+                new Object[]{red, green, blue, alpha},
+                "func_179135_a", "colorMask");
+    }
+
+    public static void glResetColor() {
+        invokeStatic(glStateManagerClass(), "glStateManager.resetColor", noTypes(), noArgs(), "func_179117_G", "resetColor");
+    }
+
+    public static void glColor(float red, float green, float blue, float alpha) {
+        invokeStatic(glStateManagerClass(), "glStateManager.color",
+                new Class<?>[]{float.class, float.class, float.class, float.class},
+                new Object[]{red, green, blue, alpha},
+                "func_179131_c", "color");
+    }
+
     public static boolean rayTraceIsBlock(RayTraceResult result) {
         Object value = fieldValue(result, "rayTraceResult.typeOfHit", "field_72313_a", "typeOfHit");
         return value instanceof RayTraceResult.Type && value == RayTraceResult.Type.BLOCK;
@@ -629,6 +864,11 @@ public final class MinecraftMappingCompat {
 
     public static void entityItemSetDefaultPickupDelay(EntityItem entity) {
         invoke(entity, "entityItem.setDefaultPickupDelay", noTypes(), noArgs(), "func_174869_p", "setDefaultPickupDelay");
+    }
+
+    public static ItemStack entityItemStack(EntityItem entity) {
+        Object value = invoke(entity, "entityItem.getItem", noTypes(), noArgs(), "func_92059_d", "getItem");
+        return value instanceof ItemStack ? (ItemStack) value : emptyStack();
     }
 
     public static boolean blockIsAir(Block block, IBlockState state, IBlockAccess world, BlockPos pos) {
@@ -680,7 +920,7 @@ public final class MinecraftMappingCompat {
 
     public static Integer worldDimension(World world) {
         Object provider = fieldValue(world, "world.provider", "field_73011_w", "provider");
-        if (!(provider instanceof WorldProvider)) {
+        if (provider == null) {
             return null;
         }
         Object value = invoke(provider, "worldProvider.getDimension", noTypes(), noArgs(),

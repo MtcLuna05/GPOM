@@ -29,7 +29,7 @@ public final class ClientNullPlayerStateGuard {
 
     public static boolean isUnsafeCurrentClientGameplayFrame() {
         try {
-            return isUnsafeGameplayFrame(Minecraft.getMinecraft());
+            return isUnsafeGameplayFrame(ClientAccess.minecraft());
         } catch (Throwable ignored) {
             return true;
         }
@@ -37,7 +37,7 @@ public final class ClientNullPlayerStateGuard {
 
     public static boolean hasNoCurrentClientWorldOrPlayer() {
         try {
-            return hasNoWorldOrPlayer(Minecraft.getMinecraft());
+            return hasNoWorldOrPlayer(ClientAccess.minecraft());
         } catch (Throwable ignored) {
             return true;
         }
@@ -45,7 +45,7 @@ public final class ClientNullPlayerStateGuard {
 
     public static boolean refreshAndIsUnsafeCurrentClientGameplayFrame() {
         try {
-            return state(Minecraft.getMinecraft(), true).unsafeGameplayFrame;
+            return state(ClientAccess.minecraft(), true).unsafeGameplayFrame;
         } catch (Throwable ignored) {
             return true;
         }

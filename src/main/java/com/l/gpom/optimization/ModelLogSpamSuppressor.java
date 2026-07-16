@@ -14,6 +14,8 @@ public final class ModelLogSpamSuppressor {
     private static final Logger LOGGER = LogManager.getLogger("General Purpose Optimization Mod");
     private static final Set<String> VINTAGEFIX_UCW_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> VINTAGEFIX_DYNAMIC_MODEL_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final Set<String> VINTAGEFIX_EARLY_MODEL_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+    private static final Set<String> VINTAGEFIX_INVALID_EARLY_MODEL_PATHS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> VINTAGEFIX_MISSING_TEXTURE_NAMESPACES = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> CTM_UNKNOWN_RENDER_LAYERS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private static final Set<String> CTM_TEXTURE_METADATA_ERRORS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
@@ -51,6 +53,23 @@ public final class ModelLogSpamSuppressor {
         );
     }
 
+    public static void suppressVintageFixEarlyModelLoadError(Object model, Throwable throwable) {
+        logNamespaceOnce(
+                VINTAGEFIX_EARLY_MODEL_NAMESPACES,
+                "VintageFix early model-load error",
+                model,
+                "",
+                throwable
+        );
+    }
+
+    public static void suppressVintageFixInvalidEarlyModelPath(Object path) {
+        String pathName = String.valueOf(path);
+        if (VINTAGEFIX_INVALID_EARLY_MODEL_PATHS.add(pathName)) {
+            LOGGER.info("[GPOM LogSpam] Suppressing VintageFix invalid early model path {}", pathName);
+        }
+    }
+
     public static void suppressVintageFixMissingTexture(Object texture) {
         String textureName = String.valueOf(texture);
         String namespace = namespace(textureName);
@@ -63,15 +82,30 @@ public final class ModelLogSpamSuppressor {
         }
     }
 
-    public static boolean isVintageFixUcwDefinitionPath(String path) {
+    public static boolean isVintageFixSkippableEarlyModelPath(String path) {
         if (path == null) {
             return false;
         }
         String normalized = path.replace('\\', '/').toLowerCase(Locale.ROOT);
-        return normalized.startsWith("assets/unlimitedchiselworks/ucwdefs/")
+        if (normalized.startsWith("assets/unlimitedchiselworks/ucwdefs/")
                 || normalized.contains("/assets/unlimitedchiselworks/ucwdefs/")
                 || normalized.startsWith("unlimitedchiselworks/ucwdefs/")
-                || normalized.contains("/unlimitedchiselworks/ucwdefs/");
+                || normalized.contains("/unlimitedchiselworks/ucwdefs/")) {
+            return true;
+        }
+        int slash = normalized.lastIndexOf('/');
+        String fileName = slash >= 0 ? normalized.substring(slash + 1) : normalized;
+        boolean rootLevel = slash < 0;
+        return rootLevel
+                && fileName.endsWith(".json")
+                && (fileName.startsWith("mixin.")
+                || fileName.startsWith("mixins.")
+                || fileName.contains(".mixin.")
+                || fileName.contains(".mixins."));
+    }
+
+    public static boolean isVintageFixUcwDefinitionPath(String path) {
+        return isVintageFixSkippableEarlyModelPath(path);
     }
 
     public static void suppressCtmUnknownRenderLayer(Object layer, Throwable throwable) {

@@ -167,10 +167,7 @@ public abstract class MixinGuiContainerBaublesQuickEquip {
     }
 
     @Inject(
-            method = {
-                    "mouseClicked(III)V",
-                    "func_73864_a(III)V"
-            },
+            method = "mouseClicked(III)V",
             at = @At("HEAD"),
             cancellable = true,
             require = 0

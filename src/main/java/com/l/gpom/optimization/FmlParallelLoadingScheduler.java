@@ -2160,7 +2160,37 @@ public final class FmlParallelLoadingScheduler {
                     index = i;
                 }
             }
-            return waitingFor(mods.get(index));
+            return waitingFor(mods.get(index))
+                    + " ("
+                    + elapsedMillis(oldest)
+                    + " ms, "
+                    + pending
+                    + " pending, active "
+                    + activeSummary()
+                    + ")";
+        }
+
+        private String activeSummary() {
+            if (mods.isEmpty()) {
+                return "none";
+            }
+            StringBuilder builder = new StringBuilder();
+            long now = System.nanoTime();
+            int limit = Math.min(mods.size(), 6);
+            for (int i = 0; i < limit; i++) {
+                if (i > 0) {
+                    builder.append(", ");
+                }
+                long submittedAt = i < submittedAtNanos.size() ? submittedAtNanos.get(i) : now;
+                builder.append(normalize(mods.get(i).getModId()))
+                        .append('=')
+                        .append((now - submittedAt) / 1_000_000L)
+                        .append("ms");
+            }
+            if (mods.size() > limit) {
+                builder.append(", +").append(mods.size() - limit);
+            }
+            return builder.toString();
         }
 
         private void complete(DispatchResult result) {

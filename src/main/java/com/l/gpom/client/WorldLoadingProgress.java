@@ -8,7 +8,6 @@ import net.minecraft.client.gui.GuiDownloadTerrain;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiScreenWorking;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.util.ResourceLocation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -396,6 +395,7 @@ public final class WorldLoadingProgress {
             logRenderSkipDiagnostic("font renderer null");
             return false;
         }
+        ClientAccess.syncDisplayResize(minecraft);
         int[] dimensions = normalizedDimensions(minecraft, width, height);
         width = dimensions[0];
         height = dimensions[1];
@@ -412,7 +412,7 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean safeRender(Minecraft minecraft, int width, int height, int progressOverride) {
-        if (!enabled() || !canRenderOverCurrentScreen(minecraft)) {
+        if (!enabled() || !active || !canRenderOverCurrentScreen(minecraft)) {
             return false;
         }
         try {
@@ -430,7 +430,7 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean safeRenderAndUpdate(Minecraft minecraft, int width, int height, int progressOverride) {
-        if (!enabled() || !canRenderOverCurrentScreen(minecraft)) {
+        if (!enabled() || !active || !canRenderOverCurrentScreen(minecraft)) {
             return false;
         }
         try {
@@ -449,7 +449,7 @@ public final class WorldLoadingProgress {
     }
 
     public static boolean safeRenderCurrentMinecraft(int progressOverride, boolean updateDisplay) {
-        if (!enabled()) {
+        if (!enabled() || !active) {
             return false;
         }
         try {
@@ -601,9 +601,10 @@ public final class WorldLoadingProgress {
 
     private static void setupFullScreenProjection(Minecraft minecraft, int width, int height) {
         try {
-            if (minecraft != null && minecraft.displayWidth > 0 && minecraft.displayHeight > 0) {
-                GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
-                GL11.glViewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
+            int displayWidth = ClientAccess.displayWidth(minecraft);
+            int displayHeight = ClientAccess.displayHeight(minecraft);
+            if (displayWidth > 0 && displayHeight > 0) {
+                GL11.glViewport(0, 0, displayWidth, displayHeight);
             }
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -633,11 +634,10 @@ public final class WorldLoadingProgress {
 
     private static void resetGuiColor() {
         try {
-            GlStateManager.enableTexture2D();
-            GlStateManager.disableDepth();
-            GlStateManager.disableLighting();
-            GlStateManager.disableFog();
-            GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glDisable(GL11.GL_LIGHTING);
+            GL11.glDisable(GL11.GL_FOG);
             GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         } catch (Throwable ignored) {
         }
@@ -827,8 +827,20 @@ public final class WorldLoadingProgress {
     private static int[] normalizedDimensions(Minecraft minecraft, int width, int height) {
         try {
             ScaledResolution resolution = new ScaledResolution(minecraft);
-            int scaledWidth = resolution.getScaledWidth();
-            int scaledHeight = resolution.getScaledHeight();
+            Method widthMethod = scaledResolutionGetWidthMethod;
+            if (widthMethod == null) {
+                widthMethod = findMethod(ScaledResolution.class, new Class<?>[0], "func_78326_a", "getScaledWidth");
+                scaledResolutionGetWidthMethod = widthMethod;
+            }
+            Method heightMethod = scaledResolutionGetHeightMethod;
+            if (heightMethod == null) {
+                heightMethod = findMethod(ScaledResolution.class, new Class<?>[0], "func_78328_b", "getScaledHeight");
+                scaledResolutionGetHeightMethod = heightMethod;
+            }
+            Object scaledWidthValue = widthMethod.invoke(resolution);
+            Object scaledHeightValue = heightMethod.invoke(resolution);
+            int scaledWidth = scaledWidthValue instanceof Number ? ((Number) scaledWidthValue).intValue() : 0;
+            int scaledHeight = scaledHeightValue instanceof Number ? ((Number) scaledHeightValue).intValue() : 0;
             if (scaledWidth > 0 && scaledHeight > 0) {
                 return new int[]{scaledWidth, scaledHeight};
             }
@@ -915,6 +927,7 @@ public final class WorldLoadingProgress {
     }
 
     private static int[] currentScaledDimensions(Minecraft minecraft) {
+        ClientAccess.syncDisplayResize(minecraft);
         try {
             ScaledResolution resolution = new ScaledResolution(minecraft);
             int width = invokeScaledDimension(resolution, true);

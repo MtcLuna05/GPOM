@@ -25,6 +25,13 @@ public final class FramedBlockEffectiveState {
     private static final ConcurrentMap<Class<?>, Method> ARCHITECTURE_BASE_STATE_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> STATE_BLOCK_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> TILE_ENTITY_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> BLOCK_STATE_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> COMBINED_LIGHT_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> IS_AIR_BLOCK_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> BIOME_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> STRONG_POWER_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> WORLD_TYPE_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> SIDE_SOLID_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
 
     private FramedBlockEffectiveState() {
@@ -163,45 +170,153 @@ public final class FramedBlockEffectiveState {
 
         @Override
         public TileEntity getTileEntity(BlockPos pos) {
-            return delegate.getTileEntity(pos);
+            return func_175625_s(pos);
+        }
+
+        public TileEntity func_175625_s(BlockPos pos) {
+            return tileEntity(delegate, pos);
         }
 
         @Override
         public int getCombinedLight(BlockPos pos, int lightValue) {
-            return delegate.getCombinedLight(pos, lightValue);
+            return func_175626_b(pos, lightValue);
+        }
+
+        public int func_175626_b(BlockPos pos, int lightValue) {
+            Object value = invokeDelegate(
+                    COMBINED_LIGHT_METHODS,
+                    "getCombinedLight",
+                    "func_175626_b",
+                    new Class<?>[]{BlockPos.class, int.class},
+                    pos,
+                    lightValue
+            );
+            return value instanceof Number ? ((Number) value).intValue() : 0;
         }
 
         @Override
         public IBlockState getBlockState(BlockPos pos) {
+            return func_180495_p(pos);
+        }
+
+        public IBlockState func_180495_p(BlockPos pos) {
             IBlockState effective = state(delegate, pos);
-            return effective == null ? delegate.getBlockState(pos) : effective;
+            if (effective != null) {
+                return effective;
+            }
+            Object value = invokeDelegate(
+                    BLOCK_STATE_METHODS,
+                    "getBlockState",
+                    "func_180495_p",
+                    new Class<?>[]{BlockPos.class},
+                    pos
+            );
+            return value instanceof IBlockState ? (IBlockState) value : null;
         }
 
         @Override
         public boolean isAirBlock(BlockPos pos) {
-            return delegate.isAirBlock(pos);
+            return func_175623_d(pos);
+        }
+
+        public boolean func_175623_d(BlockPos pos) {
+            Object value = invokeDelegate(
+                    IS_AIR_BLOCK_METHODS,
+                    "isAirBlock",
+                    "func_175623_d",
+                    new Class<?>[]{BlockPos.class},
+                    pos
+            );
+            return value instanceof Boolean && (Boolean) value;
         }
 
         @Override
         public Biome getBiome(BlockPos pos) {
-            return delegate.getBiome(pos);
+            return func_180494_b(pos);
+        }
+
+        public Biome func_180494_b(BlockPos pos) {
+            Object value = invokeDelegate(
+                    BIOME_METHODS,
+                    "getBiome",
+                    "func_180494_b",
+                    new Class<?>[]{BlockPos.class},
+                    pos
+            );
+            return value instanceof Biome ? (Biome) value : null;
         }
 
         @Override
         public int getStrongPower(BlockPos pos, EnumFacing direction) {
-            return delegate.getStrongPower(pos, direction);
+            return func_175627_a(pos, direction);
+        }
+
+        public int func_175627_a(BlockPos pos, EnumFacing direction) {
+            Object value = invokeDelegate(
+                    STRONG_POWER_METHODS,
+                    "getStrongPower",
+                    "func_175627_a",
+                    new Class<?>[]{BlockPos.class, EnumFacing.class},
+                    pos,
+                    direction
+            );
+            return value instanceof Number ? ((Number) value).intValue() : 0;
         }
 
         @Override
         public WorldType getWorldType() {
-            return delegate.getWorldType();
+            return func_175624_G();
+        }
+
+        public WorldType func_175624_G() {
+            Object value = invokeDelegate(
+                    WORLD_TYPE_METHODS,
+                    "getWorldType",
+                    "func_175624_G",
+                    new Class<?>[0]
+            );
+            return value instanceof WorldType ? (WorldType) value : null;
         }
 
         @Override
         public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean defaultValue) {
             IBlockState effective = state(delegate, pos);
             Block block = blockFromState(effective);
-            return block == null ? delegate.isSideSolid(pos, side, defaultValue) : block.isSideSolid(effective, this, pos, side);
+            if (block != null) {
+                return block.isSideSolid(effective, this, pos, side);
+            }
+            Object value = invokeDelegate(
+                    SIDE_SOLID_METHODS,
+                    "isSideSolid",
+                    "isSideSolid",
+                    new Class<?>[]{BlockPos.class, EnumFacing.class, boolean.class},
+                    pos,
+                    side,
+                    defaultValue
+            );
+            return value instanceof Boolean ? (Boolean) value : defaultValue;
+        }
+
+        private Object invokeDelegate(
+                ConcurrentMap<Class<?>, Method> cache,
+                String mcpName,
+                String srgName,
+                Class<?>[] parameterTypes,
+                Object... args
+        ) {
+            try {
+                Method method = cache == null ? null : cache.get(delegate.getClass());
+                if (method == null) {
+                    method = ReflectionLookup.findMethod(delegate.getClass(), mcpName, srgName, parameterTypes);
+                    if (cache != null) {
+                        Method previous = cache.putIfAbsent(delegate.getClass(), method);
+                        method = previous == null ? method : previous;
+                    }
+                }
+                return method.invoke(delegate, args);
+            } catch (ReflectiveOperationException | LinkageError ignored) {
+                return null;
+            }
         }
     }
 }
