@@ -233,7 +233,7 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
                 if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
                     GPOM.LOGGER.info("[GPOM Multipart] Guarded TileMultipart notifications before world attachment");
                 }
-                ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
                 node.accept(writer);
                 return writer.toByteArray();
             }
