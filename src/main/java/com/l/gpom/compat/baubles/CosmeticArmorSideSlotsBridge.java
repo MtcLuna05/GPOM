@@ -13,6 +13,7 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import baubles.api.IBauble;
 import net.minecraftforge.fml.common.Loader;
 
 import java.lang.reflect.Field;
@@ -32,10 +33,10 @@ public final class CosmeticArmorSideSlotsBridge {
     private static final String NETWORK_PACKET_CLASS = "lain.mods.cos.network.NetworkPacket";
     private static final String PACKET_SYNC_COS_ARMOR_CLASS = "lain.mods.cos.network.packet.PacketSyncCosArmor";
     private static final String[] SLOT_NAMES = {
-            "Boots",
-            "Leggings",
-            "Chestplate",
-            "Helmet"
+            "Cosmetic Boots",
+            "Cosmetic Leggings",
+            "Cosmetic Chestplate",
+            "Cosmetic Helmet"
     };
     private static final String[] SLOT_TEXTURES = {
             "minecraft:items/empty_armor_slot_boots",
@@ -298,7 +299,10 @@ public final class CosmeticArmorSideSlotsBridge {
                 stackItemMethod = getItem;
             }
             Object item = getItem == null ? null : getItem.invoke(stack);
-            if (!(item instanceof Item)) {
+            if (!(item instanceof Item) || item instanceof IBauble) {
+                // Functional Baubles such as Thaumcraft's Goggles of Revealing
+                // must stay in the real Baubles slot; Cosmetic Armor is never
+                // inspected by gameplay systems.
                 return false;
             }
             Method validArmor = validArmorMethod(item.getClass());

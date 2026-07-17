@@ -49,10 +49,12 @@ public final class FramedBlockEffectiveState {
 
         String className = tile.getClass().getName();
         if (BLOCKCRAFTERY_TILE_EDITABLE_BLOCK.equals(className)) {
-            return sanitized(readBlockcrafteryState(tile));
+            FramedMaterialData.MaterialStates saved = FramedMaterialData.states(tile, "blockcraftery");
+            return sanitized(saved.present() ? saved.primary() : readBlockcrafteryState(tile));
         }
         if (ARCHITECTURE_TILE_SHAPE.equals(className)) {
-            return sanitized(readArchitectureBaseState(tile));
+            FramedMaterialData.MaterialStates saved = FramedMaterialData.states(tile, "architecturecraft");
+            return sanitized(saved.present() ? saved.primary() : readArchitectureBaseState(tile));
         }
         return null;
     }

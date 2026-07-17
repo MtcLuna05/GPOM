@@ -26,11 +26,13 @@ public abstract class MixinTileShapeFramedMaterialData implements FramedMaterial
     @Inject(method = "func_145839_a(Lnet/minecraft/nbt/NBTTagCompound;)V", at = @At("RETURN"), require = 0)
     private void gpom$readFramedMaterialData(NBTTagCompound compound, CallbackInfo ci) {
         FramedMaterialData.read(this, compound);
+        gpom$applyAuthoritativeMaterialData();
     }
 
     @Inject(method = "readFromItemStackNBT", at = @At("RETURN"), require = 0)
     private void gpom$readFramedMaterialDataFromItem(NBTTagCompound compound, CallbackInfo ci) {
         FramedMaterialData.read(this, compound);
+        gpom$applyAuthoritativeMaterialData();
     }
 
     @Inject(method = "func_189515_b(Lnet/minecraft/nbt/NBTTagCompound;)Lnet/minecraft/nbt/NBTTagCompound;", at = @At("RETURN"), require = 0)
@@ -43,6 +45,13 @@ public abstract class MixinTileShapeFramedMaterialData implements FramedMaterial
         FramedMaterialData.writeArchitectureCraft(this, compound, this.baseBlockState, this.secondaryBlockState);
     }
 
+    @Inject(method = "applySecondaryMaterial", at = @At("RETURN"), require = 0)
+    private void gpom$refreshChangedSecondaryMaterial(CallbackInfoReturnable<Boolean> cir) {
+        if (Boolean.TRUE.equals(cir.getReturnValue())) {
+            FramedMaterialData.refreshArchitectureCraft(this, this.baseBlockState, this.secondaryBlockState);
+        }
+    }
+
     @Override
     public NBTTagCompound gpom$getFramedMaterialData() {
         return this.gpom$framedMaterialData;
@@ -51,5 +60,16 @@ public abstract class MixinTileShapeFramedMaterialData implements FramedMaterial
     @Override
     public void gpom$setFramedMaterialData(NBTTagCompound data) {
         this.gpom$framedMaterialData = data;
+    }
+
+    @Unique
+    private void gpom$applyAuthoritativeMaterialData() {
+        FramedMaterialData.MaterialStates saved = FramedMaterialData.states(this, "architecturecraft");
+        if (saved.primary() != null) {
+            this.baseBlockState = saved.primary();
+        }
+        if (saved.secondary() != null) {
+            this.secondaryBlockState = saved.secondary();
+        }
     }
 }

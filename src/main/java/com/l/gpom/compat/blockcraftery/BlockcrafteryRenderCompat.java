@@ -2,6 +2,7 @@ package com.l.gpom.compat.blockcraftery;
 
 import com.l.gpom.client.ClientAccess;
 import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
+import com.l.gpom.compat.framed.FramedMaterialData;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -41,7 +42,8 @@ public final class BlockcrafteryRenderCompat {
 
         try {
             Block block = MinecraftMappingCompat.blockStateBlock(copied);
-            return MinecraftMappingCompat.blockCanRenderInLayer(block, copied, currentLayer) ? currentLayer : null;
+            BlockRenderLayer framedLayer = FramedMaterialData.framedRenderLayer(block, copied);
+            return framedLayer == currentLayer ? currentLayer : null;
         } catch (RuntimeException | LinkageError ignored) {
             try {
                 Block block = MinecraftMappingCompat.blockStateBlock(copied);
@@ -65,7 +67,7 @@ public final class BlockcrafteryRenderCompat {
             return currentLayer == BlockRenderLayer.SOLID;
         }
 
-        BlockRenderLayer declaredLayer = declaredRenderLayer(block);
+        BlockRenderLayer declaredLayer = FramedMaterialData.framedRenderLayer(block, copied);
         if (declaredLayer != null) {
             if (declaredLayer == currentLayer) {
                 return true;
@@ -138,6 +140,9 @@ public final class BlockcrafteryRenderCompat {
                 sprites[0] = particle(copiedModel);
                 List<BakedQuad> copiedQuads = modelQuads(copiedModel, copied, side, rand);
                 if (!copiedQuads.isEmpty()) {
+                    // Keep CTM's per-quad atlas UVs; rebuilding from sprites
+                    // collapses connected textures into the base tile.
+                    generated.addAll(copiedQuads);
                     sprites = new TextureAtlasSprite[copiedQuads.size()];
                     tints = new int[copiedQuads.size()];
                     for (int index = 0; index < copiedQuads.size(); index++) {
@@ -151,8 +156,8 @@ public final class BlockcrafteryRenderCompat {
         }
 
         BlockRenderLayer layer = MinecraftForgeClient.getRenderLayer();
-        if ((useFallbackTexture && layer == BlockRenderLayer.CUTOUT_MIPPED)
-                || (!useFallbackTexture && rendersInLayer(copied, layer))) {
+        if (generated.isEmpty() && ((useFallbackTexture && layer == BlockRenderLayer.CUTOUT_MIPPED)
+                || (!useFallbackTexture && rendersInLayer(copied, layer)))) {
             for (int index = 0; index < sprites.length; index++) {
                 addGeometry(model, generated, side, hostState, repeatedSprites(sprites[index]), tints[index]);
             }
@@ -170,7 +175,8 @@ public final class BlockcrafteryRenderCompat {
         }
         try {
             Block block = MinecraftMappingCompat.blockStateBlock(copied);
-            return MinecraftMappingCompat.blockCanRenderInLayer(block, copied, layer);
+            BlockRenderLayer framedLayer = FramedMaterialData.framedRenderLayer(block, copied);
+            return framedLayer == layer;
         } catch (RuntimeException | LinkageError ignored) {
             try {
                 Block block = MinecraftMappingCompat.blockStateBlock(copied);

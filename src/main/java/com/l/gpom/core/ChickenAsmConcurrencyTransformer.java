@@ -11,9 +11,15 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InsnList;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.VarInsnNode;
 
 import java.lang.reflect.Field;
 import java.util.HashSet;
@@ -24,6 +30,8 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
     private static final String SUPER_CACHE = "codechicken.asm.ClassHierarchyManager$SuperCache";
     private static final String OBF_MAPPING = "codechicken.asm.ObfMapping";
     private static final String MULTIPART_REGISTRY = "codechicken.multipart.MultiPartRegistry$";
+    private static final String TILE_MULTIPART = "codechicken.multipart.TileMultipart";
+    private static final String TILE_MULTIPART_INTERNAL = "codechicken/multipart/TileMultipart";
     private static final String HASH_MAP = "java/util/HashMap";
     private static final String HASH_SET = "java/util/HashSet";
     private static final String SYNC_HASH_MAP = "com/l/gpom/util/SynchronizedHashMap";
@@ -46,6 +54,9 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
         }
         if (MULTIPART_REGISTRY.equals(className)) {
             return synchronizeMultipartRegistry(basicClass);
+        }
+        if (TILE_MULTIPART.equals(className)) {
+            return guardMultipartUnboundTileNotification(basicClass);
         }
         return basicClass;
     }
@@ -193,6 +204,43 @@ public final class ChickenAsmConcurrencyTransformer implements IClassTransformer
             return true;
         }
         return "registerConverter".equals(method.name) || "registerPlacementConverter".equals(method.name);
+    }
+
+    private static byte[] guardMultipartUnboundTileNotification(byte[] basicClass) {
+        try {
+            ClassNode node = new ClassNode();
+            new ClassReader(basicClass).accept(node, 0);
+
+            for (MethodNode method : node.methods) {
+                if (!"notifyTileChange".equals(method.name) || !"()V".equals(method.desc)) {
+                    continue;
+                }
+
+                LabelNode attached = new LabelNode();
+                InsnList guard = new InsnList();
+                guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                guard.add(new FieldInsnNode(
+                        Opcodes.GETFIELD,
+                        TILE_MULTIPART_INTERNAL,
+                        "field_145850_b",
+                        "Lnet/minecraft/world/World;"
+                ));
+                guard.add(new JumpInsnNode(Opcodes.IFNONNULL, attached));
+                guard.add(new InsnNode(Opcodes.RETURN));
+                guard.add(attached);
+                method.instructions.insert(guard);
+
+                if (GpomEarlyConfig.fmlSchedulerLogsEnabled()) {
+                    GPOM.LOGGER.info("[GPOM Multipart] Guarded TileMultipart notifications before world attachment");
+                }
+                ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                node.accept(writer);
+                return writer.toByteArray();
+            }
+        } catch (Throwable throwable) {
+            GPOM.LOGGER.warn("[GPOM Multipart] Failed to guard unbound TileMultipart notifications; continuing with original method", throwable);
+        }
+        return basicClass;
     }
 
     private static byte[] patchHierarchyManager(byte[] basicClass) {

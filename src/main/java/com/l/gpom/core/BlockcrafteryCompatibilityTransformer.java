@@ -1,7 +1,6 @@
 package com.l.gpom.core;
 
 import com.l.gpom.config.GpomEarlyConfig;
-import com.l.gpom.util.OptionalModRuntime;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
@@ -19,8 +18,11 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 import java.util.Iterator;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class BlockcrafteryCompatibilityTransformer implements IClassTransformer {
+    private static final Set<String> PATCHED_TILE_CLASSES = ConcurrentHashMap.newKeySet();
     private static final String CUBE = "epicsquid.blockcraftery.block.BlockEditableCube";
     private static final String SLAB = "epicsquid.blockcraftery.block.BlockEditableSlab";
     private static final String STAIRS = "epicsquid.blockcraftery.block.BlockEditableStairs";
@@ -63,8 +65,7 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             boolean hitboxes = GpomEarlyConfig.blockcrafteryAccurateHitboxesEnabled();
             boolean parentMaterialOcclusion = GpomEarlyConfig.blockcrafteryParentMaterialOcclusionEnabled();
             boolean modelNullSideCull = false;
-            boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled()
-                    && !OptionalModRuntime.ausmPresent();
+            boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled();
             boolean framedMaterialStorage = GpomEarlyConfig.framedMaterialStateStorageEnabled();
             if (!hitboxes && !modelLayerCompat && !modelNullSideCull && !framedMaterialStorage) {
                 return basicClass;
@@ -96,8 +97,47 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         ClassNode node = readNode(basicClass);
         boolean changed = addFramedMaterialAccess(node);
         changed |= patchTileRead(node);
-        changed |= patchTileWrite(node);
         return changed ? writeNode(node) : basicClass;
+    }
+
+    private static boolean patchTileMaterialMutation(ClassNode node) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("activate")) {
+                continue;
+            }
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (!(instruction instanceof org.objectweb.asm.tree.FieldInsnNode)) {
+                    continue;
+                }
+                org.objectweb.asm.tree.FieldInsnNode field = (org.objectweb.asm.tree.FieldInsnNode) instruction;
+                if (field.getOpcode() != Opcodes.PUTFIELD
+                        || !field.owner.equals(node.name)
+                        || !field.name.equals("state")
+                        || !field.desc.equals(BLOCK_STATE)) {
+                    continue;
+                }
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new org.objectweb.asm.tree.FieldInsnNode(
+                        Opcodes.GETFIELD,
+                        node.name,
+                        "state",
+                        BLOCK_STATE
+                ));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "refreshBlockcraftery",
+                        "(L" + FRAMED_ACCESS + ";" + BLOCK_STATE + ")V",
+                        false
+                ));
+                method.instructions.insert(instruction, injected);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static boolean addFramedMaterialAccess(ClassNode node) {
@@ -133,12 +173,19 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             if (!method.name.equals("func_145839_a") || !method.desc.equals("(" + NBT_COMPOUND + ")V")) {
                 continue;
             }
+            // Cleanroom may invoke a core transformer more than once for the
+            // same class name. Do not append a second framed-state read path.
+            if (hasStaticCall(method, FRAMED_HELPER, "authoritativeBlockcrafteryState")) {
+                continue;
+            }
 
             for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
                 if (instruction.getOpcode() != Opcodes.RETURN) {
                     continue;
                 }
 
+                int authoritativeStateLocal = method.maxLocals;
+                method.maxLocals = authoritativeStateLocal + 1;
                 InsnList injected = new InsnList();
                 injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
                 injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
@@ -149,12 +196,50 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
                         "(L" + FRAMED_ACCESS + ";" + NBT_COMPOUND + ")V",
                         false
                 ));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new org.objectweb.asm.tree.FieldInsnNode(
+                        Opcodes.GETFIELD,
+                        node.name,
+                        "state",
+                        BLOCK_STATE
+                ));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "authoritativeBlockcrafteryState",
+                        "(Ljava/lang/Object;" + BLOCK_STATE + ")" + BLOCK_STATE,
+                        false
+                ));
+                injected.add(new VarInsnNode(Opcodes.ASTORE, authoritativeStateLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, authoritativeStateLocal));
+                injected.add(new org.objectweb.asm.tree.FieldInsnNode(
+                        Opcodes.PUTFIELD,
+                        node.name,
+                        "state",
+                        BLOCK_STATE
+                ));
                 method.instructions.insertBefore(instruction, injected);
                 changed = true;
                 break;
             }
         }
         return changed;
+    }
+
+    private static boolean hasStaticCall(MethodNode method, String owner, String name) {
+        for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+            if (instruction instanceof MethodInsnNode) {
+                MethodInsnNode methodInsn = (MethodInsnNode) instruction;
+                if (methodInsn.getOpcode() == Opcodes.INVOKESTATIC
+                        && owner.equals(methodInsn.owner)
+                        && name.equals(methodInsn.name)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static boolean patchTileWrite(ClassNode node) {
@@ -598,7 +683,11 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     }
 
     private static byte[] writeNode(ClassNode node) {
-        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+        // Injected framed-material calls change the operand stack at existing
+        // return points. Recompute stack-map frames as well as max stack so
+        // Cleanroom's verifier does not retain stale frames from the original
+        // Blockcraftery method.
+        ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         node.accept(writer);
         return writer.toByteArray();
     }

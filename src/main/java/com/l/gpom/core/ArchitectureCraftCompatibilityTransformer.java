@@ -51,13 +51,13 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
         }
 
         try {
-            if (GpomEarlyConfig.architectureCraftFastShapeLightingEnabled()
-                    && !OptionalModRuntime.ausmPresent()
-                    && RENDER_TARGET_WORLD.equals(className)) {
+            if (RENDER_TARGET_WORLD.equals(className)
+                    && GpomEarlyConfig.architectureCraftFastShapeLightingEnabled()
+                    && !OptionalModRuntime.ausmPresent()) {
                 return patchRenderTargetWorld(basicClass, className);
             }
-            if (GpomEarlyConfig.architectureCraftAccurateHitboxesEnabled()
-                    && (BLOCK_ARCHITECTURE.equals(className) || BLOCK_SHAPE.equals(className))) {
+            if ((BLOCK_ARCHITECTURE.equals(className) || BLOCK_SHAPE.equals(className))
+                    && GpomEarlyConfig.architectureCraftAccurateHitboxesEnabled()) {
                 return patchArchitectureBlock(
                         basicClass,
                         className,
@@ -65,8 +65,8 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
                         GpomEarlyConfig.architectureCraftParentMaterialOcclusionEnabled()
                 );
             }
-            if (GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialsEnabled()
-                    && TILE_SAWBENCH.equals(className)) {
+            if (TILE_SAWBENCH.equals(className)
+                    && GpomEarlyConfig.architectureCraftAdditionalSawbenchMaterialsEnabled()) {
                 return patchTileSawbench(basicClass, className);
             }
         } catch (Throwable ignored) {

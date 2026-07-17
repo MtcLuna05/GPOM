@@ -1,9 +1,11 @@
 package com.l.gpom.compat.blockcraftery;
 
 import com.l.gpom.compat.framed.FramedBlockEffectiveState;
+import com.l.gpom.compat.framed.FramedMaterialData;
 import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
+import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.material.Material;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
@@ -24,6 +26,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public final class BlockcrafteryCompat {
     private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
@@ -56,6 +61,11 @@ public final class BlockcrafteryCompat {
     private static final ConcurrentMap<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
 
     private static volatile Field tileStateField;
+    private static final Map<IBlockState, Boolean> FUSED_GLASS_STATES = Collections.synchronizedMap(new WeakHashMap<IBlockState, Boolean>());
+
+    public static boolean isFusedGlassState(IBlockState state) {
+        return Boolean.TRUE.equals(FUSED_GLASS_STATES.get(state));
+    }
 
     private BlockcrafteryCompat() {
     }
@@ -636,18 +646,97 @@ public final class BlockcrafteryCompat {
     }
 
     private static IBlockState readCopiedState(TileEntity tile) {
+        FramedMaterialData.MaterialStates saved = FramedMaterialData.states(tile, "blockcraftery");
+        if (saved.present()) {
+            return saved.primary();
+        }
         try {
             Field field = tileStateField;
-            if (field == null) {
-                field = tile.getClass().getField("state");
+            if (field == null || !field.getDeclaringClass().isAssignableFrom(tile.getClass())) {
+                Class<?> type = tile.getClass();
+                while (type != null && field == null) {
+                    try {
+                        field = type.getDeclaredField("state");
+                    } catch (NoSuchFieldException ignored) {
+                        type = type.getSuperclass();
+                    }
+                }
+                if (field == null) {
+                    return null;
+                }
                 field.setAccessible(true);
                 tileStateField = field;
             }
             Object value = field.get(tile);
-            return value instanceof IBlockState ? (IBlockState) value : null;
+            if (!(value instanceof IBlockState)) {
+                return null;
+            }
+            IBlockState state = (IBlockState) value;
+            try {
+                Field stackField = tile.getClass().getDeclaredField("stack");
+                stackField.setAccessible(true);
+                Object stack = stackField.get(tile);
+                Object tag = MinecraftMappingCompat.invoke(stack, "itemStack.writeToNBT",
+                        new Class<?>[]{net.minecraft.nbt.NBTTagCompound.class},
+                        new Object[]{new net.minecraft.nbt.NBTTagCompound()},
+                        "func_77955_b", "writeToNBT");
+                if (tag instanceof net.minecraft.nbt.NBTTagCompound) {
+                    Object id = MinecraftMappingCompat.invoke(tag, "nbt.getString",
+                            new Class<?>[]{String.class}, new Object[]{"id"},
+                            "func_74779_i", "getString");
+                    if (id instanceof String && ((String) id).endsWith("block_fused_glass")) {
+                        FUSED_GLASS_STATES.put(state, Boolean.TRUE);
+                        state = fusedGlassState(state);
+                    }
+                }
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            }
+            return state;
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             return null;
         }
+    }
+
+    private static IBlockState fusedGlassState(IBlockState state) {
+        try {
+            Object properties = MinecraftMappingCompat.invoke(state, "blockState.getProperties",
+                    MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                    "func_177228_b", "getProperties");
+            if (!(properties instanceof Map)) {
+                return state;
+            }
+            for (Object raw : ((Map<?, ?>) properties).keySet()) {
+                if (!(raw instanceof IProperty)) {
+                    continue;
+                }
+                IProperty<?> property = (IProperty<?>) raw;
+                Object name = MinecraftMappingCompat.invoke(property, "property.getName",
+                        MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                        "func_177702_a", "getName");
+                if (!(name instanceof String) || !"kind".equals(name)) {
+                    continue;
+                }
+                Object allowed = MinecraftMappingCompat.invoke(property, "property.getAllowedValues",
+                        MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
+                        "func_177700_c", "getAllowedValues");
+                if (!(allowed instanceof Iterable)) {
+                    continue;
+                }
+                for (Object value : (Iterable<?>) allowed) {
+                    Object valueName = MinecraftMappingCompat.invoke(property, "property.getName",
+                            new Class<?>[]{Comparable.class}, new Object[]{value},
+                            "func_177701_a", "getName");
+                    if ("fused_glass".equals(valueName) || "glass".equals(valueName)) {
+                        Object updated = MinecraftMappingCompat.invoke(state, "blockState.withProperty",
+                                new Class<?>[]{IProperty.class, Comparable.class}, new Object[]{property, value},
+                                "func_177226_a", "withProperty");
+                        return updated instanceof IBlockState ? (IBlockState) updated : state;
+                    }
+                }
+            }
+        } catch (RuntimeException | LinkageError ignored) {
+        }
+        return state;
     }
 
     private static Block blockFromState(IBlockState state) {
