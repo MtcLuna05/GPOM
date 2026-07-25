@@ -1,5 +1,6 @@
 package com.l.gpom.core;
 
+import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.launchwrapper.IClassTransformer;
 import org.objectweb.asm.ClassReader;
@@ -34,12 +35,14 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     private static final String TRAP_DOOR = "epicsquid.blockcraftery.block.BlockEditableTrapDoor";
     private static final String PRESSURE_PLATE = "epicsquid.blockcraftery.block.BlockEditablePressurePlate";
     private static final String MODEL_EDITABLE = "epicsquid.blockcraftery.model.BakedModelEditable";
+    private static final String MYSTICAL_LIB_MODEL_UTIL = "epicsquid.mysticallib.model.ModelUtil";
     private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String WORLD = "net.minecraft.world.World";
     private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryCompat";
     private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
     private static final String FRAMED_HELPER = "com/l/gpom/compat/framed/FramedMaterialData";
     private static final String FRAMED_ACCESS = "com/l/gpom/compat/framed/FramedMaterialDataAccess";
+    private static final String QUAD_PROVENANCE = "com/l/gpom/compat/framed/FramedQuadProvenance";
     private static final String NBT_COMPOUND = "Lnet/minecraft/nbt/NBTTagCompound;";
     private static final String BLOCK_STATE = "Lnet/minecraft/block/state/IBlockState;";
     private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
@@ -49,6 +52,7 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     private static final String GET_QUADS_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/util/EnumFacing;J)Ljava/util/List;";
     private static final String RENDER_LAYER = "Lnet/minecraft/util/BlockRenderLayer;";
     private static final String MAY_PLACE_DESC = "(Lnet/minecraft/block/Block;Lnet/minecraft/util/math/BlockPos;ZLnet/minecraft/util/EnumFacing;Lnet/minecraft/entity/Entity;)Z";
+    private static final String LIGHT_VALUE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;)I";
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -67,11 +71,24 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             boolean modelNullSideCull = false;
             boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled();
             boolean framedMaterialStorage = GpomEarlyConfig.framedMaterialStateStorageEnabled();
+            if (TILE_EDITABLE_BLOCK.equals(className) && !framedMaterialStorage
+                    && PATCHED_TILE_CLASSES.add("disabled:" + className)) {
+                GPOM.LOGGER.warn(
+                        "[GPOM Framed Material Probe] Blockcraftery tile storage disabled; "
+                                + "emission, Bloom, and CTM metadata will not be attached"
+                );
+            }
             if (!hitboxes && !modelLayerCompat && !modelNullSideCull && !framedMaterialStorage) {
                 return basicClass;
             }
             if (framedMaterialStorage && TILE_EDITABLE_BLOCK.equals(className)) {
                 return patchTileEditableBlock(basicClass);
+            }
+            if (framedMaterialStorage && MYSTICAL_LIB_MODEL_UTIL.equals(className)) {
+                return patchMysticalLibQuadFactory(basicClass);
+            }
+            if (framedMaterialStorage && isAnyEditableBlock(className)) {
+                basicClass = patchEditableFramedVisuals(basicClass);
             }
             if (hitboxes && CUBE.equals(className)) {
                 return patchCube(basicClass, parentMaterialOcclusion);
@@ -85,19 +102,81 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             if (hitboxes && WORLD.equals(className)) {
                 return patchWorld(basicClass);
             }
-            if ((modelLayerCompat || modelNullSideCull) && MODEL_EDITABLE.equals(className)) {
-                return patchEditableModel(basicClass, modelLayerCompat, modelNullSideCull);
+            if ((modelLayerCompat || modelNullSideCull || framedMaterialStorage) && MODEL_EDITABLE.equals(className)) {
+                return patchEditableModel(basicClass, modelLayerCompat, modelNullSideCull, framedMaterialStorage);
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable throwable) {
+            if (TILE_EDITABLE_BLOCK.equals(className) || MODEL_EDITABLE.equals(className)) {
+                GPOM.LOGGER.warn(
+                        "[GPOM Framed Material Probe] Failed to patch Blockcraftery target {}",
+                        className,
+                        throwable
+                );
+            }
         }
         return basicClass;
     }
 
     private static byte[] patchTileEditableBlock(byte[] basicClass) {
         ClassNode node = readNode(basicClass);
-        boolean changed = addFramedMaterialAccess(node);
-        changed |= patchTileRead(node);
+        boolean accessChanged = addFramedMaterialAccess(node);
+        boolean readChanged = patchTileRead(node);
+        boolean writeChanged = patchTileWrite(node);
+        boolean mutationChanged = patchTileMaterialMutation(node);
+        boolean changed = accessChanged || readChanged || writeChanged || mutationChanged;
+        if (PATCHED_TILE_CLASSES.add(node.name)) {
+            GPOM.LOGGER.info(
+                    "[GPOM Framed Material Probe] Blockcraftery tile patched "
+                            + "access={} read={} write={} mutation={} changed={}",
+                    accessChanged,
+                    readChanged,
+                    writeChanged,
+                    mutationChanged,
+                    changed
+            );
+        }
         return changed ? writeNode(node) : basicClass;
+    }
+
+    private static byte[] patchEditableFramedVisuals(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        boolean changed = patchLightValue(node, "getLightValue");
+        return changed ? writeNode(node) : basicClass;
+    }
+
+    private static boolean patchLightValue(ClassNode node, String name) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!name.equals(method.name) || !LIGHT_VALUE_DESC.equals(method.desc)
+                    || hasStaticCall(method, FRAMED_HELPER, "inheritedLightValue")) {
+                continue;
+            }
+            int returnLocal = method.maxLocals;
+            method.maxLocals = returnLocal + 1;
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null; instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.IRETURN) {
+                    continue;
+                }
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ISTORE, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ILOAD, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "inheritedLightValue",
+                        "(ILnet/minecraft/block/Block;" + BLOCK_STATE
+                                + "Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;)I",
+                        false
+                ));
+                method.instructions.insertBefore(instruction, injected);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static boolean patchTileMaterialMutation(ClassNode node) {
@@ -220,6 +299,21 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
                         "state",
                         BLOCK_STATE
                 ));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new org.objectweb.asm.tree.FieldInsnNode(
+                        Opcodes.GETFIELD,
+                        node.name,
+                        "state",
+                        BLOCK_STATE
+                ));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        FRAMED_HELPER,
+                        "refreshBlockcraftery",
+                        "(L" + FRAMED_ACCESS + ";" + BLOCK_STATE + ")V",
+                        false
+                ));
                 method.instructions.insertBefore(instruction, injected);
                 changed = true;
                 break;
@@ -329,7 +423,12 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         return changed ? writeNode(node) : basicClass;
     }
 
-    private static byte[] patchEditableModel(byte[] basicClass, boolean modelLayerCompat, boolean modelNullSideCull) {
+    private static byte[] patchEditableModel(
+            byte[] basicClass,
+            boolean modelLayerCompat,
+            boolean modelNullSideCull,
+            boolean framedMaterialStorage
+    ) {
         ClassNode node = readNode(basicClass);
         boolean changed = false;
         if (modelNullSideCull) {
@@ -340,7 +439,130 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             changed |= patchModelGetQuadsMethod(node, "func_188616_a");
             changed |= patchModelGetQuadsMethod(node, "getQuads");
         }
+        if (modelLayerCompat || modelNullSideCull) {
+            changed |= synchronizeMethod(node, "func_188616_a", GET_QUADS_DESC);
+            changed |= synchronizeMethod(node, "getQuads", GET_QUADS_DESC);
+        }
+        if (framedMaterialStorage) {
+            changed |= patchModelGeometryProvenance(node, "func_188616_a");
+            changed |= patchModelGeometryProvenance(node, "getQuads");
+        }
         return changed ? writeNode(node) : basicClass;
+    }
+
+    /**
+     * The stock Blockcraftery model converts copied-material sprites into its
+     * host-shape geometry through addGeometry. Scope that call so MysticalLib's
+     * UnpackedBakedQuad factory inherits the copied material provenance.
+     */
+    private static boolean patchModelGeometryProvenance(ClassNode node, String name) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals(name) || !method.desc.equals(GET_QUADS_DESC)
+                    || hasStaticCall(method, RENDER_HELPER, "pushGeometryProvenance")) {
+                continue;
+            }
+            int scopeLocal = method.maxLocals;
+            boolean methodChanged = false;
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
+                 instruction = instruction.getNext()) {
+                if (!(instruction instanceof MethodInsnNode)) {
+                    continue;
+                }
+                MethodInsnNode invocation = (MethodInsnNode) instruction;
+                if (!"addGeometry".equals(invocation.name)
+                        || !("(Ljava/util/List;Lnet/minecraft/util/EnumFacing;" + BLOCK_STATE
+                        + "[Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;I)V").equals(invocation.desc)) {
+                    continue;
+                }
+
+                InsnList push = new InsnList();
+                push.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                push.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                push.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        RENDER_HELPER,
+                        "pushGeometryProvenance",
+                        "(" + BLOCK_STATE + "Lnet/minecraft/util/EnumFacing;)L" + QUAD_PROVENANCE
+                                + "$ActiveScope;",
+                        false
+                ));
+                push.add(new VarInsnNode(Opcodes.ASTORE, scopeLocal));
+                method.instructions.insertBefore(instruction, push);
+
+                InsnList pop = new InsnList();
+                pop.add(new VarInsnNode(Opcodes.ALOAD, scopeLocal));
+                pop.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        QUAD_PROVENANCE,
+                        "popActive",
+                        "(L" + QUAD_PROVENANCE + "$ActiveScope;)V",
+                        false
+                ));
+                method.instructions.insert(instruction, pop);
+                changed = true;
+                methodChanged = true;
+            }
+            if (methodChanged) {
+                method.maxLocals = scopeLocal + 1;
+            }
+        }
+        return changed;
+    }
+
+    /**
+     * MysticalLib builds the UnpackedBakedQuad instances Blockcraftery renders.
+     * Copy the active GPOM material record at that allocation boundary instead of
+     * leaving it attached only to the pre-conversion source quad.
+     */
+    private static byte[] patchMysticalLibQuadFactory(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        boolean changed = false;
+        int patchedReturns = 0;
+        for (MethodNode method : node.methods) {
+            if (!("createQuad".equals(method.name) || "makeCubeFace".equals(method.name))
+                    || !method.desc.endsWith(")Lnet/minecraft/client/renderer/block/model/BakedQuad;")) {
+                continue;
+            }
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
+                 instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.ARETURN) {
+                    continue;
+                }
+                InsnList propagation = new InsnList();
+                propagation.add(new InsnNode(Opcodes.DUP));
+                propagation.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        QUAD_PROVENANCE,
+                        "registerActive",
+                        "(Lnet/minecraft/client/renderer/block/model/BakedQuad;)V",
+                        false
+                ));
+                method.instructions.insertBefore(instruction, propagation);
+                changed = true;
+                patchedReturns++;
+            }
+        }
+        if (changed && PATCHED_TILE_CLASSES.add("quad-factories:" + node.name)) {
+            GPOM.LOGGER.info(
+                    "[GPOM Framed Material Probe] MysticalLib quad factories patched returns={}",
+                    patchedReturns
+            );
+        }
+        return changed ? writeNode(node) : basicClass;
+    }
+
+    private static boolean synchronizeMethod(ClassNode node, String name, String descriptor) {
+        boolean changed = false;
+        for (MethodNode method : node.methods) {
+            if (method.name.equals(name)
+                    && method.desc.equals(descriptor)
+                    && (method.access & Opcodes.ACC_SYNCHRONIZED) == 0) {
+                method.access |= Opcodes.ACC_SYNCHRONIZED;
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private static byte[] patchShapedBlock(byte[] basicClass, boolean parentMaterialOcclusion) {
@@ -498,6 +720,13 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
                 || DOOR.equals(className)
                 || TRAP_DOOR.equals(className)
                 || PRESSURE_PLATE.equals(className);
+    }
+
+    private static boolean isAnyEditableBlock(String className) {
+        return CUBE.equals(className)
+                || SLANT.equals(className)
+                || CORNER.equals(className)
+                || isEditableBlock(className);
     }
 
     private static boolean patchMayPlaceMethod(ClassNode node, String name) {

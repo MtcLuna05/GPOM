@@ -4,6 +4,7 @@ import com.l.gpom.GPOM;
 import com.l.gpom.compat.actuallyadditions.ActuallyAdditionsTileEntityMappingFix;
 import com.l.gpom.compat.architecturecraft.ArchitectureCraftTileEntityMappingFix;
 import com.l.gpom.compat.enderio.EnderIOTileEntityMappingFix;
+import com.l.gpom.compat.forestry.ForestryTileEntityMappingFix;
 import com.l.gpom.compat.industrialforegoing.IndustrialForegoingTileEntityMappingFix;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.util.GpomRemoteEnvironment;
@@ -21,6 +22,7 @@ public final class TileEntityMissingMappingSaveGuard {
     private static final String ARCHITECTURECRAFT_TILE_SHAPE = "com.elytradev.architecture.common.tile.TileShape";
     private static final String ARCHITECTURECRAFT_TILE_SAWBENCH = "com.elytradev.architecture.common.tile.TileSawbench";
     private static final String ASTRAL_TILE_PREFIX = "hellfirepvp.astralsorcery.common.tile.";
+    private static final String FORESTRY_APIARIST_CHEST = "forestry.apiculture.tiles.TileApiaristChest";
     private static final String TINKER_IO_SMART_OUTPUT = "tinker_io.tileentity.TileEntitySmartOutput";
     private static final Set<String> LOGGED_FALLBACKS = ConcurrentHashMap.newKeySet();
     private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
@@ -105,6 +107,7 @@ public final class TileEntityMissingMappingSaveGuard {
         ActuallyAdditionsTileEntityMappingFix.repairIfEnabled();
         ArchitectureCraftTileEntityMappingFix.repairIfEnabled();
         EnderIOTileEntityMappingFix.repairIfEnabled();
+        ForestryTileEntityMappingFix.repairIfEnabled();
         IndustrialForegoingTileEntityMappingFix.repairIfEnabled();
     }
 
@@ -120,6 +123,10 @@ public final class TileEntityMissingMappingSaveGuard {
         ResourceLocation astralSorceryId = astralSorceryFallbackId(tile);
         if (astralSorceryId != null) {
             return astralSorceryId;
+        }
+        ResourceLocation forestryId = forestryFallbackId(tile);
+        if (forestryId != null) {
+            return forestryId;
         }
         ResourceLocation tinkerIoId = tinkerIoFallbackId(tile);
         if (tinkerIoId != null) {
@@ -139,6 +146,13 @@ public final class TileEntityMissingMappingSaveGuard {
             return null;
         }
         return new ResourceLocation("astralsorcery", simpleName.toLowerCase(Locale.ROOT));
+    }
+
+    private static ResourceLocation forestryFallbackId(TileEntity tile) {
+        if (FORESTRY_APIARIST_CHEST.equals(tile.getClass().getName())) {
+            return new ResourceLocation("forestry", "api_chest");
+        }
+        return null;
     }
 
     private static ResourceLocation tinkerIoFallbackId(TileEntity tile) {

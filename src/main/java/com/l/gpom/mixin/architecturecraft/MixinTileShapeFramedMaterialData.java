@@ -27,12 +27,14 @@ public abstract class MixinTileShapeFramedMaterialData implements FramedMaterial
     private void gpom$readFramedMaterialData(NBTTagCompound compound, CallbackInfo ci) {
         FramedMaterialData.read(this, compound);
         gpom$applyAuthoritativeMaterialData();
+        FramedMaterialData.refreshArchitectureCraft(this, this.baseBlockState, this.secondaryBlockState);
     }
 
     @Inject(method = "readFromItemStackNBT", at = @At("RETURN"), require = 0)
     private void gpom$readFramedMaterialDataFromItem(NBTTagCompound compound, CallbackInfo ci) {
         FramedMaterialData.read(this, compound);
         gpom$applyAuthoritativeMaterialData();
+        FramedMaterialData.refreshArchitectureCraft(this, this.baseBlockState, this.secondaryBlockState);
     }
 
     @Inject(method = "func_189515_b(Lnet/minecraft/nbt/NBTTagCompound;)Lnet/minecraft/nbt/NBTTagCompound;", at = @At("RETURN"), require = 0)

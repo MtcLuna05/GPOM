@@ -1,6 +1,7 @@
 package com.l.gpom.compat.architecturecraft;
 
 import com.l.gpom.compat.framed.FramedBlockEffectiveState;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -24,7 +25,6 @@ public final class ArchitectureCraftHitboxCompat {
     private static final AxisAlignedBB FULL_BLOCK = new AxisAlignedBB(0.0D, 0.0D, 0.0D, 1.0D, 1.0D, 1.0D);
 
     private static final ConcurrentMap<Class<?>, Method> GLOBAL_COLLISION_BOX_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> INTERCEPT_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<Class<?>, Method> SHOULD_SIDE_RENDER_METHODS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
 
@@ -80,21 +80,20 @@ public final class ArchitectureCraftHitboxCompat {
 
     public static AxisAlignedBB selectedBoundingBox(Block block, IBlockState state, World world, BlockPos pos) {
         AxisAlignedBB local = boundingBox(block, state, world, pos);
-        try {
-            double x = blockPosX(pos);
-            double y = blockPosY(pos);
-            double z = blockPosZ(pos);
-            return new AxisAlignedBB(
-                    minX(local) + x,
-                    minY(local) + y,
-                    minZ(local) + z,
-                    maxX(local) + x,
-                    maxY(local) + y,
-                    maxZ(local) + z
-            );
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        if (local == null) {
             return local;
         }
+        double x = MinecraftMappingCompat.blockPosX(pos);
+        double y = MinecraftMappingCompat.blockPosY(pos);
+        double z = MinecraftMappingCompat.blockPosZ(pos);
+        return new AxisAlignedBB(
+                MinecraftMappingCompat.aabbMinX(local) + x,
+                MinecraftMappingCompat.aabbMinY(local) + y,
+                MinecraftMappingCompat.aabbMinZ(local) + z,
+                MinecraftMappingCompat.aabbMaxX(local) + x,
+                MinecraftMappingCompat.aabbMaxY(local) + y,
+                MinecraftMappingCompat.aabbMaxZ(local) + z
+        );
     }
 
     public static boolean baseShouldSideBeRendered(
@@ -168,36 +167,34 @@ public final class ArchitectureCraftHitboxCompat {
         if (worldBox == null) {
             return null;
         }
-        try {
-            double x = blockPosX(pos);
-            double y = blockPosY(pos);
-            double z = blockPosZ(pos);
-            return new AxisAlignedBB(
-                    minX(worldBox) - x,
-                    minY(worldBox) - y,
-                    minZ(worldBox) - z,
-                    maxX(worldBox) - x,
-                    maxY(worldBox) - y,
-                    maxZ(worldBox) - z
-            );
-        } catch (ReflectiveOperationException | LinkageError ignored) {
-            return worldBox;
-        }
+        double x = MinecraftMappingCompat.blockPosX(pos);
+        double y = MinecraftMappingCompat.blockPosY(pos);
+        double z = MinecraftMappingCompat.blockPosZ(pos);
+        return new AxisAlignedBB(
+                MinecraftMappingCompat.aabbMinX(worldBox) - x,
+                MinecraftMappingCompat.aabbMinY(worldBox) - y,
+                MinecraftMappingCompat.aabbMinZ(worldBox) - z,
+                MinecraftMappingCompat.aabbMaxX(worldBox) - x,
+                MinecraftMappingCompat.aabbMaxY(worldBox) - y,
+                MinecraftMappingCompat.aabbMaxZ(worldBox) - z
+        );
     }
 
     private static AxisAlignedBB unionBoxes(AxisAlignedBB first, AxisAlignedBB second) {
-        try {
-            return new AxisAlignedBB(
-                    Math.min(minX(first), minX(second)),
-                    Math.min(minY(first), minY(second)),
-                    Math.min(minZ(first), minZ(second)),
-                    Math.max(maxX(first), maxX(second)),
-                    Math.max(maxY(first), maxY(second)),
-                    Math.max(maxZ(first), maxZ(second))
-            );
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        if (first == null) {
+            return second;
+        }
+        if (second == null) {
             return first;
         }
+        return new AxisAlignedBB(
+                Math.min(MinecraftMappingCompat.aabbMinX(first), MinecraftMappingCompat.aabbMinX(second)),
+                Math.min(MinecraftMappingCompat.aabbMinY(first), MinecraftMappingCompat.aabbMinY(second)),
+                Math.min(MinecraftMappingCompat.aabbMinZ(first), MinecraftMappingCompat.aabbMinZ(second)),
+                Math.max(MinecraftMappingCompat.aabbMaxX(first), MinecraftMappingCompat.aabbMaxX(second)),
+                Math.max(MinecraftMappingCompat.aabbMaxY(first), MinecraftMappingCompat.aabbMaxY(second)),
+                Math.max(MinecraftMappingCompat.aabbMaxZ(first), MinecraftMappingCompat.aabbMaxZ(second))
+        );
     }
 
     private static void setBoxHit(Block block, AxisAlignedBB box) {
@@ -208,75 +205,65 @@ public final class ArchitectureCraftHitboxCompat {
     }
 
     private static void setSubHit(RayTraceResult result, int subHit) {
-        try {
-            cachedField(RayTraceResult.class, "subHit", "field_72310_e").setInt(result, subHit);
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        if (result != null) {
+            MinecraftMappingCompat.setFieldValue(result, "rayTraceResult.subHit", subHit, "field_72310_e", "subHit");
         }
     }
 
     private static BoxHit intersect(AxisAlignedBB box, BlockPos pos, Vec3d start, Vec3d end) {
         try {
-            Method method = cachedMethod(
-                    INTERCEPT_METHODS,
-                    box.getClass(),
-                    "calculateIntercept",
-                    "func_72327_a",
-                    Vec3d.class,
-                    Vec3d.class
-            );
-            Object value = method.invoke(box, start, end);
+            Object value = MinecraftMappingCompat.invoke(box, "axisAlignedBB.calculateIntercept",
+                    new Class<?>[]{Vec3d.class, Vec3d.class}, new Object[]{start, end},
+                    "func_72327_a", "calculateIntercept");
             if (!(value instanceof RayTraceResult)) {
                 return null;
             }
 
-            Vec3d hitVec = (Vec3d) objectField(value, RayTraceResult.class, "hitVec", "field_72307_f");
-            EnumFacing side = (EnumFacing) objectField(value, RayTraceResult.class, "sideHit", "field_178784_b");
+            RayTraceResult result = (RayTraceResult) value;
+            Vec3d hitVec = MinecraftMappingCompat.rayTraceHitVec(result);
+            EnumFacing side = MinecraftMappingCompat.rayTraceSideHit(result);
             if (hitVec == null || side == null) {
                 return null;
             }
             double distance = distanceSquared(start, hitVec);
             return new BoxHit(distance, new RayTraceResult(hitVec, side, pos));
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        } catch (RuntimeException | LinkageError ignored) {
             return intersectManually(box, pos, start, end);
         }
     }
 
     private static BoxHit intersectManually(AxisAlignedBB box, BlockPos pos, Vec3d start, Vec3d end) {
-        try {
-            double startX = vecX(start);
-            double startY = vecY(start);
-            double startZ = vecZ(start);
-            double deltaX = vecX(end) - startX;
-            double deltaY = vecY(end) - startY;
-            double deltaZ = vecZ(end) - startZ;
-            double[] interval = new double[] {0.0D, 1.0D};
-            EnumFacing[] sides = new EnumFacing[] {null, null};
+        double startX = MinecraftMappingCompat.vecX(start);
+        double startY = MinecraftMappingCompat.vecY(start);
+        double startZ = MinecraftMappingCompat.vecZ(start);
+        double deltaX = MinecraftMappingCompat.vecX(end) - startX;
+        double deltaY = MinecraftMappingCompat.vecY(end) - startY;
+        double deltaZ = MinecraftMappingCompat.vecZ(end) - startZ;
+        double[] interval = new double[] {0.0D, 1.0D};
+        EnumFacing[] sides = new EnumFacing[] {null, null};
 
-            if (!clipAxis(startX, deltaX, minX(box), maxX(box), EnumFacing.WEST, EnumFacing.EAST, interval, sides)
-                    || !clipAxis(startY, deltaY, minY(box), maxY(box), EnumFacing.DOWN, EnumFacing.UP, interval, sides)
-                    || !clipAxis(startZ, deltaZ, minZ(box), maxZ(box), EnumFacing.NORTH, EnumFacing.SOUTH, interval, sides)) {
-                return null;
-            }
-
-            double distance = interval[0];
-            EnumFacing side = sides[0];
-            if (side == null) {
-                distance = interval[1];
-                side = sides[1];
-            }
-            if (side == null || distance < 0.0D || distance > 1.0D) {
-                return null;
-            }
-
-            Vec3d hitVec = new Vec3d(
-                    startX + deltaX * distance,
-                    startY + deltaY * distance,
-                    startZ + deltaZ * distance
-            );
-            return new BoxHit(distanceSquared(start, hitVec), new RayTraceResult(hitVec, side, pos));
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        if (!clipAxis(startX, deltaX, MinecraftMappingCompat.aabbMinX(box), MinecraftMappingCompat.aabbMaxX(box), EnumFacing.WEST, EnumFacing.EAST, interval, sides)
+                || !clipAxis(startY, deltaY, MinecraftMappingCompat.aabbMinY(box), MinecraftMappingCompat.aabbMaxY(box), EnumFacing.DOWN, EnumFacing.UP, interval, sides)
+                || !clipAxis(startZ, deltaZ, MinecraftMappingCompat.aabbMinZ(box), MinecraftMappingCompat.aabbMaxZ(box), EnumFacing.NORTH, EnumFacing.SOUTH, interval, sides)) {
             return null;
         }
+
+        double distance = interval[0];
+        EnumFacing side = sides[0];
+        if (side == null) {
+            distance = interval[1];
+            side = sides[1];
+        }
+        if (side == null || distance < 0.0D || distance > 1.0D) {
+            return null;
+        }
+
+        Vec3d hitVec = new Vec3d(
+                startX + deltaX * distance,
+                startY + deltaY * distance,
+                startZ + deltaZ * distance
+        );
+        return new BoxHit(distanceSquared(start, hitVec), new RayTraceResult(hitVec, side, pos));
     }
 
     private static boolean clipAxis(
@@ -316,79 +303,11 @@ public final class ArchitectureCraftHitboxCompat {
         return interval[1] >= interval[0];
     }
 
-    private static double distanceSquared(Vec3d start, Vec3d hit) throws ReflectiveOperationException {
-        double deltaX = vecX(hit) - vecX(start);
-        double deltaY = vecY(hit) - vecY(start);
-        double deltaZ = vecZ(hit) - vecZ(start);
+    private static double distanceSquared(Vec3d start, Vec3d hit) {
+        double deltaX = MinecraftMappingCompat.vecX(hit) - MinecraftMappingCompat.vecX(start);
+        double deltaY = MinecraftMappingCompat.vecY(hit) - MinecraftMappingCompat.vecY(start);
+        double deltaZ = MinecraftMappingCompat.vecZ(hit) - MinecraftMappingCompat.vecZ(start);
         return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
-    }
-
-    private static double blockPosX(BlockPos pos) throws ReflectiveOperationException {
-        return numberFromMethod(pos, "getX", "func_177958_n");
-    }
-
-    private static double blockPosY(BlockPos pos) throws ReflectiveOperationException {
-        return numberFromMethod(pos, "getY", "func_177956_o");
-    }
-
-    private static double blockPosZ(BlockPos pos) throws ReflectiveOperationException {
-        return numberFromMethod(pos, "getZ", "func_177952_p");
-    }
-
-    private static double vecX(Vec3d vec) throws ReflectiveOperationException {
-        return doubleField(vec, Vec3d.class, "x", "field_72450_a");
-    }
-
-    private static double vecY(Vec3d vec) throws ReflectiveOperationException {
-        return doubleField(vec, Vec3d.class, "y", "field_72448_b");
-    }
-
-    private static double vecZ(Vec3d vec) throws ReflectiveOperationException {
-        return doubleField(vec, Vec3d.class, "z", "field_72449_c");
-    }
-
-    private static double minX(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "minX", "field_72340_a");
-    }
-
-    private static double minY(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "minY", "field_72338_b");
-    }
-
-    private static double minZ(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "minZ", "field_72339_c");
-    }
-
-    private static double maxX(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "maxX", "field_72336_d");
-    }
-
-    private static double maxY(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "maxY", "field_72337_e");
-    }
-
-    private static double maxZ(AxisAlignedBB box) throws ReflectiveOperationException {
-        return doubleField(box, AxisAlignedBB.class, "maxZ", "field_72334_f");
-    }
-
-    private static double numberFromMethod(Object target, String mcpName, String srgName)
-            throws ReflectiveOperationException {
-        Method method = ReflectionLookup.findMethod(target.getClass(), mcpName, srgName);
-        Object value = method.invoke(target);
-        if (!(value instanceof Number)) {
-            throw new NoSuchMethodException(mcpName);
-        }
-        return ((Number) value).doubleValue();
-    }
-
-    private static double doubleField(Object target, Class<?> declaringType, String mcpName, String srgName)
-            throws ReflectiveOperationException {
-        return cachedField(declaringType, mcpName, srgName).getDouble(target);
-    }
-
-    private static Object objectField(Object target, Class<?> declaringType, String mcpName, String srgName)
-            throws ReflectiveOperationException {
-        return cachedField(declaringType, mcpName, srgName).get(target);
     }
 
     private static Method cachedMethod(

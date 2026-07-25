@@ -1074,6 +1074,16 @@ public final class ForgeConstructionAnnotationOptimizations {
         private MethodHandle createHandler() {
             try {
                 Method method = findSubscriberMethod();
+                if (method == null) {
+                    GPOM.LOGGER.error(
+                            "[ForgeConstructionAnnotationOptimizations] Disabling broken lazy automatic subscriber {}#{}({}) for {}; handler could not be resolved",
+                            subscriberClass.getName(),
+                            spec.methodName,
+                            spec.eventType.getName(),
+                            safeModId(owner)
+                    );
+                    return NOOP_HANDLER;
+                }
                 method.setAccessible(true);
                 return MethodHandles.lookup()
                         .unreflect(method)
@@ -1107,10 +1117,13 @@ public final class ForgeConstructionAnnotationOptimizations {
         private static void noop(Event event) {
         }
 
-        private Method findSubscriberMethod() throws NoSuchMethodException {
-            try {
-                return subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
-            } catch (NoSuchMethodException ignored) {
+        private Method findSubscriberMethod() {
+            if (!GpomEarlyConfig.constructionLazyAutomaticSubscriberMethodScanEnabled()) {
+                try {
+                    return subscriberClass.getDeclaredMethod(spec.methodName, spec.eventType);
+                } catch (NoSuchMethodException ignored) {
+                    // Preserve the legacy exact-lookup attempt when the optimization is disabled.
+                }
             }
 
             Method method = findCompatibleSubscriberMethod(subscriberClass.getDeclaredMethods());
@@ -1122,8 +1135,7 @@ public final class ForgeConstructionAnnotationOptimizations {
             if (method != null) {
                 return method;
             }
-
-            throw new NoSuchMethodException(subscriberClass.getName() + '#' + spec.methodName + '(' + spec.eventType.getName() + ')');
+            return null;
         }
 
         private Method findCompatibleSubscriberMethod(Method[] methods) {

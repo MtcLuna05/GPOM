@@ -164,6 +164,7 @@ public final class PreInitClassPrewarmer {
         boolean includeAnonClasses = GpomEarlyConfig.preInitClassPrewarmIncludeAnonClasses();
         boolean initializeClasses = GpomEarlyConfig.preInitClassPrewarmInitializeClasses();
         Set<String> initializeAllowlist = GpomEarlyConfig.preInitClassPrewarmInitializeAllowlist();
+        boolean explicitClassesRespectInitializationPolicy = GpomEarlyConfig.preInitClassPrewarmExplicitClassesRespectInitializationPolicy();
         Map<String, List<String>> extraPrefixes = parseExtraPrefixes(GpomEarlyConfig.preInitClassPrewarmExtraPrefixes());
         Set<String> noInitAllowlist = GpomEarlyConfig.preInitClassPrewarmNoInitAllowlist();
         Map<String, List<String>> noInitPrefixes = parseExtraPrefixes(GpomEarlyConfig.preInitClassPrewarmNoInitPrefixes());
@@ -172,8 +173,15 @@ public final class PreInitClassPrewarmer {
         Map<String, LinkedHashSet<String>> noInitClassesByMod = new LinkedHashMap<String, LinkedHashSet<String>>();
 
         for (Map.Entry<String, List<String>> entry : explicitClasses.entrySet()) {
-            LinkedHashSet<String> classes = classesByMod.computeIfAbsent(entry.getKey(), ignored -> new LinkedHashSet<String>());
-            classes.addAll(entry.getValue());
+            String modId = entry.getKey();
+            addScannedClasses(
+                    classesByMod,
+                    noInitClassesByMod,
+                    modId,
+                    entry.getValue(),
+                    !explicitClassesRespectInitializationPolicy
+                            || shouldInitializeScannedMod(modId, initializeClasses, initializeAllowlist)
+            );
         }
 
         if (!allowlist.isEmpty()) {

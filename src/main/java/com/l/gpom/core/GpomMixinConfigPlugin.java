@@ -219,6 +219,13 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
             return present;
         }
+        if (mixinClassName.equals("com.l.gpom.mixin.client.render.MixinVertexLighterSmoothAoLightmapCache")) {
+            boolean enabled = GpomEarlyConfig.cacheSmoothAoLightmapsEnabled();
+            if (LOGGED.add(mixinClassName)) {
+                GPOM.LOGGER.info("[GPOM AO Cache] mixin={} enabled={}", mixinClassName, enabled);
+            }
+            return enabled && !GpomSide.isDedicatedServerLaunch();
+        }
         return true;
     }
 
@@ -267,7 +274,15 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     }
 
     private static boolean resourcePresentInModsDirectory(String resource) {
-        File modsDirectory = new File(System.getProperty("user.dir", "."), "mods");
+        if (resourcePresentInModsDirectory(new File(System.getProperty("user.dir", "."), "mods"), resource)) {
+            return true;
+        }
+        File minecraftHome = Launch.minecraftHome;
+        return minecraftHome != null
+                && resourcePresentInModsDirectory(new File(minecraftHome, "mods"), resource);
+    }
+
+    private static boolean resourcePresentInModsDirectory(File modsDirectory, String resource) {
         if (!modsDirectory.isDirectory()) {
             return false;
         }

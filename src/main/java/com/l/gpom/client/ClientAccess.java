@@ -20,6 +20,7 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.IBlockAccess;
 import org.lwjgl.opengl.Display;
 
 import java.lang.reflect.Field;
@@ -42,6 +43,7 @@ public final class ClientAccess {
     private static volatile Method getTextureMapBlocksMethod;
     private static volatile Method getModelForStateMethod;
     private static volatile Method getMissingSpriteMethod;
+    private static volatile Method getAtlasSpriteMethod;
     private static volatile Method bindTextureMethod;
     private static volatile Method drawInventoryEntityMethod;
     private static volatile Method getRenderItemMethod;
@@ -61,6 +63,7 @@ public final class ClientAccess {
     private static volatile Field playerInventoryField;
     private static volatile Field entityRendererField;
     private static volatile Field renderGlobalField;
+    private static volatile Field worldField;
 
     private ClientAccess() {
     }
@@ -163,6 +166,23 @@ public final class ClientAccess {
                 currentScreenField = field;
             }
             return field == null ? null : field.get(minecraft);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    public static IBlockAccess world(Minecraft minecraft) {
+        if (minecraft == null) {
+            return null;
+        }
+        try {
+            Field field = worldField;
+            if (field == null) {
+                field = findField(Minecraft.class, "field_71441_e", "world");
+                worldField = field;
+            }
+            Object value = field == null ? null : field.get(minecraft);
+            return value instanceof IBlockAccess ? (IBlockAccess) value : null;
         } catch (Throwable ignored) {
             return null;
         }
@@ -474,6 +494,33 @@ public final class ClientAccess {
         }
     }
 
+    public static TextureAtlasSprite atlasSprite(Minecraft minecraft, String name) {
+        if (minecraft == null || name == null || name.isEmpty()) {
+            return null;
+        }
+        try {
+            Method mapMethod = getTextureMapBlocksMethod;
+            if (mapMethod == null) {
+                mapMethod = findMethod(Minecraft.class, new Class<?>[0], "func_147117_R", "getTextureMapBlocks");
+                getTextureMapBlocksMethod = mapMethod;
+            }
+            Object textureMap = mapMethod == null ? null : mapMethod.invoke(minecraft);
+            if (!(textureMap instanceof TextureMap)) {
+                return null;
+            }
+            Method spriteMethod = getAtlasSpriteMethod;
+            if (spriteMethod == null) {
+                spriteMethod = findMethod(TextureMap.class, new Class<?>[] {String.class},
+                        "func_110572_b", "getAtlasSprite");
+                getAtlasSpriteMethod = spriteMethod;
+            }
+            Object sprite = spriteMethod == null ? null : spriteMethod.invoke(textureMap, name);
+            return sprite instanceof TextureAtlasSprite ? (TextureAtlasSprite) sprite : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     public static EntityLivingBase player(Minecraft minecraft) {
         if (minecraft == null) {
             return null;
@@ -666,12 +713,14 @@ public final class ClientAccess {
     }
 
     private static Field findField(Class<?> type, String... names) {
-        for (String name : names) {
-            try {
-                Field field = type.getDeclaredField(name);
-                field.setAccessible(true);
-                return field;
-            } catch (Throwable ignored) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            for (String name : names) {
+                try {
+                    Field field = current.getDeclaredField(name);
+                    field.setAccessible(true);
+                    return field;
+                } catch (Throwable ignored) {
+                }
             }
         }
         return null;

@@ -3,6 +3,7 @@ package com.l.gpom.compat.blockcraftery;
 import com.l.gpom.client.ClientAccess;
 import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.compat.framed.FramedMaterialData;
+import com.l.gpom.compat.framed.FramedQuadProvenance;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -12,7 +13,6 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.EnumFacing;
-import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.common.property.IExtendedBlockState;
 import net.minecraftforge.common.property.IUnlistedProperty;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
@@ -55,7 +55,7 @@ public final class BlockcrafteryRenderCompat {
     }
 
     public static boolean shouldRenderCopiedBlockInCurrentLayer(IBlockState copied) {
-        BlockRenderLayer currentLayer = MinecraftForgeClient.getRenderLayer();
+        BlockRenderLayer currentLayer = MinecraftMappingCompat.currentRenderLayer();
         if (copied == null || currentLayer == null) {
             return false;
         }
@@ -70,6 +70,10 @@ public final class BlockcrafteryRenderCompat {
         BlockRenderLayer declaredLayer = FramedMaterialData.framedRenderLayer(block, copied);
         if (declaredLayer != null) {
             if (declaredLayer == currentLayer) {
+                return true;
+            }
+            if (currentLayer == BlockRenderLayer.CUTOUT_MIPPED
+                    && declaredLayer == BlockRenderLayer.CUTOUT) {
                 return true;
             }
             if (currentLayer == BlockRenderLayer.SOLID && declaredLayer != BlockRenderLayer.SOLID) {
@@ -107,6 +111,21 @@ public final class BlockcrafteryRenderCompat {
         return result;
     }
 
+    /**
+     * Marks Blockcraftery's native host-shape geometry generation with the
+     * copied material. MysticalLib creates the rendered UnpackedBakedQuad
+     * instances inside that call.
+     */
+    public static FramedQuadProvenance.ActiveScope pushGeometryProvenance(
+            IBlockState hostState,
+            EnumFacing side
+    ) {
+        IBlockState copied = hostState instanceof IExtendedBlockState
+                ? copiedState((IExtendedBlockState) hostState) : null;
+        return copied == null ? null : FramedQuadProvenance.pushActive(
+                0, copied, side, FramedQuadProvenance.Source.HOST_FALLBACK);
+    }
+
     @SuppressWarnings("unchecked")
     private static void appendBlockQuads(
             Object model,
@@ -116,7 +135,7 @@ public final class BlockcrafteryRenderCompat {
             List<BakedQuad> result
     ) {
         IBlockState copied = copiedState(hostState);
-        String key = cacheKey(copied, hostState, side, MinecraftForgeClient.getRenderLayer());
+        String key = cacheKey(copied, hostState, side, MinecraftMappingCompat.currentRenderLayer());
         Map<String, List<BakedQuad>> cache = data(model);
         if (cache != null && cache.containsKey(key)) {
             Collection<BakedQuad> cached = cache.get(key);
@@ -143,6 +162,7 @@ public final class BlockcrafteryRenderCompat {
                     // Keep CTM's per-quad atlas UVs; rebuilding from sprites
                     // collapses connected textures into the base tile.
                     generated.addAll(copiedQuads);
+                    registerQuads(copiedQuads, copied, side, FramedQuadProvenance.Source.COPIED_MODEL);
                     sprites = new TextureAtlasSprite[copiedQuads.size()];
                     tints = new int[copiedQuads.size()];
                     for (int index = 0; index < copiedQuads.size(); index++) {
@@ -155,11 +175,14 @@ public final class BlockcrafteryRenderCompat {
             }
         }
 
-        BlockRenderLayer layer = MinecraftForgeClient.getRenderLayer();
+        BlockRenderLayer layer = MinecraftMappingCompat.currentRenderLayer();
         if (generated.isEmpty() && ((useFallbackTexture && layer == BlockRenderLayer.CUTOUT_MIPPED)
                 || (!useFallbackTexture && rendersInLayer(copied, layer)))) {
             for (int index = 0; index < sprites.length; index++) {
-                addGeometry(model, generated, side, hostState, repeatedSprites(sprites[index]), tints[index]);
+                int firstGenerated = generated.size();
+                addGeometry(model, generated, side, copied, hostState, repeatedSprites(sprites[index]), tints[index]);
+                registerQuads(generated.subList(firstGenerated, generated.size()), copied, side,
+                        FramedQuadProvenance.Source.HOST_FALLBACK);
             }
         }
 
@@ -169,6 +192,16 @@ public final class BlockcrafteryRenderCompat {
         result.addAll(generated);
     }
 
+    private static void registerQuads(Collection<BakedQuad> quads, IBlockState material, EnumFacing side,
+                                      FramedQuadProvenance.Source source) {
+        if (quads == null || material == null) {
+            return;
+        }
+        for (BakedQuad quad : quads) {
+            FramedQuadProvenance.register(quad, 0, material, side, source);
+        }
+    }
+
     private static boolean rendersInLayer(IBlockState copied, BlockRenderLayer layer) {
         if (copied == null || layer == null) {
             return false;
@@ -176,7 +209,8 @@ public final class BlockcrafteryRenderCompat {
         try {
             Block block = MinecraftMappingCompat.blockStateBlock(copied);
             BlockRenderLayer framedLayer = FramedMaterialData.framedRenderLayer(block, copied);
-            return framedLayer == layer;
+            return framedLayer == layer
+                    || (layer == BlockRenderLayer.CUTOUT_MIPPED && framedLayer == BlockRenderLayer.CUTOUT);
         } catch (RuntimeException | LinkageError ignored) {
             try {
                 Block block = MinecraftMappingCompat.blockStateBlock(copied);
@@ -257,10 +291,13 @@ public final class BlockcrafteryRenderCompat {
             Object model,
             List<BakedQuad> quads,
             EnumFacing side,
+            IBlockState material,
             IBlockState state,
             TextureAtlasSprite[] sprites,
             int tint
     ) {
+        FramedQuadProvenance.ActiveScope provenance = FramedQuadProvenance.pushActive(
+                0, material, side, FramedQuadProvenance.Source.HOST_FALLBACK);
         try {
             Method method = cachedMethod(
                     ADD_GEOMETRY_METHODS,
@@ -274,6 +311,8 @@ public final class BlockcrafteryRenderCompat {
             );
             method.invoke(model, quads, side, state, sprites, tint);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+        } finally {
+            FramedQuadProvenance.popActive(provenance);
         }
     }
 

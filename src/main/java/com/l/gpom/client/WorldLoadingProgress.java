@@ -127,6 +127,10 @@ public final class WorldLoadingProgress {
         if (!enabled() || active) {
             return;
         }
+        if (isWorldManagementText(newTitle) || isWorldManagementText(newDetail) || isWorldManagementScreen()) {
+            suppressTerrainStartUntilScreenClears = true;
+            return;
+        }
         if (!shouldStartTerrainOverlay()) {
             return;
         }
@@ -867,10 +871,47 @@ public final class WorldLoadingProgress {
             return false;
         }
         GuiScreen screen = currentScreen(minecraft);
+        if (isWorldManagementScreen(screen)) {
+            return false;
+        }
         if (isBlockingForgeScreen(screen)) {
             return false;
         }
         return active || screen == null || screen instanceof GuiScreenWorking || screen instanceof GuiDownloadTerrain;
+    }
+
+    public static boolean isWorldManagementScreen() {
+        try {
+            return isWorldManagementScreen(currentScreen(currentMinecraft()));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isWorldManagementScreen(GuiScreen screen) {
+        if (screen == null) {
+            return false;
+        }
+        String className = screen.getClass().getName();
+        return className.equals("net.minecraft.client.gui.GuiWorldSelection")
+                || className.equals("net.minecraft.client.gui.GuiSelectWorld")
+                || className.equals("net.minecraft.client.gui.GuiCreateWorld")
+                || className.equals("net.minecraft.client.gui.GuiListWorldSelection")
+                || className.startsWith("net.minecraft.client.gui.GuiWorldSelection$")
+                || className.startsWith("net.minecraft.client.gui.GuiSelectWorld$")
+                || className.contains("WorldSelection")
+                || className.contains("SelectWorld")
+                || className.contains("CreateWorld");
+    }
+
+    public static boolean isWorldManagementText(String text) {
+        String value = clean(text).toLowerCase(Locale.ROOT);
+        return value.contains("deleting world")
+                || value.contains("delete world")
+                || value.contains("deleting level")
+                || value.contains("delete level")
+                || value.contains("select world")
+                || value.contains("world selection");
     }
 
     public static boolean isBlockingForgeScreen(GuiScreen screen) {

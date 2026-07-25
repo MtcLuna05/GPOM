@@ -58,6 +58,7 @@
     "client.model.MixinModelLoaderStartupProfiler",
     "client.render.MixinEntityRendererWorldLoadingScreen",
     "client.render.MixinRenderGlobalLifecycleCleanup",
+    "client.render.MixinVertexLighterSmoothAoLightmapCache",
     "client.render.MixinRenderGlobalRenderUpdateDedupe",
     "client.render.MixinRenderChunkLifecycleCleanup",
     "client.sound.MixinSoundManagerResourceCleanup",

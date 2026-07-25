@@ -1,5 +1,7 @@
 package com.l.gpom.compat.framed;
 
+import com.l.gpom.client.ClientAccess;
+import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import com.l.gpom.util.ReflectionLookup;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -7,11 +9,14 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.IBlockAccess;
+import net.minecraft.world.World;
 import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.Biome;
+import net.minecraftforge.fml.common.Loader;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -20,19 +25,20 @@ public final class FramedBlockEffectiveState {
     private static final String ARCHITECTURE_BLOCK_PACKAGE = "com.elytradev.architecture.common.block.";
     private static final String BLOCKCRAFTERY_TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String BLOCKCRAFTERY_BLOCK_PACKAGE = "epicsquid.blockcraftery.block.";
+    private static final String CELERITAS_BLOCK_ACCESS = "org.taumc.celeritas.impl.world.cloned.CeleritasBlockAccess";
+    private static final String CELERITAS_CLASS_PREFIX = "org.taumc.celeritas.";
+    private static final String CELERITAS_MOD_ID = "celeritas";
     private static final String VANILLA_AIR_BLOCK = "net.minecraft.block.BlockAir";
 
     private static final ConcurrentMap<Class<?>, Method> ARCHITECTURE_BASE_STATE_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> STATE_BLOCK_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> TILE_ENTITY_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> BLOCK_STATE_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> COMBINED_LIGHT_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> IS_AIR_BLOCK_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> BIOME_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> STRONG_POWER_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> WORLD_TYPE_METHODS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<Class<?>, Method> SIDE_SOLID_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Method> BACKING_WORLD_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Field> BACKING_WORLD_FIELDS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Field> DISCOVERED_BACKING_WORLD_FIELDS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Boolean> NO_BACKING_WORLD_METHODS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Boolean> NO_BACKING_WORLD_FIELDS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, Boolean> NO_DISCOVERED_BACKING_WORLD_FIELDS = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
+    private static volatile Boolean celeritasInstalled;
 
     private FramedBlockEffectiveState() {
     }
@@ -42,7 +48,15 @@ public final class FramedBlockEffectiveState {
     }
 
     public static IBlockState state(IBlockAccess world, BlockPos pos) {
-        TileEntity tile = tileEntity(world, pos);
+        // Celeritas copies legacy tile data into its WorldSlice. The live world
+        // keeps GPOM's persisted material state, and CTM must see that state
+        // for this frame and every framed neighbor.
+        IBlockAccess backing = backingWorld(world);
+        TileEntity tile = backing != null && backing != world
+                ? tileEntity(backing, pos) : tileEntity(world, pos);
+        if (tile == null && backing != null && backing != world) {
+            tile = tileEntity(world, pos);
+        }
         if (tile == null) {
             return null;
         }
@@ -50,11 +64,13 @@ public final class FramedBlockEffectiveState {
         String className = tile.getClass().getName();
         if (BLOCKCRAFTERY_TILE_EDITABLE_BLOCK.equals(className)) {
             FramedMaterialData.MaterialStates saved = FramedMaterialData.states(tile, "blockcraftery");
-            return sanitized(saved.present() ? saved.primary() : readBlockcrafteryState(tile));
+            IBlockState persisted = saved.present() ? sanitized(saved.primary()) : null;
+            return persisted != null ? persisted : sanitized(readBlockcrafteryState(tile));
         }
         if (ARCHITECTURE_TILE_SHAPE.equals(className)) {
             FramedMaterialData.MaterialStates saved = FramedMaterialData.states(tile, "architecturecraft");
-            return sanitized(saved.present() ? saved.primary() : readArchitectureBaseState(tile));
+            IBlockState persisted = saved.present() ? sanitized(saved.primary()) : null;
+            return persisted != null ? persisted : sanitized(readArchitectureBaseState(tile));
         }
         return null;
     }
@@ -64,15 +80,8 @@ public final class FramedBlockEffectiveState {
             return null;
         }
         try {
-            Method method = cachedMethod(
-                    STATE_BLOCK_METHODS,
-                    state.getClass(),
-                    "getBlock",
-                    "func_177230_c"
-            );
-            Object value = method.invoke(state);
-            return value instanceof Block ? (Block) value : null;
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return state.getBlock();
+        } catch (RuntimeException | LinkageError ignored) {
             return null;
         }
     }
@@ -95,19 +104,177 @@ public final class FramedBlockEffectiveState {
     }
 
     private static TileEntity tileEntity(IBlockAccess world, BlockPos pos) {
-        try {
-            Method method = cachedMethod(
-                    TILE_ENTITY_METHODS,
-                    world.getClass(),
-                    "getTileEntity",
-                    "func_175625_s",
-                    BlockPos.class
-            );
-            Object value = method.invoke(world, pos);
-            return value instanceof TileEntity ? (TileEntity) value : null;
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+        return world == null || pos == null ? null : MinecraftMappingCompat.worldTileEntity(world, pos);
+    }
+
+    public static IBlockAccess backingWorld(IBlockAccess world) {
+        if (world == null) {
             return null;
         }
+        IBlockAccess current = world;
+        for (int depth = 0; depth < 4; depth++) {
+            if (current instanceof World) {
+                break;
+            }
+            IBlockAccess next = directBackingWorld(current);
+            if (next == null || next == current || next == world) {
+                break;
+            }
+            current = next;
+        }
+        if (current != world) {
+            return current;
+        }
+        IBlockAccess clientWorld = ClientAccess.world(ClientAccess.minecraft());
+        return clientWorld != world ? clientWorld : null;
+    }
+
+    private static IBlockAccess directBackingWorld(IBlockAccess world) {
+        IBlockAccess backing = backingWorldFromCeleritasMethod(world);
+        if (backing != null) {
+            return backing;
+        }
+        backing = backingWorldFromNamedField(world);
+        if (backing != null) {
+            return backing;
+        }
+        return backingWorldFromDiscoveredField(world);
+    }
+
+    private static IBlockAccess backingWorldFromCeleritasMethod(IBlockAccess world) {
+        Class<?> type = world.getClass();
+        if (!isCeleritasBlockAccess(type)) {
+            return null;
+        }
+        if (NO_BACKING_WORLD_METHODS.containsKey(type)) {
+            return null;
+        }
+        try {
+            Method method = BACKING_WORLD_METHODS.get(type);
+            if (method == null) {
+                method = ReflectionLookup.findMethod(type, "getWorld", "getWorld");
+                Method previous = BACKING_WORLD_METHODS.putIfAbsent(type, method);
+                method = previous == null ? method : previous;
+            }
+            Object value = method.invoke(world);
+            return value instanceof IBlockAccess && value != world ? (IBlockAccess) value : null;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            NO_BACKING_WORLD_METHODS.putIfAbsent(type, Boolean.TRUE);
+            return null;
+        }
+    }
+
+    private static boolean isCeleritasBlockAccess(Class<?> type) {
+        return celeritasInstalled() && hasCeleritasTypeName(type);
+    }
+
+    private static boolean celeritasInstalled() {
+        Boolean installed = celeritasInstalled;
+        if (installed != null) {
+            return installed;
+        }
+        boolean detected;
+        try {
+            detected = Loader.isModLoaded(CELERITAS_MOD_ID);
+        } catch (RuntimeException | LinkageError ignored) {
+            detected = false;
+        }
+        celeritasInstalled = detected;
+        return detected;
+    }
+
+    private static boolean hasCeleritasTypeName(Class<?> type) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            String name = current.getName();
+            if (name.startsWith(CELERITAS_CLASS_PREFIX)) {
+                return true;
+            }
+            for (Class<?> iface : current.getInterfaces()) {
+                if (hasCeleritasInterfaceName(iface)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasCeleritasInterfaceName(Class<?> type) {
+        if (type == null) {
+            return false;
+        }
+        String name = type.getName();
+        if (CELERITAS_BLOCK_ACCESS.equals(name) || name.startsWith(CELERITAS_CLASS_PREFIX)) {
+            return true;
+        }
+        for (Class<?> iface : type.getInterfaces()) {
+            if (hasCeleritasInterfaceName(iface)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static IBlockAccess backingWorldFromNamedField(IBlockAccess world) {
+        Class<?> type = world.getClass();
+        if (NO_BACKING_WORLD_FIELDS.containsKey(type)) {
+            return null;
+        }
+        try {
+            Field field = BACKING_WORLD_FIELDS.get(type);
+            if (field == null) {
+                field = ReflectionLookup.findField(
+                        type,
+                        new String[] {"world", "delegate", "parent", "wrapped"}
+                );
+                Field previous = BACKING_WORLD_FIELDS.putIfAbsent(type, field);
+                field = previous == null ? field : previous;
+            }
+            Object value = field.get(world);
+            return value instanceof IBlockAccess && value != world ? (IBlockAccess) value : null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            NO_BACKING_WORLD_FIELDS.putIfAbsent(type, Boolean.TRUE);
+            return null;
+        }
+    }
+
+    private static IBlockAccess backingWorldFromDiscoveredField(IBlockAccess world) {
+        Class<?> type = world.getClass();
+        if (NO_DISCOVERED_BACKING_WORLD_FIELDS.containsKey(type)) {
+            return null;
+        }
+        Field field = DISCOVERED_BACKING_WORLD_FIELDS.get(type);
+        if (field != null) {
+            try {
+                Object value = field.get(world);
+                return value instanceof IBlockAccess && value != world ? (IBlockAccess) value : null;
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                NO_DISCOVERED_BACKING_WORLD_FIELDS.putIfAbsent(type, Boolean.TRUE);
+                return null;
+            }
+        }
+
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            for (Field candidate : current.getDeclaredFields()) {
+                int modifiers = candidate.getModifiers();
+                if (Modifier.isStatic(modifiers) || !IBlockAccess.class.isAssignableFrom(candidate.getType())) {
+                    continue;
+                }
+                try {
+                    candidate.setAccessible(true);
+                    Field previous = DISCOVERED_BACKING_WORLD_FIELDS.putIfAbsent(type, candidate);
+                    field = previous == null ? candidate : previous;
+                    Object value = field.get(world);
+                    if (value instanceof IBlockAccess && value != world) {
+                        return (IBlockAccess) value;
+                    }
+                    return null;
+                } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+                    // Continue through generated WorldSlice fields.
+                }
+            }
+        }
+        NO_DISCOVERED_BACKING_WORLD_FIELDS.putIfAbsent(type, Boolean.TRUE);
+        return null;
     }
 
     private static IBlockState readBlockcrafteryState(TileEntity tile) {
@@ -185,15 +352,11 @@ public final class FramedBlockEffectiveState {
         }
 
         public int func_175626_b(BlockPos pos, int lightValue) {
-            Object value = invokeDelegate(
-                    COMBINED_LIGHT_METHODS,
-                    "getCombinedLight",
-                    "func_175626_b",
-                    new Class<?>[]{BlockPos.class, int.class},
-                    pos,
-                    lightValue
-            );
-            return value instanceof Number ? ((Number) value).intValue() : 0;
+            try {
+                return delegate.getCombinedLight(pos, lightValue);
+            } catch (RuntimeException | LinkageError ignored) {
+                return 0;
+            }
         }
 
         @Override
@@ -206,14 +369,11 @@ public final class FramedBlockEffectiveState {
             if (effective != null) {
                 return effective;
             }
-            Object value = invokeDelegate(
-                    BLOCK_STATE_METHODS,
-                    "getBlockState",
-                    "func_180495_p",
-                    new Class<?>[]{BlockPos.class},
-                    pos
-            );
-            return value instanceof IBlockState ? (IBlockState) value : null;
+            try {
+                return delegate.getBlockState(pos);
+            } catch (RuntimeException | LinkageError ignored) {
+                return null;
+            }
         }
 
         @Override
@@ -222,14 +382,11 @@ public final class FramedBlockEffectiveState {
         }
 
         public boolean func_175623_d(BlockPos pos) {
-            Object value = invokeDelegate(
-                    IS_AIR_BLOCK_METHODS,
-                    "isAirBlock",
-                    "func_175623_d",
-                    new Class<?>[]{BlockPos.class},
-                    pos
-            );
-            return value instanceof Boolean && (Boolean) value;
+            try {
+                return delegate.isAirBlock(pos);
+            } catch (RuntimeException | LinkageError ignored) {
+                return false;
+            }
         }
 
         @Override
@@ -238,14 +395,11 @@ public final class FramedBlockEffectiveState {
         }
 
         public Biome func_180494_b(BlockPos pos) {
-            Object value = invokeDelegate(
-                    BIOME_METHODS,
-                    "getBiome",
-                    "func_180494_b",
-                    new Class<?>[]{BlockPos.class},
-                    pos
-            );
-            return value instanceof Biome ? (Biome) value : null;
+            try {
+                return delegate.getBiome(pos);
+            } catch (RuntimeException | LinkageError ignored) {
+                return null;
+            }
         }
 
         @Override
@@ -254,15 +408,11 @@ public final class FramedBlockEffectiveState {
         }
 
         public int func_175627_a(BlockPos pos, EnumFacing direction) {
-            Object value = invokeDelegate(
-                    STRONG_POWER_METHODS,
-                    "getStrongPower",
-                    "func_175627_a",
-                    new Class<?>[]{BlockPos.class, EnumFacing.class},
-                    pos,
-                    direction
-            );
-            return value instanceof Number ? ((Number) value).intValue() : 0;
+            try {
+                return delegate.getStrongPower(pos, direction);
+            } catch (RuntimeException | LinkageError ignored) {
+                return 0;
+            }
         }
 
         @Override
@@ -271,13 +421,11 @@ public final class FramedBlockEffectiveState {
         }
 
         public WorldType func_175624_G() {
-            Object value = invokeDelegate(
-                    WORLD_TYPE_METHODS,
-                    "getWorldType",
-                    "func_175624_G",
-                    new Class<?>[0]
-            );
-            return value instanceof WorldType ? (WorldType) value : null;
+            try {
+                return delegate.getWorldType();
+            } catch (RuntimeException | LinkageError ignored) {
+                return null;
+            }
         }
 
         @Override
@@ -287,37 +435,10 @@ public final class FramedBlockEffectiveState {
             if (block != null) {
                 return block.isSideSolid(effective, this, pos, side);
             }
-            Object value = invokeDelegate(
-                    SIDE_SOLID_METHODS,
-                    "isSideSolid",
-                    "isSideSolid",
-                    new Class<?>[]{BlockPos.class, EnumFacing.class, boolean.class},
-                    pos,
-                    side,
-                    defaultValue
-            );
-            return value instanceof Boolean ? (Boolean) value : defaultValue;
-        }
-
-        private Object invokeDelegate(
-                ConcurrentMap<Class<?>, Method> cache,
-                String mcpName,
-                String srgName,
-                Class<?>[] parameterTypes,
-                Object... args
-        ) {
             try {
-                Method method = cache == null ? null : cache.get(delegate.getClass());
-                if (method == null) {
-                    method = ReflectionLookup.findMethod(delegate.getClass(), mcpName, srgName, parameterTypes);
-                    if (cache != null) {
-                        Method previous = cache.putIfAbsent(delegate.getClass(), method);
-                        method = previous == null ? method : previous;
-                    }
-                }
-                return method.invoke(delegate, args);
-            } catch (ReflectiveOperationException | LinkageError ignored) {
-                return null;
+                return delegate.isSideSolid(pos, side, defaultValue);
+            } catch (RuntimeException | LinkageError ignored) {
+                return defaultValue;
             }
         }
     }

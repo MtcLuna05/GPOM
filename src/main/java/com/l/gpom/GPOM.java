@@ -8,10 +8,13 @@ import com.l.gpom.compat.industrialforegoing.IndustrialForegoingTileEntityMappin
 import com.l.gpom.proxy.CommonProxy;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.SidedProxy;
+import net.minecraftforge.fml.common.event.FMLConstructionEvent;
 import net.minecraftforge.fml.common.event.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.lang.reflect.Method;
 
 @Mod(
         modid = Reference.MOD_ID,
@@ -36,6 +39,11 @@ public final class GPOM {
     }
 
     @Mod.EventHandler
+    public void onConstruction(FMLConstructionEvent event) {
+        invokeOptional("superfactorymanager", "com.l.gpom.compat.sfm.integration.SfmMagicalCapabilityIntegration", "registerIfNeeded");
+    }
+
+    @Mod.EventHandler
     public void onPreInit(FMLPreInitializationEvent event) {
         proxy.preInit(event);
         if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
@@ -49,6 +57,20 @@ public final class GPOM {
         ArchitectureCraftTileEntityMappingFix.repairIfEnabled();
         EnderIOTileEntityMappingFix.repairIfEnabled();
         IndustrialForegoingTileEntityMappingFix.repairIfEnabled();
+    }
+
+    private static void invokeOptional(String modId, String className, String methodName) {
+        try {
+            Class<?> type = Class.forName(className, true, GPOM.class.getClassLoader());
+            Method method = type.getMethod(methodName);
+            method.invoke(null);
+        } catch (ClassNotFoundException | NoClassDefFoundError ignored) {
+            if (GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+                LOGGER.info("[GPOM Optional] Skipping {} integration because {} is unavailable", modId, className);
+            }
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException throwable) {
+            LOGGER.warn("[GPOM Optional] Failed to initialize {} integration {}", modId, className, throwable);
+        }
     }
 
 }

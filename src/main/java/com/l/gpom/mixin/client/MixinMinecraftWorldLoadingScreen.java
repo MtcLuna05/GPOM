@@ -350,6 +350,13 @@ public abstract class MixinMinecraftWorldLoadingScreen {
             return;
         }
 
+        if (WorldLoadingProgress.isWorldManagementScreen(screen)) {
+            if (WorldLoadingProgress.isActive()) {
+                WorldLoadingProgress.finish("world management screen displayed");
+            }
+            return;
+        }
+
         if (gpom$isMainMenuScreen(screen) && WorldLoadingProgress.isActive()) {
             gpom$drawImmediate("Returning to menu", "Main menu ready", 100);
             WorldLoadingProgress.finish("main menu displayed");

@@ -25,6 +25,11 @@ import java.io.IOException;
 import java.util.Properties;
 
 public final class ForgeRegistrySerializationTransformer implements IClassTransformer {
+    private static final boolean CACHE_REGISTRY_SERIALIZATION_CONFIG = cacheRegistrySerializationConfig();
+    private static final Boolean CACHED_REGISTRY_SERIALIZATION_ENABLED = CACHE_REGISTRY_SERIALIZATION_CONFIG
+            ? Boolean.valueOf(readRegistrySerializationEnabled())
+            : null;
+
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null) {
@@ -553,22 +558,40 @@ public final class ForgeRegistrySerializationTransformer implements IClassTransf
     }
 
     private static boolean registrySerializationEnabled() {
+        return CACHED_REGISTRY_SERIALIZATION_ENABLED != null
+                ? CACHED_REGISTRY_SERIALIZATION_ENABLED.booleanValue()
+                : readRegistrySerializationEnabled();
+    }
+
+    private static boolean readRegistrySerializationEnabled() {
         String override = System.getProperty("gpom.fml.registrySerialization");
         if (override != null) {
             return Boolean.parseBoolean(override.trim());
         }
 
+        return earlyBooleanProperty("fml.parallel.registrySerialization.enabled", true);
+    }
+
+    private static boolean cacheRegistrySerializationConfig() {
+        String override = System.getProperty("gpom.fml.registrySerialization.cacheConfigRead");
+        if (override != null) {
+            return Boolean.parseBoolean(override.trim());
+        }
+        return earlyBooleanProperty("gpom.fml.registrySerialization.cacheConfigRead", true);
+    }
+
+    private static boolean earlyBooleanProperty(String key, boolean defaultValue) {
         File file = new File(new File(System.getProperty("user.dir", "."), "config"), "gpom-early.properties");
         if (!file.isFile()) {
-            return true;
+            return defaultValue;
         }
 
         Properties properties = new Properties();
         try (BufferedInputStream input = new BufferedInputStream(new FileInputStream(file))) {
             properties.load(input);
         } catch (IOException ignored) {
-            return true;
+            return defaultValue;
         }
-        return Boolean.parseBoolean(properties.getProperty("fml.parallel.registrySerialization.enabled", "true").trim());
+        return Boolean.parseBoolean(properties.getProperty(key, Boolean.toString(defaultValue)).trim());
     }
 }

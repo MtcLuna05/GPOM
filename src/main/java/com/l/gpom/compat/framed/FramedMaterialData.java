@@ -1,22 +1,35 @@
 package com.l.gpom.compat.framed;
 
+import com.l.gpom.GPOM;
 import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
+import com.l.gpom.config.GpomEarlyConfig;
 import net.minecraft.block.Block;
 import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.IBlockAccess;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.Collection;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 public final class FramedMaterialData {
     private static final String TAG = "gpom:material_state";
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
+    private static final int PROBE_LIMIT = 256;
+    private static final String RANDOM_THINGS_LUMINOUS_BLOCK = "lumien.randomthings.lib.ILuminousBlock";
+    private static final Set<String> PROBED_MATERIALS = ConcurrentHashMap.newKeySet();
+    private static final Map<Class<?>, Boolean> LUMINOUS_BLOCK_TYPES = new ConcurrentHashMap<>();
+    private static final AtomicInteger PROBE_COUNT = new AtomicInteger();
 
     private FramedMaterialData() {
     }
@@ -26,7 +39,12 @@ public final class FramedMaterialData {
             return;
         }
         NBTTagCompound data = compound(root, TAG);
-        access.gpom$setFramedMaterialData(data == null ? null : normalizeData(data, root));
+        NBTTagCompound normalized = data == null ? null : normalizeData(data, root);
+        refreshDerivedFeatures(normalized, access);
+        access.gpom$setFramedMaterialData(normalized);
+        if (normalized != null) {
+            probe("read", string(normalized, "source"), savedState(normalized, "primary"), access, normalized);
+        }
     }
 
     public static void writeBlockcraftery(FramedMaterialDataAccess access, NBTTagCompound root, IBlockState copiedState) {
@@ -72,7 +90,28 @@ public final class FramedMaterialData {
 
     public static IBlockState authoritativeBlockcrafteryState(Object tile, IBlockState legacyState) {
         MaterialStates saved = states(tile, "blockcraftery");
-        return saved.present() ? saved.primary() : legacyState;
+        return saved.present() && isUsableMaterialState(saved.primary()) ? saved.primary() : legacyState;
+    }
+
+    public static int inheritedLightValue(
+            int fallback,
+            Block hostBlock,
+            IBlockState hostState,
+            IBlockAccess world,
+            BlockPos pos
+    ) {
+        TileEntity tile = MinecraftMappingCompat.worldTileEntity(world, pos);
+        NBTTagCompound data = data(tile);
+        String source = string(data, "source");
+        if ("architecturecraft".equals(source)) {
+            MaterialStates states = states(tile, source);
+            return Math.max(fallback, Math.max(
+                    stateLightValue(states.primary(), world, pos),
+                    stateLightValue(states.secondary(), world, pos)
+            ));
+        }
+        IBlockState inherited = FramedBlockEffectiveState.state(world, pos);
+        return inherited == null ? fallback : Math.max(fallback, stateLightValue(inherited, world, pos));
     }
 
     private static void write(
@@ -88,18 +127,29 @@ public final class FramedMaterialData {
 
         NBTTagCompound existing = access.gpom$getFramedMaterialData();
         if (existing != null) {
-            setTag(root, TAG, normalizeData(existing, root));
+            NBTTagCompound refreshed = createData(source, primaryState, secondaryState, access);
+            NBTTagCompound data = normalizeData(refreshed == null ? existing : refreshed, root);
+            copyInternalItem(data, root);
+            NBTTagCompound features = featureTag(primaryState, secondaryState, access);
+            if (features != null) {
+                setTag(data, "features", features);
+            }
+            setTag(root, TAG, data);
+            access.gpom$setFramedMaterialData(data);
+            probe("write-existing", source, primaryState, access, data);
             return;
         }
 
-        NBTTagCompound data = createData(source, primaryState, secondaryState);
+        NBTTagCompound data = createData(source, primaryState, secondaryState, access);
         if (data == null) {
             return;
         }
 
+        copyInternalItem(data, root);
         data = normalizeData(data, root);
         setTag(root, TAG, data);
         access.gpom$setFramedMaterialData(data);
+        probe("write-new", source, primaryState, access, data);
     }
 
     private static void refresh(
@@ -111,10 +161,82 @@ public final class FramedMaterialData {
         if (access == null) {
             return;
         }
-        access.gpom$setFramedMaterialData(normalizeData(createData(source, primaryState, secondaryState), null));
+        NBTTagCompound data = normalizeData(createData(source, primaryState, secondaryState, access), null);
+        access.gpom$setFramedMaterialData(data);
+        probe("refresh", source, primaryState, access, data);
     }
 
-    private static NBTTagCompound createData(String source, IBlockState primaryState, IBlockState secondaryState) {
+    private static void probe(
+            String phase,
+            String source,
+            IBlockState primaryState,
+            FramedMaterialDataAccess access,
+            NBTTagCompound data
+    ) {
+        if (!GpomEarlyConfig.optimizationInfoLogsEnabled()) {
+            return;
+        }
+        if (!"blockcraftery".equals(source) || primaryState == null || data == null) {
+            return;
+        }
+        Block block = MinecraftMappingCompat.blockStateBlock(primaryState);
+        ResourceLocation registryName = MinecraftMappingCompat.blockRegistryName(block);
+        String material = registryName == null ? "" : registryName.toString().toLowerCase(java.util.Locale.ROOT);
+        if (!probeMaterial(material)) {
+            return;
+        }
+
+        String position = "unknown";
+        if (access instanceof TileEntity) {
+            BlockPos pos = MinecraftMappingCompat.tileEntityPos((TileEntity) access);
+            if (pos != null) {
+                position = MinecraftMappingCompat.blockPosX(pos)
+                        + "," + MinecraftMappingCompat.blockPosY(pos)
+                        + "," + MinecraftMappingCompat.blockPosZ(pos);
+            }
+        }
+        String key = phase + '|' + position + '|' + material;
+        if (!PROBED_MATERIALS.add(key) || PROBE_COUNT.getAndIncrement() >= PROBE_LIMIT) {
+            return;
+        }
+
+        NBTTagCompound primary = compound(data, "primary");
+        NBTTagCompound features = compound(data, "features");
+        GPOM.LOGGER.info(
+                "[GPOM Framed Material Probe] phase={} pos={} material={} emission={} bloom={} "
+                        + "declaredLayer={} framedLayer={} renderLayers={} payload=true",
+                phase,
+                position,
+                material,
+                integer(features, "emission"),
+                booleanValue(features, "bloom"),
+                string(primary, "declaredLayer"),
+                string(primary, "framedLayer"),
+                string(primary, "renderLayers")
+        );
+    }
+
+    private static boolean probeMaterial(String material) {
+        return material.contains("luminous")
+                || material.contains("lumen")
+                || material.contains("fused")
+                || material.contains("clear")
+                || material.contains("glass")
+                || material.contains("quartz");
+    }
+
+    private static boolean isUsableMaterialState(IBlockState state) {
+        Block block = MinecraftMappingCompat.blockStateBlock(state);
+        ResourceLocation name = MinecraftMappingCompat.blockRegistryName(block);
+        return name != null && !"minecraft:air".equals(name.toString());
+    }
+
+    private static NBTTagCompound createData(
+            String source,
+            IBlockState primaryState,
+            IBlockState secondaryState,
+            FramedMaterialDataAccess access
+    ) {
         NBTTagCompound data = new NBTTagCompound();
         setInteger(data, "version", VERSION);
         setString(data, "source", source);
@@ -123,7 +245,58 @@ public final class FramedMaterialData {
         if (!hasState) {
             return null;
         }
+        NBTTagCompound features = featureTag(primaryState, secondaryState, access);
+        if (features != null) {
+            setTag(data, "features", features);
+        }
         return data;
+    }
+
+    private static NBTTagCompound featureTag(
+            IBlockState primaryState,
+            IBlockState secondaryState,
+            FramedMaterialDataAccess access
+    ) {
+        if (primaryState == null) {
+            return null;
+        }
+        IBlockAccess world = null;
+        BlockPos pos = null;
+        if (access instanceof TileEntity) {
+            TileEntity tile = (TileEntity) access;
+            world = MinecraftMappingCompat.tileEntityWorld(tile);
+            pos = MinecraftMappingCompat.tileEntityPos(tile);
+        }
+
+        NBTTagCompound features = new NBTTagCompound();
+        setInteger(features, "emission", Math.max(
+                stateVisualEmission(primaryState, world, pos),
+                stateVisualEmission(secondaryState, world, pos)
+        ));
+        setBoolean(features, "bloom",
+                stateHasBloomLayer(primaryState) || stateHasBloomLayer(secondaryState));
+        return features;
+    }
+
+    private static void refreshDerivedFeatures(NBTTagCompound data, FramedMaterialDataAccess access) {
+        if (data == null) {
+            return;
+        }
+        NBTTagCompound features = featureTag(
+                savedState(data, "primary"),
+                savedState(data, "secondary"),
+                access
+        );
+        if (features != null) {
+            setTag(data, "features", features);
+        }
+    }
+
+    private static void copyInternalItem(NBTTagCompound data, NBTTagCompound root) {
+        NBTTagCompound stack = compound(root, "stack");
+        if (stack != null) {
+            setTag(data, "internalItem", MinecraftMappingCompat.nbtCopy(stack));
+        }
     }
 
     /** Canonicalize legacy Blockcraftery payloads before they become authoritative. */
@@ -185,6 +358,8 @@ public final class FramedMaterialData {
         setString(state, "declaredLayer", string(canonical, "declaredLayer"));
         setString(state, "framedLayer", string(canonical, "framedLayer"));
         setString(state, "renderLayers", string(canonical, "renderLayers"));
+        setInteger(state, "emission", integer(canonical, "emission"));
+        setBoolean(state, "bloom", booleanValue(canonical, "bloom"));
         NBTTagCompound properties = compound(canonical, "properties");
         if (properties != null) {
             setTag(state, "properties", properties);
@@ -321,6 +496,8 @@ public final class FramedMaterialData {
             setString(tag, "framedLayer", framedLayer.name());
         }
         setString(tag, "renderLayers", renderLayers(block, state));
+        setInteger(tag, "emission", stateVisualEmission(state, null, null));
+        setBoolean(tag, "bloom", stateHasBloomLayer(state));
 
         NBTTagCompound properties = propertiesTag(state);
         if (properties != null) {
@@ -332,12 +509,15 @@ public final class FramedMaterialData {
     public static BlockRenderLayer framedRenderLayer(Block block, IBlockState state) {
         ResourceLocation name = MinecraftMappingCompat.blockRegistryName(block);
         String id = name != null ? name.toString().toLowerCase(java.util.Locale.ROOT) : "";
-        if (id.startsWith("enderio:block_")
-                && (id.contains("fused_") || id.contains("clear") || id.contains("thickened"))
-                && (id.contains("glass") || id.contains("quartz"))) {
-            return BlockRenderLayer.CUTOUT;
-        }
         return MinecraftMappingCompat.blockRenderLayer(block);
+    }
+
+    public static int visualEmission(IBlockState state) {
+        return stateVisualEmission(state, null, null);
+    }
+
+    public static boolean hasBloom(IBlockState state) {
+        return stateHasBloomLayer(state);
     }
 
     private static String renderLayers(Block block, IBlockState state) {
@@ -352,6 +532,72 @@ public final class FramedMaterialData {
             builder.append(layer.name());
         }
         return builder.toString();
+    }
+
+    private static boolean stateHasBloomLayer(IBlockState state) {
+        Block block = MinecraftMappingCompat.blockStateBlock(state);
+        if (block == null) {
+            return false;
+        }
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            if ("BLOOM".equals(layer.name()) && MinecraftMappingCompat.blockCanRenderInLayer(block, state, layer)) {
+                return true;
+            }
+        }
+        return luminousBlockShouldGlow(block, state);
+    }
+
+    private static int stateVisualEmission(IBlockState state, IBlockAccess world, BlockPos pos) {
+        Block block = MinecraftMappingCompat.blockStateBlock(state);
+        int lightValue = stateLightValue(state, world, pos);
+        return block != null && luminousBlockShouldGlow(block, state) ? 15 : lightValue;
+    }
+
+    private static int stateLightValue(IBlockState state, IBlockAccess world, BlockPos pos) {
+        Block block = MinecraftMappingCompat.blockStateBlock(state);
+        if (block == null) {
+            return 0;
+        }
+        Object value = world != null && pos != null
+                ? MinecraftMappingCompat.invoke(block, "block.getLightValueAt",
+                new Class<?>[]{IBlockState.class, IBlockAccess.class, BlockPos.class}, new Object[]{state, world, pos},
+                "getLightValue")
+                : MinecraftMappingCompat.invoke(block, "block.getLightValue",
+                new Class<?>[]{IBlockState.class}, new Object[]{state},
+                "func_149750_m", "getLightValue");
+        return value instanceof Number ? Math.max(0, Math.min(15, ((Number) value).intValue())) : 0;
+    }
+
+    private static boolean luminousBlockShouldGlow(Block block, IBlockState state) {
+        if (block == null || state == null || !isRandomThingsLuminousBlock(block.getClass())) {
+            return false;
+        }
+        Object value = MinecraftMappingCompat.invoke(block, "randomThings.shouldGlow",
+                new Class<?>[]{IBlockState.class, int.class}, new Object[]{state, 0},
+                "shouldGlow");
+        return Boolean.TRUE.equals(value);
+    }
+
+    private static boolean isRandomThingsLuminousBlock(Class<?> type) {
+        Boolean cached = LUMINOUS_BLOCK_TYPES.get(type);
+        if (cached != null) {
+            return cached;
+        }
+        boolean luminous = hasNamedInterface(type, RANDOM_THINGS_LUMINOUS_BLOCK);
+        Boolean previous = LUMINOUS_BLOCK_TYPES.putIfAbsent(type, luminous);
+        return previous == null ? luminous : previous;
+    }
+
+    private static boolean hasNamedInterface(Class<?> type, String interfaceName) {
+        for (Class<?> current = type; current != null; current = current.getSuperclass()) {
+            for (Class<?> implemented : current.getInterfaces()) {
+                if (interfaceName.equals(implemented.getName())
+                        || hasNamedInterface(implemented, interfaceName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static NBTTagCompound propertiesTag(IBlockState state) {
@@ -385,7 +631,12 @@ public final class FramedMaterialData {
         Object value = MinecraftMappingCompat.invoke(property, "property.getName",
                 MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
                 "func_177701_a", "getName");
-        return value instanceof String ? (String) value : null;
+        if (value instanceof String) {
+            return (String) value;
+        }
+        Object field = MinecraftMappingCompat.fieldValue(property, "property.name",
+                "field_177703_b", "name");
+        return field instanceof String ? (String) field : null;
     }
 
     private static String propertyValueName(Object property, Object value) {

@@ -56,13 +56,14 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
                     && !OptionalModRuntime.ausmPresent()) {
                 return patchRenderTargetWorld(basicClass, className);
             }
-            if ((BLOCK_ARCHITECTURE.equals(className) || BLOCK_SHAPE.equals(className))
-                    && GpomEarlyConfig.architectureCraftAccurateHitboxesEnabled()) {
+            boolean architectureBlock = BLOCK_ARCHITECTURE.equals(className) || BLOCK_SHAPE.equals(className);
+            if (architectureBlock && GpomEarlyConfig.architectureCraftAccurateHitboxesEnabled()) {
                 return patchArchitectureBlock(
                         basicClass,
                         className,
                         BLOCK_SHAPE.equals(className),
-                        GpomEarlyConfig.architectureCraftParentMaterialOcclusionEnabled()
+                        GpomEarlyConfig.architectureCraftParentMaterialOcclusionEnabled(),
+                        true
                 );
             }
             if (TILE_SAWBENCH.equals(className)
@@ -95,22 +96,30 @@ public final class ArchitectureCraftCompatibilityTransformer implements IClassTr
         return writeNode(node);
     }
 
-    private static byte[] patchArchitectureBlock(byte[] basicClass, String className, boolean shapeBlock, boolean parentMaterialOcclusion) {
+    private static byte[] patchArchitectureBlock(
+            byte[] basicClass,
+            String className,
+            boolean shapeBlock,
+            boolean parentMaterialOcclusion,
+            boolean accurateHitboxes
+    ) {
         ClassNode node = readNode(basicClass);
         if (hasMarker(node, BLOCK_MARKER)) {
             return basicClass;
         }
-        replaceMethod(node, rayTraceMethod("func_180636_a"));
-        replaceMethod(node, rayTraceMethod("collisionRayTrace"));
-        replaceMethod(node, boundingBoxMethod("func_185496_a"));
-        replaceMethod(node, boundingBoxMethod("getBoundingBox"));
-        replaceMethod(node, boundingBoxMethod("func_180646_a"));
-        replaceMethod(node, boundingBoxMethod("getCollisionBoundingBox"));
-        replaceMethod(node, selectedBoxMethod("func_180640_a"));
-        replaceMethod(node, selectedBoxMethod("getSelectedBoundingBox"));
-        if (shapeBlock && parentMaterialOcclusion) {
-            replaceMethod(node, sideMethod("func_176225_a"));
-            replaceMethod(node, sideMethod("shouldSideBeRendered"));
+        if (accurateHitboxes) {
+            replaceMethod(node, rayTraceMethod("func_180636_a"));
+            replaceMethod(node, rayTraceMethod("collisionRayTrace"));
+            replaceMethod(node, boundingBoxMethod("func_185496_a"));
+            replaceMethod(node, boundingBoxMethod("getBoundingBox"));
+            replaceMethod(node, boundingBoxMethod("func_180646_a"));
+            replaceMethod(node, boundingBoxMethod("getCollisionBoundingBox"));
+            replaceMethod(node, selectedBoxMethod("func_180640_a"));
+            replaceMethod(node, selectedBoxMethod("getSelectedBoundingBox"));
+            if (shapeBlock && parentMaterialOcclusion) {
+                replaceMethod(node, sideMethod("func_176225_a"));
+                replaceMethod(node, sideMethod("shouldSideBeRendered"));
+            }
         }
         addMarker(node, BLOCK_MARKER);
         return writeNode(node);

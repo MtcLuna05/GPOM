@@ -712,7 +712,7 @@ public final class BlockcrafteryCompat {
                 IProperty<?> property = (IProperty<?>) raw;
                 Object name = MinecraftMappingCompat.invoke(property, "property.getName",
                         MinecraftMappingCompat.NO_TYPES, MinecraftMappingCompat.NO_ARGS,
-                        "func_177702_a", "getName");
+                        "func_177701_a", "getName");
                 if (!(name instanceof String) || !"kind".equals(name)) {
                     continue;
                 }
@@ -723,9 +723,9 @@ public final class BlockcrafteryCompat {
                     continue;
                 }
                 for (Object value : (Iterable<?>) allowed) {
-                    Object valueName = MinecraftMappingCompat.invoke(property, "property.getName",
+                    Object valueName = MinecraftMappingCompat.invoke(property, "property.getName(value)",
                             new Class<?>[]{Comparable.class}, new Object[]{value},
-                            "func_177701_a", "getName");
+                            "func_177702_a", "getName");
                     if ("fused_glass".equals(valueName) || "glass".equals(valueName)) {
                         Object updated = MinecraftMappingCompat.invoke(state, "blockState.withProperty",
                                 new Class<?>[]{IProperty.class, Comparable.class}, new Object[]{property, value},

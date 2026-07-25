@@ -24,6 +24,7 @@ public class CommonProxy {
         RandomThingsRuneCommonEvents.registerIfNeeded();
         RandomThingsRuneNetwork.registerIfNeeded();
         ToroHealthCombatHealthSync.registerIfNeeded();
+        registerSfmMagicalCapabilityIntegration();
         BlockcrafteryOrphanFrameRecoveryEvents.registerIfNeeded();
         MissingMappingRepairs.register();
         BloodMagicWorldMapRecoveryEvents.register();
@@ -55,6 +56,13 @@ public class CommonProxy {
             return;
         }
         invokeOptional("appliedenergistics2", "com.l.gpom.diagnostics.Ae2PatternDiagnostics", "register");
+    }
+
+    private static void registerSfmMagicalCapabilityIntegration() {
+        if (!GpomEarlyConfig.sfmCustomResourcesEnabled() || !Loader.isModLoaded("superfactorymanager")) {
+            return;
+        }
+        invokeOptional("superfactorymanager", "com.l.gpom.compat.sfm.integration.SfmMagicalCapabilityIntegration", "registerIfNeeded");
     }
 
     private static void invokeOptional(String modId, String className, String methodName) {

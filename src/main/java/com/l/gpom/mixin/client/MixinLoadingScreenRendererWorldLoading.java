@@ -33,6 +33,9 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$resetWorldLoadTitle(String title, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementText(title) || WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.resetProgressAndMessage", title, null, -1);
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
     }
@@ -46,6 +49,9 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadTitle(String title, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementText(title) || WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.displaySavingString", title, null, -1);
         WorldLoadingProgress.updateFromVanilla(title, null, -1);
     }
@@ -59,6 +65,9 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadDetail(String detail, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementText(detail) || WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("LoadingScreenRenderer.displayLoadingString", null, detail, -1);
         WorldLoadingProgress.updateFromVanilla(null, detail, -1);
     }
@@ -73,6 +82,9 @@ public abstract class MixinLoadingScreenRendererWorldLoading {
             require = 0
     )
     private void gpom$drawWorldLoadingScreen(int progress, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         if (WorldLoadingProgress.shouldSuppressVanillaLoadingRenderer()) {
             WorldLoadingProgress.updateFromVanilla(null, null, progress);
             ci.cancel();

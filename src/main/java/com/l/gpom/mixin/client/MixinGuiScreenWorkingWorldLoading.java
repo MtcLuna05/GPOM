@@ -21,6 +21,9 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
         if (!WorldLoadingProgress.enabled()) {
             return;
         }
+        if (WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded(
                 "GuiScreenWorking.drawScreen",
                 "Loading world",
@@ -44,6 +47,9 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingTitle(String title, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementText(title) || WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.title", title, null, -1);
         if (!WorldLoadingProgress.isActive()) {
             return;
@@ -60,6 +66,9 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingDetail(String detail, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementText(detail) || WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.detail", null, detail, -1);
         if (!WorldLoadingProgress.isActive()) {
             return;
@@ -76,6 +85,9 @@ public abstract class MixinGuiScreenWorkingWorldLoading {
             require = 0
     )
     private void gpom$setWorldLoadingWorkingProgress(int progress, CallbackInfo ci) {
+        if (WorldLoadingProgress.isWorldManagementScreen()) {
+            return;
+        }
         WorldLoadingProgress.beginVanillaLoadingIfNeeded("GuiScreenWorking.progress", null, null, progress);
         if (!WorldLoadingProgress.isActive()) {
             return;

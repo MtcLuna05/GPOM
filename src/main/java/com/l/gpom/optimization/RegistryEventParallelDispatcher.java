@@ -1,6 +1,5 @@
 package com.l.gpom.optimization;
 
-import com.google.common.base.Throwables;
 import com.l.gpom.GPOM;
 import com.l.gpom.config.GpomEarlyConfig;
 import com.l.gpom.profiling.StartupProfiler;
@@ -525,7 +524,12 @@ public final class RegistryEventParallelDispatcher {
                                               Throwable throwable) throws Exception {
         IEventExceptionHandler exceptionHandler = eventBusExceptionHandler(eventBus);
         exceptionHandler.handleException(eventBus, event, listeners, index, throwable);
-        Throwables.throwIfUnchecked(throwable);
+        if (throwable instanceof RuntimeException) {
+            throw (RuntimeException) throwable;
+        }
+        if (throwable instanceof Error) {
+            throw (Error) throwable;
+        }
         throw new RuntimeException(throwable);
     }
 

@@ -42,6 +42,8 @@ import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraftforge.client.ForgeHooksClient;
+import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
 
 import java.lang.reflect.Constructor;
@@ -49,6 +51,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -69,6 +72,11 @@ public final class MinecraftMappingCompat {
     public static boolean worldIsRemote(World world) {
         Object value = fieldValue(world, "world.isRemote", "field_72995_K", "isRemote");
         return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static Random worldRandom(World world) {
+        Object value = fieldValue(world, "world.rand", "field_73012_v", "rand");
+        return value instanceof Random ? (Random) value : null;
     }
 
     public static ItemStack emptyStack() {
@@ -498,9 +506,19 @@ public final class MinecraftMappingCompat {
         return value instanceof World ? (World) value : null;
     }
 
+    public static void tileEntitySetWorld(TileEntity tile, World world) {
+        invoke(tile, "tileEntity.setWorld", new Class<?>[]{World.class}, new Object[]{world},
+                "func_145834_a", "setWorld");
+    }
+
     public static BlockPos tileEntityPos(TileEntity tile) {
         Object value = invoke(tile, "tileEntity.getPos", noTypes(), noArgs(), "func_174877_v", "getPos");
         return value instanceof BlockPos ? (BlockPos) value : null;
+    }
+
+    public static void tileEntitySetPos(TileEntity tile, BlockPos pos) {
+        invoke(tile, "tileEntity.setPos", new Class<?>[]{BlockPos.class}, new Object[]{pos},
+                "func_174878_a", "setPos");
     }
 
     public static void tileEntityMarkDirty(TileEntity tile) {
@@ -669,6 +687,17 @@ public final class MinecraftMappingCompat {
                 new Class<?>[]{IBlockState.class, BlockRenderLayer.class}, new Object[]{state, layer},
                 "canRenderInLayer");
         return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static BlockRenderLayer currentRenderLayer() {
+        Object value = invokeStatic(MinecraftForgeClient.class, "forge.getRenderLayer",
+                noTypes(), noArgs(), "getRenderLayer");
+        return value instanceof BlockRenderLayer ? (BlockRenderLayer) value : null;
+    }
+
+    public static void setRenderLayer(BlockRenderLayer layer) {
+        invokeStatic(ForgeHooksClient.class, "forge.setRenderLayer",
+                new Class<?>[]{BlockRenderLayer.class}, new Object[]{layer}, "setRenderLayer");
     }
 
     public static int blockMetaFromState(Block block, IBlockState state) {
@@ -1011,6 +1040,23 @@ public final class MinecraftMappingCompat {
         } catch (IllegalAccessException e) {
             logOnce(owner.getClass(), purpose, "could not read", e);
             return null;
+        }
+    }
+
+    public static boolean setFieldValue(Object owner, String purpose, Object value, String... names) {
+        if (owner == null) {
+            return false;
+        }
+        Field field = findField(owner.getClass(), purpose, names);
+        if (field == null) {
+            return false;
+        }
+        try {
+            field.set(owner, value);
+            return true;
+        } catch (IllegalAccessException | IllegalArgumentException e) {
+            logOnce(owner.getClass(), purpose, "could not write", e);
+            return false;
         }
     }
 

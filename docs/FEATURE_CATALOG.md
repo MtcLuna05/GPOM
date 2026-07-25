@@ -861,6 +861,26 @@ Capabilities:
 
 Risk level: low. Suppression should preserve at least one useful summary line.
 
+## EnderIO Farmer Compatibility
+
+Feature area: optional Farming Station compatibility and runtime hardening.
+
+```properties
+gpom.enderio.farmer.agricraftCropSticks.enabled=false
+gpom.enderio.farmer.tinkersLuck.enabled=false
+gpom.enderio.farmer.optimizedHarvest.enabled=false
+```
+
+Capabilities:
+
+- Exclusively routes AgriCraft crop tiles through AgriCraft's harvest API, preserving planted crop sticks and preventing EnderIO's generic crop handlers from breaking the tile. Immature crops are left untouched.
+- Includes Tinkers Construct luck when EnderIO calculates the active farming tool's fortune level. Generic EnderIO handlers pass that integer to the block drop and Forge harvest hooks.
+- Applies the resolved Fortune level to AgriCraft harvest products after AgriCraft performs its gain-stat/product rolls. Each returned product stack independently uses the vanilla ore-style roll: multiplier 1 has weight 2, and multipliers 2 through Fortune+1 each have weight 1. Crop sticks and seeds are not multiplied.
+- Caches EnderIO's priority-ordered farmer list and validates third-party harvest results before the Farming Station consumes them. Legacy entity-item drops are converted to native EnderIO drops instead of crashing the station tick.
+- Applies each patch independently through a load-on-demand core transformer when EnderIO naturally loads the relevant farmer class. AgriCraft and Tinkers are accessed reflectively so they remain optional, and no EnderIO target is queried during early Mixin preparation.
+
+Risk level: medium. These exact-version gameplay patches are disabled by default; the MeatballCraft profiles enable all three.
+
 ## Mod-Specific Startup Optimizations
 
 Feature area: startup performance.
@@ -871,6 +891,7 @@ Implemented or configured mod-specific paths include:
 - Astral Sorcery deferred asset library reload.
 - Betweenlands startup probes and targeted class/resource profiling.
 - EnderIO fast spawner entity validation and HEI tank grouping/fast paths.
+- EnderIO optional AgriCraft farmer, Tinkers luck support, and cached/sanitized harvest dispatch.
 - Erebus deferred composter registry and ore config work.
 - Gendustry config cache and optional call profiler.
 - NuclearCraft manufactory/log-crafting result caches and optional fast metal recipes.
@@ -889,6 +910,9 @@ gpom.agricraft.skipJsonWriteback=true
 gpom.agricraft.refreshChannelsAfterBulkPlacement=false
 gpom.astralSorcery.deferAssetLibraryReload=true
 gpom.enderio.fastSpawnerEntityValidation=true
+gpom.enderio.farmer.agricraftCropSticks.enabled=false
+gpom.enderio.farmer.tinkersLuck.enabled=false
+gpom.enderio.farmer.optimizedHarvest.enabled=false
 gpom.erebus.deferComposterRegistry=true
 gpom.erebus.deferOreConfigs=true
 gpom.gendustryConfigCache=true
