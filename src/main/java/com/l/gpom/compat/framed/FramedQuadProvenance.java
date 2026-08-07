@@ -25,7 +25,6 @@ public final class FramedQuadProvenance {
     private static final ReferenceQueue<BakedQuad> STALE_QUADS = new ReferenceQueue<>();
     private static final ConcurrentMap<QuadKey, QuadData> QUADS = new ConcurrentHashMap<>();
     private static final ThreadLocal<QuadLookupKey> QUAD_LOOKUP = ThreadLocal.withInitial(QuadLookupKey::new);
-    private static final ThreadLocal<ActiveScope> ACTIVE_SCOPE = new ThreadLocal<>();
 
     private FramedQuadProvenance() {
     }
@@ -50,39 +49,6 @@ public final class FramedQuadProvenance {
             return QUADS.get(lookup);
         } finally {
             lookup.clear();
-        }
-    }
-
-    /**
-     * Marks a Blockcraftery geometry build so Forge quads created within it inherit
-     * the copied-material record. The scope is thread-local because model baking can
-     * run concurrently.
-     */
-    public static ActiveScope pushActive(int materialIndex, IBlockState materialState,
-                                         EnumFacing faceHint, Source source) {
-        ActiveScope scope = new ActiveScope(ACTIVE_SCOPE.get(), materialIndex, materialState, faceHint, source);
-        ACTIVE_SCOPE.set(scope);
-        return scope;
-    }
-
-    public static void popActive(ActiveScope scope) {
-        if (scope == null) {
-            return;
-        }
-        if (ACTIVE_SCOPE.get() == scope) {
-            if (scope.previous == null) {
-                ACTIVE_SCOPE.remove();
-            } else {
-                ACTIVE_SCOPE.set(scope.previous);
-            }
-        }
-    }
-
-    /** Called from MysticalLib's Forge-quad factory after an UnpackedBakedQuad is built. */
-    public static void registerActive(BakedQuad quad) {
-        ActiveScope scope = ACTIVE_SCOPE.get();
-        if (scope != null) {
-            register(quad, scope.materialIndex, scope.materialState, scope.faceHint, scope.source);
         }
     }
 
@@ -112,24 +78,6 @@ public final class FramedQuadProvenance {
     public enum Source {
         COPIED_MODEL,
         HOST_FALLBACK
-    }
-
-    /** Opaque nesting token for a transient Blockcraftery geometry build. */
-    public static final class ActiveScope {
-        private final ActiveScope previous;
-        private final int materialIndex;
-        private final IBlockState materialState;
-        private final EnumFacing faceHint;
-        private final Source source;
-
-        private ActiveScope(ActiveScope previous, int materialIndex, IBlockState materialState,
-                            EnumFacing faceHint, Source source) {
-            this.previous = previous;
-            this.materialIndex = materialIndex;
-            this.materialState = materialState;
-            this.faceHint = faceHint;
-            this.source = source;
-        }
     }
 
     public static final class QuadData {

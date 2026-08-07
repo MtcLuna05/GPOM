@@ -22,7 +22,7 @@ import java.util.Set;
 public final class StartupProfiler {
     public static final String POST_PREINIT_TRANSITION_PHASE = "POST_PREINIT_TRANSITION";
 
-    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler", "true"));
+    private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.startupProfiler", "false"));
     private static final boolean PROBE_LOGS_ENABLED = GpomEarlyConfig.startupProfilerProbeLogsEnabled()
             && Boolean.parseBoolean(System.getProperty("gpom.startupProfiler.probeLogs", "true"));
     private static final boolean BOOT_LOGS_ENABLED = GpomEarlyConfig.startupProfilerBootLogsEnabled();

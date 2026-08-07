@@ -83,6 +83,9 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
         }
 
         String className = normalizedClassName(transformedName != null ? transformedName : name);
+        if (!isPotentialTarget(className)) {
+            return basicClass;
+        }
         boolean patchEntityRenderer = GpomEarlyConfig.betterPortalsMissingNewTargetFixEnabled()
                 && (ENTITY_RENDERER_NO_OF.equals(className) || ENTITY_RENDERER_OF.equals(className));
         boolean patchLegacyAether = GpomEarlyConfig.betterPortalsSkipLegacyAetherBridgeIfMissingEnabled()
@@ -174,6 +177,11 @@ public final class BetterPortalsCompatibilityTransformer implements IClassTransf
         } catch (Throwable ignored) {
             return basicClass;
         }
+    }
+
+    private static boolean isPotentialTarget(String className) {
+        return className != null && (className.startsWith(BETTER_PORTALS_ROOT)
+                || AETHER_SKYROOT_BUCKET.equals(className));
     }
 
     public static void installBetterPortalsAetherPortalBlock(Object block) {

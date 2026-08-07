@@ -45,6 +45,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
         return new String[] {
                 "com.l.gpom.core.ForgeEventSubscriptionTransformerInstaller",
                 "com.l.gpom.core.ForgeEventBusRegistrationTransformer",
+                "com.l.gpom.core.FoundationClassLoaderCompatibilityTransformer",
                 "com.l.gpom.core.ChickenAsmConcurrencyTransformer",
                 "com.l.gpom.core.CodeChickenLibModelStateTransformer",
                 "com.l.gpom.core.WirelessRedstoneServerAddonsTransformer",
@@ -70,6 +71,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.TwilightForestPortalDimensionTransformer",
                 "com.l.gpom.core.ArchitectureCraftCompatibilityTransformer",
                 "com.l.gpom.core.BlockcrafteryCompatibilityTransformer",
+                "com.l.gpom.core.OpenBlocksTankRenderTransformer",
                 "com.l.gpom.core.EnderIOFarmerCompatibilityTransformer",
                 "com.l.gpom.core.BuildingGadgetsFramedCopyPasteTransformer",
                 "com.l.gpom.core.AgriCraftClientFluidSimulationTransformer",

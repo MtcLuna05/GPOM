@@ -13,10 +13,12 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.jar.JarFile;
 
 public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     private static final Set<String> LOGGED = ConcurrentHashMap.newKeySet();
+    private static final ConcurrentMap<String, Boolean> RESOURCE_PRESENCE = new ConcurrentHashMap<>();
     private static final String[] BAUBLES_TARGETS = {
             "baubles/api/BaublesApi.class",
             "baubles/common/container/SlotBauble.class"
@@ -258,6 +260,10 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
     }
 
     private static boolean resourcePresent(String resource) {
+        return RESOURCE_PRESENCE.computeIfAbsent(resource, GpomMixinConfigPlugin::findResourcePresent);
+    }
+
+    private static boolean findResourcePresent(String resource) {
         return resourcePresent(GpomMixinConfigPlugin.class.getClassLoader(), resource)
                 || resourcePresent(Thread.currentThread().getContextClassLoader(), resource)
                 || resourcePresent(Launch.classLoader, resource)

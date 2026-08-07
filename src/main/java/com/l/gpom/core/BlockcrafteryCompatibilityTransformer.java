@@ -35,14 +35,12 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     private static final String TRAP_DOOR = "epicsquid.blockcraftery.block.BlockEditableTrapDoor";
     private static final String PRESSURE_PLATE = "epicsquid.blockcraftery.block.BlockEditablePressurePlate";
     private static final String MODEL_EDITABLE = "epicsquid.blockcraftery.model.BakedModelEditable";
-    private static final String MYSTICAL_LIB_MODEL_UTIL = "epicsquid.mysticallib.model.ModelUtil";
     private static final String TILE_EDITABLE_BLOCK = "epicsquid.blockcraftery.tile.TileEditableBlock";
     private static final String WORLD = "net.minecraft.world.World";
     private static final String HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryCompat";
     private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
     private static final String FRAMED_HELPER = "com/l/gpom/compat/framed/FramedMaterialData";
     private static final String FRAMED_ACCESS = "com/l/gpom/compat/framed/FramedMaterialDataAccess";
-    private static final String QUAD_PROVENANCE = "com/l/gpom/compat/framed/FramedQuadProvenance";
     private static final String NBT_COMPOUND = "Lnet/minecraft/nbt/NBTTagCompound;";
     private static final String BLOCK_STATE = "Lnet/minecraft/block/state/IBlockState;";
     private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
@@ -83,9 +81,6 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             }
             if (framedMaterialStorage && TILE_EDITABLE_BLOCK.equals(className)) {
                 return patchTileEditableBlock(basicClass);
-            }
-            if (framedMaterialStorage && MYSTICAL_LIB_MODEL_UTIL.equals(className)) {
-                return patchMysticalLibQuadFactory(basicClass);
             }
             if (framedMaterialStorage && isAnyEditableBlock(className)) {
                 basicClass = patchEditableFramedVisuals(basicClass);
@@ -431,7 +426,7 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     ) {
         ClassNode node = readNode(basicClass);
         boolean changed = false;
-        if (modelNullSideCull) {
+        if (modelNullSideCull || framedMaterialStorage) {
             replaceMethod(node, modelGetQuadsMethod("func_188616_a"));
             replaceMethod(node, modelGetQuadsMethod("getQuads"));
             changed = true;
@@ -442,112 +437,6 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         if (modelLayerCompat || modelNullSideCull) {
             changed |= synchronizeMethod(node, "func_188616_a", GET_QUADS_DESC);
             changed |= synchronizeMethod(node, "getQuads", GET_QUADS_DESC);
-        }
-        if (framedMaterialStorage) {
-            changed |= patchModelGeometryProvenance(node, "func_188616_a");
-            changed |= patchModelGeometryProvenance(node, "getQuads");
-        }
-        return changed ? writeNode(node) : basicClass;
-    }
-
-    /**
-     * The stock Blockcraftery model converts copied-material sprites into its
-     * host-shape geometry through addGeometry. Scope that call so MysticalLib's
-     * UnpackedBakedQuad factory inherits the copied material provenance.
-     */
-    private static boolean patchModelGeometryProvenance(ClassNode node, String name) {
-        boolean changed = false;
-        for (MethodNode method : node.methods) {
-            if (!method.name.equals(name) || !method.desc.equals(GET_QUADS_DESC)
-                    || hasStaticCall(method, RENDER_HELPER, "pushGeometryProvenance")) {
-                continue;
-            }
-            int scopeLocal = method.maxLocals;
-            boolean methodChanged = false;
-            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
-                 instruction = instruction.getNext()) {
-                if (!(instruction instanceof MethodInsnNode)) {
-                    continue;
-                }
-                MethodInsnNode invocation = (MethodInsnNode) instruction;
-                if (!"addGeometry".equals(invocation.name)
-                        || !("(Ljava/util/List;Lnet/minecraft/util/EnumFacing;" + BLOCK_STATE
-                        + "[Lnet/minecraft/client/renderer/texture/TextureAtlasSprite;I)V").equals(invocation.desc)) {
-                    continue;
-                }
-
-                InsnList push = new InsnList();
-                push.add(new VarInsnNode(Opcodes.ALOAD, 1));
-                push.add(new VarInsnNode(Opcodes.ALOAD, 2));
-                push.add(new MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        RENDER_HELPER,
-                        "pushGeometryProvenance",
-                        "(" + BLOCK_STATE + "Lnet/minecraft/util/EnumFacing;)L" + QUAD_PROVENANCE
-                                + "$ActiveScope;",
-                        false
-                ));
-                push.add(new VarInsnNode(Opcodes.ASTORE, scopeLocal));
-                method.instructions.insertBefore(instruction, push);
-
-                InsnList pop = new InsnList();
-                pop.add(new VarInsnNode(Opcodes.ALOAD, scopeLocal));
-                pop.add(new MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        QUAD_PROVENANCE,
-                        "popActive",
-                        "(L" + QUAD_PROVENANCE + "$ActiveScope;)V",
-                        false
-                ));
-                method.instructions.insert(instruction, pop);
-                changed = true;
-                methodChanged = true;
-            }
-            if (methodChanged) {
-                method.maxLocals = scopeLocal + 1;
-            }
-        }
-        return changed;
-    }
-
-    /**
-     * MysticalLib builds the UnpackedBakedQuad instances Blockcraftery renders.
-     * Copy the active GPOM material record at that allocation boundary instead of
-     * leaving it attached only to the pre-conversion source quad.
-     */
-    private static byte[] patchMysticalLibQuadFactory(byte[] basicClass) {
-        ClassNode node = readNode(basicClass);
-        boolean changed = false;
-        int patchedReturns = 0;
-        for (MethodNode method : node.methods) {
-            if (!("createQuad".equals(method.name) || "makeCubeFace".equals(method.name))
-                    || !method.desc.endsWith(")Lnet/minecraft/client/renderer/block/model/BakedQuad;")) {
-                continue;
-            }
-            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
-                 instruction = instruction.getNext()) {
-                if (instruction.getOpcode() != Opcodes.ARETURN) {
-                    continue;
-                }
-                InsnList propagation = new InsnList();
-                propagation.add(new InsnNode(Opcodes.DUP));
-                propagation.add(new MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        QUAD_PROVENANCE,
-                        "registerActive",
-                        "(Lnet/minecraft/client/renderer/block/model/BakedQuad;)V",
-                        false
-                ));
-                method.instructions.insertBefore(instruction, propagation);
-                changed = true;
-                patchedReturns++;
-            }
-        }
-        if (changed && PATCHED_TILE_CLASSES.add("quad-factories:" + node.name)) {
-            GPOM.LOGGER.info(
-                    "[GPOM Framed Material Probe] MysticalLib quad factories patched returns={}",
-                    patchedReturns
-            );
         }
         return changed ? writeNode(node) : basicClass;
     }

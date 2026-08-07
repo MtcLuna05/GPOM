@@ -48,17 +48,12 @@ public final class EventBusRegistrationOptimizations {
     private static final String SUBSCRIBE_EVENT_DESCRIPTOR = Type.getDescriptor(SubscribeEvent.class);
     private static final boolean GET_LOG_CONTEXT = Boolean.parseBoolean(System.getProperty("fml.LogContext", "false"));
 
-    private static final ClassValue<Method[]> PUBLIC_DECLARED_METHODS = new ClassValue<Method[]>() {
+    private static final ClassValue<Method[]> PUBLIC_METHODS = new ClassValue<Method[]>() {
         @Override
         protected Method[] computeValue(Class<?> type) {
-            Method[] declaredMethods = type.getDeclaredMethods();
-            List<Method> publicMethods = new ArrayList<>(declaredMethods.length);
-            for (Method method : declaredMethods) {
-                if (Modifier.isPublic(method.getModifiers())) {
-                    publicMethods.add(method);
-                }
-            }
-            return publicMethods.toArray(new Method[publicMethods.size()]);
+            // Match Forge EventBus.register exactly. getDeclaredMethods resolves
+            // private optional API signatures which Forge never inspects.
+            return type.getMethods();
         }
     };
 
@@ -220,7 +215,7 @@ public final class EventBusRegistrationOptimizations {
 
     public static Method[] methodsForRegistration(Class<?> targetClass, Object target) {
         if (target instanceof Class) {
-            return PUBLIC_DECLARED_METHODS.get(targetClass);
+            return PUBLIC_METHODS.get(targetClass);
         }
         return targetClass.getMethods();
     }

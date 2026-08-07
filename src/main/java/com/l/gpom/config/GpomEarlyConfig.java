@@ -32,6 +32,7 @@ public final class GpomEarlyConfig {
     };
     private static final Properties DEFAULTS = new Properties();
     private static final Properties VALUES = new Properties();
+    private static final ConcurrentMap<String, Boolean> BOOLEAN_VALUES = new ConcurrentHashMap<>();
     private static final ConcurrentMap<String, Set<String>> SET_VALUES = new ConcurrentHashMap<>();
     private static final String ENDERIO_TILE_ENTITY_LIFECYCLE_DENYLIST =
             "enderio,enderiobase,enderioconduits,enderioconduitsappliedenergistics,"
@@ -93,6 +94,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("fml.parallel.postInit.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.init.enabled", "true");
         DEFAULTS.setProperty("fml.parallel.loadComplete.enabled", "true");
+        DEFAULTS.setProperty("gpom.foundation.cacheJarManifests.enabled", "false");
         DEFAULTS.setProperty("fml.parallel.workers", "0");
         DEFAULTS.setProperty("fml.parallel.preInit.workers", "0");
         DEFAULTS.setProperty("fml.parallel.construct.workers", "0");
@@ -143,6 +145,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.ctm.tolerateUnknownRenderLayer", "true");
         DEFAULTS.setProperty("gpom.ctm.suppressTextureMetadataErrorSpam", "true");
         DEFAULTS.setProperty("gpom.cacheInvalidation.denylist", "ausm,gpom");
+        DEFAULTS.setProperty("gpom.startupProfiler", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.boot.enabled", "false");
         DEFAULTS.setProperty("gpom.startupProfiler.logs.phaseLifecycle.enabled", "false");
@@ -320,7 +323,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.crafttweaker.fastZenRegister.deepProbes", "false");
         DEFAULTS.setProperty("gpom.crafttweaker.lazyItemList", "true");
         DEFAULTS.setProperty("gpom.crafttweaker.suppressFunctionTypeStdout", "true");
-        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.enabled", "true");
+        DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.enabled", "false");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.workers", "0");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.allowlist", "*");
         DEFAULTS.setProperty("gpom.crafttweaker.parallelScriptParsing.denylist", "PeriodicTable.zs");
@@ -395,6 +398,10 @@ public final class GpomEarlyConfig {
 
     public static boolean parallelPreInitEnabled() {
         return booleanValue("fml.parallel.preInit.enabled");
+    }
+
+    public static boolean foundationCacheJarManifestsEnabled() {
+        return booleanValue("gpom.foundation.cacheJarManifests.enabled");
     }
 
     public static boolean parallelConstructEnabled() {
@@ -1110,6 +1117,8 @@ public final class GpomEarlyConfig {
                 return "Replaces repeated CTM texture metadata IOException stack traces with one concise GPOM line per unique metadata failure.";
             case "gpom.cacheInvalidation.denylist":
                 return "Comma-separated mod ids, jar names, or file stems excluded from GPOM cache input signatures; default ignores local AUSM dev jar churn.";
+            case "gpom.startupProfiler":
+                return "Master switch for startup timing collection and injected probe calls. Keep disabled outside targeted profiling runs.";
             case "gpom.startupProfiler.logs.enabled":
                 return "Master switch for startup profiler log output. Timings may still be collected for UI or summaries.";
             case "gpom.startupProfiler.logs.boot.enabled":
@@ -1607,6 +1616,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.hei.extendedCraftingLowerTierTransfer.enabled");
         copySystemPropertyIfAbsent("gpom.hei.draconicFusionTransfer.enabled");
         copySystemPropertyIfAbsent("gpom.hei.craftableRecipesFirst.enabled");
+        copySystemPropertyIfAbsent("gpom.startupProfiler");
         copySystemPropertyIfAbsent("gpom.startupProfiler.logs.constructCriticalPath.enabled");
         copySystemPropertyIfAbsent("gpom.startupProfiler.topCount");
         copySystemPropertyIfAbsent("gpom.startupProfiler.probeHighVolumeEventBusPosts");
@@ -1826,7 +1836,9 @@ public final class GpomEarlyConfig {
     }
 
     private static boolean booleanValue(String key) {
-        return Boolean.parseBoolean(VALUES.getProperty(key, DEFAULTS.getProperty(key, "false")).trim());
+        return BOOLEAN_VALUES.computeIfAbsent(key, ignored -> Boolean.valueOf(
+                Boolean.parseBoolean(VALUES.getProperty(key, DEFAULTS.getProperty(key, "false")).trim())
+        )).booleanValue();
     }
 
     public static boolean parallelRegistrySerializationEnabled() {

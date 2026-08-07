@@ -458,7 +458,7 @@ public final class ClientAccess {
             }
             Method modelMethod = getModelForStateMethod;
             if (modelMethod == null) {
-                modelMethod = findMethod(BlockRendererDispatcher.class, new Class<?>[] {IBlockState.class}, "func_175023_a", "getModelForState");
+                modelMethod = findMethod(BlockRendererDispatcher.class, new Class<?>[] {IBlockState.class}, "func_184389_a", "getModelForState");
                 getModelForStateMethod = modelMethod;
             }
             Object model = modelMethod == null ? null : modelMethod.invoke(dispatcher, state);

@@ -111,21 +111,6 @@ public final class BlockcrafteryRenderCompat {
         return result;
     }
 
-    /**
-     * Marks Blockcraftery's native host-shape geometry generation with the
-     * copied material. MysticalLib creates the rendered UnpackedBakedQuad
-     * instances inside that call.
-     */
-    public static FramedQuadProvenance.ActiveScope pushGeometryProvenance(
-            IBlockState hostState,
-            EnumFacing side
-    ) {
-        IBlockState copied = hostState instanceof IExtendedBlockState
-                ? copiedState((IExtendedBlockState) hostState) : null;
-        return copied == null ? null : FramedQuadProvenance.pushActive(
-                0, copied, side, FramedQuadProvenance.Source.HOST_FALLBACK);
-    }
-
     @SuppressWarnings("unchecked")
     private static void appendBlockQuads(
             Object model,
@@ -159,10 +144,8 @@ public final class BlockcrafteryRenderCompat {
                 sprites[0] = particle(copiedModel);
                 List<BakedQuad> copiedQuads = modelQuads(copiedModel, copied, side, rand);
                 if (!copiedQuads.isEmpty()) {
-                    // Keep CTM's per-quad atlas UVs; rebuilding from sprites
-                    // collapses connected textures into the base tile.
-                    generated.addAll(copiedQuads);
-                    registerQuads(copiedQuads, copied, side, FramedQuadProvenance.Source.COPIED_MODEL);
+                    // The copied quads provide material sprites and tint only.
+                    // addGeometry must still create the editable block's shape.
                     sprites = new TextureAtlasSprite[copiedQuads.size()];
                     tints = new int[copiedQuads.size()];
                     for (int index = 0; index < copiedQuads.size(); index++) {
@@ -296,8 +279,6 @@ public final class BlockcrafteryRenderCompat {
             TextureAtlasSprite[] sprites,
             int tint
     ) {
-        FramedQuadProvenance.ActiveScope provenance = FramedQuadProvenance.pushActive(
-                0, material, side, FramedQuadProvenance.Source.HOST_FALLBACK);
         try {
             Method method = cachedMethod(
                     ADD_GEOMETRY_METHODS,
@@ -311,8 +292,6 @@ public final class BlockcrafteryRenderCompat {
             );
             method.invoke(model, quads, side, state, sprites, tint);
         } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
-        } finally {
-            FramedQuadProvenance.popActive(provenance);
         }
     }
 

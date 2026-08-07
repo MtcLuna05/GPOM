@@ -15,7 +15,7 @@ import java.util.Set;
 
 public final class ThaumcraftStartupProfilerTransformer implements IClassTransformer {
     private static final boolean ENABLED = Boolean.parseBoolean(System.getProperty("gpom.thaumcraftProfiler", "true"));
-    private static final boolean ASPECT_EVENT_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.thaumcraftProfiler.aspectEvents", "true"));
+    private static final boolean ASPECT_EVENT_PROFILER = Boolean.parseBoolean(System.getProperty("gpom.thaumcraftProfiler.aspectEvents", "false"));
     private static final boolean CRAFTING_RECIPE_INDEX = Boolean.parseBoolean(System.getProperty("gpom.thaumcraft.recipeOutputIndex", "false"));
     private static final Map<String, Set<MethodKey>> TARGETS = createTargets();
 

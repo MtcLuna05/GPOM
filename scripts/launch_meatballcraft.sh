@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="${PRISM_ROOT:-$HOME/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher}"
 INSTANCE_ID="${PRISM_INSTANCE_ID:-MeatballCraft, Dimensional Ascension}"
+INSTANCE_CFG="$ROOT/instances/$INSTANCE_ID/instance.cfg"
 LOG="$ROOT/instances/$INSTANCE_ID/minecraft/logs/latest.log"
 TMP_DIR="${CRO_TMP_DIR:-/tmp}"
 LAUNCH_OUT="$TMP_DIR/cro-prism-launch.out"
@@ -10,6 +11,16 @@ LAUNCH_ERR="$TMP_DIR/cro-prism-launch.err"
 LAUNCH_PID="$TMP_DIR/cro-prism-launch.pid"
 
 TIMEOUT_SECONDS="${CRO_LOG_TIMEOUT_SECONDS:-45}"
+
+# Keep diagnostics opt-in even if Prism persists temporary profiler arguments.
+if [ -f "$INSTANCE_CFG" ]; then
+  sed -E -i \
+    -e '/^JvmArgs=/ s#[[:space:]]*-XX:[^"[:space:]]*StartFlightRecording[^"[:space:]]*##g' \
+    -e '/^JvmArgs=/ s#[[:space:]]*-Dlog4j\.configurationFile=[^"[:space:]]*gpom-jfr-minimal-log4j2\.xml##g' \
+    -e '/^JvmArgs=/ s#[[:space:]]*-Dgpom\.startupProfiler=[^"[:space:]]*##g' \
+    -e '/^JvmArgs=/ s#"$# -Dgpom.startupProfiler=false"#' \
+    "$INSTANCE_CFG"
+fi
 
 # Killing Prism during its "launching profile" handoff can kill the game before
 # the JVM writes latest.log. Keep cleanup opt-in for genuinely stale launches.
