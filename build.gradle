@@ -54,16 +54,26 @@ dependencies {
     compileOnly modJarDependency('ae2-uel-v0.56.5.jar', 'curse.maven:ae2-extended-life-570458:5378163')
     compileOnly modJarDependency('AbyssalCraft-1.12.2-1.11.2.jar', 'curse.maven:abyssalcraft-53686:6922627')
     compileOnly modJarDependency('Baubles-1.12-1.5.2.jar', 'curse.maven:baubles-227083:2518667')
-    compileOnly workspaceModJarDependency('sfm-1.12.2-4.1.0.jar')
-    compileOnly workspaceModJarDependency('Botania r1.10-364.4.jar')
-    compileOnly workspaceModJarDependency('Thaumcraft-1.12.2-6.1.BETA26.jar')
+    compileOnly workspaceModJarDependency('sfm-1.12.2-4.1.0.jar', 'curse.maven:super-factory-manager-unofficial-backport-sfm-ub-1394832:7492878')
+    compileOnly workspaceModJarDependency('Botania r1.10-364.4.jar', 'curse.maven:botania-225643:3330934')
+    compileOnly workspaceModJarDependency('Thaumcraft-1.12.2-6.1.BETA26.jar', 'curse.maven:thaumcraft-223628:2629023')
     compileOnly modJarDependency('EnderCore-1.12.2-0.5.78.jar', 'com.enderio.core:EnderCore:1.12.2-0.5.78')
     compileOnly modJarDependency('EnderIO-1.12.2-5.3.72.jar', 'com.enderio:EnderIO:1.12.2-5.3.72')
 }
 
-def workspaceModJarDependency(String fileName) {
-    def jarFile = file("run/mbc-cleanroom-server-no-gpom/mods/${fileName}")
-    return jarFile.isFile() ? files(jarFile) : files()
+def workspaceModJarDependency(String fileName, String fallbackNotation) {
+    if (!project.findProperty('gpom_use_remote_mod_deps')?.toString()?.toBoolean()) {
+        def jarFile = file("run/mbc-cleanroom-server-no-gpom/mods/${fileName}")
+        if (jarFile.isFile()) {
+            return files(jarFile)
+        }
+    }
+
+    def dependency = dependencies.create(fallbackNotation)
+    if (dependency.hasProperty('transitive')) {
+        dependency.transitive = false
+    }
+    return dependency
 }
 
 def modJarDependency(String fileName, String fallbackNotation) {
