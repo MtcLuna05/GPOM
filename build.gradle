@@ -4,6 +4,8 @@ plugins {
     id 'xyz.wagyourtail.unimined' version '1.4.18-kappa'
 }
 
+import groovy.json.JsonOutput
+
 version = property('mod_version')
 group = property('root_package')
 
@@ -151,5 +153,60 @@ jar {
                 'FMLCorePluginContainsFMLMod': 'true',
                 'ForceLoadAsMod': 'true'
         )
+    }
+}
+
+def curseForgeSetting = { String propertyName, String environmentName ->
+    def value = providers.gradleProperty(propertyName)
+            .orElse(providers.environmentVariable(environmentName))
+            .orNull
+    return value == null ? '' : value.trim()
+}
+
+tasks.register('publishCurseForge') {
+    group = 'publishing'
+    description = 'Uploads the remapped release jar to CurseForge.'
+    dependsOn(tasks.named('remapJar'))
+
+    doLast {
+        String projectId = curseForgeSetting('curseforge_project_id', 'CURSEFORGE_PROJECT_ID')
+        String token = curseForgeSetting('curseforge_token', 'CURSEFORGE_TOKEN')
+        if (projectId.isEmpty() || token.isEmpty()) {
+            throw new GradleException('CurseForge publishing requires CURSEFORGE_PROJECT_ID and CURSEFORGE_TOKEN.')
+        }
+
+        String releaseType = curseForgeSetting('curseforge_release_type', 'CURSEFORGE_RELEASE_TYPE')
+        if (!(releaseType in ['alpha', 'beta', 'release'])) {
+            releaseType = 'release'
+        }
+        String changelog = curseForgeSetting('curseforge_changelog', 'CURSEFORGE_CHANGELOG')
+        if (changelog.isEmpty()) {
+            changelog = "Release ${project.version}"
+        }
+
+        Set<File> candidates = fileTree(layout.buildDirectory.dir('libs')) {
+            include "${base.archivesName.get()}-${project.version}*.jar"
+            exclude '**/*-sources.jar', '**/*-javadoc.jar'
+        }.files
+        File artifact = candidates.find()
+        if (artifact == null) {
+            throw new GradleException("No distributable jar found for ${project.version}.")
+        }
+
+        String metadata = JsonOutput.toJson([
+                changelog       : changelog,
+                changelogType   : 'markdown',
+                displayName     : "${base.archivesName.get()} ${project.version}",
+                gameVersionNames: ['1.12.2'],
+                releaseType     : releaseType
+        ])
+        exec {
+            executable 'curl'
+            args '--fail-with-body', '--request', 'POST',
+                    '--header', "X-Api-Token: ${token}",
+                    '--form', "metadata=${metadata};type=application/json",
+                    '--form', "file=@${artifact.absolutePath}",
+                    "https://minecraft.curseforge.com/api/projects/${projectId}/upload-file"
+        }
     }
 }

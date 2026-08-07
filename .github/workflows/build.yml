@@ -112,3 +112,15 @@ jobs:
                 [[ -n "${tag}" ]] || continue
                 gh release delete "${tag}" --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag
               done
+
+      - name: Publish CurseForge file
+        env:
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          CURSEFORGE_CHANGELOG: Release ${{ github.sha }}
+        run: |
+          if [[ -z "${CURSEFORGE_PROJECT_ID}" || -z "${CURSEFORGE_TOKEN}" ]]; then
+            echo "CurseForge publishing is not configured; skipping."
+            exit 0
+          fi
+          ./gradlew --no-daemon -Pgpom_use_remote_mod_deps=true publishCurseForge
