@@ -81,6 +81,31 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.equals("com.l.gpom.mixin.crafting.MixinCraftingManagerRecipeCache")) {
+            return GpomEarlyConfig.recipeLookupCacheEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.client.MixinWorldParticleSpawnThrottle")) {
+            return !GpomSide.isDedicatedServerLaunch() && GpomEarlyConfig.particleSpawnThrottleEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.server.MixinMinecraftServerPacedAutosave")
+                || mixinClassName.equals("com.l.gpom.mixin.server.MixinWorldServerPacedAutosave")) {
+            return GpomEarlyConfig.pacedChunkSavesEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.entity.MixinEntityLivingActivationRange")) {
+            return GpomEarlyConfig.entityActivationEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.redstone.MixinBlockRedstoneWireProfiler")) {
+            return GpomEarlyConfig.redstoneProfilerEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.redstone.MixinBlockRedstoneWireAlternateCurrent")) {
+            return GpomEarlyConfig.alternateCurrentEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.server.MixinMinecraftServerExistingChunkPrefetch")) {
+            return GpomEarlyConfig.existingChunkPrefetchEnabled();
+        }
+        if (mixinClassName.equals("com.l.gpom.mixin.performance.MixinGameRulesValueUnchangedFastPath")) {
+            return GpomEarlyConfig.gameRulesUnchangedValueFastPathEnabled();
+        }
         if (mixinClassName.contains(".baubles.")) {
             if (isClientOnlyMixin(mixinClassName) && GpomSide.isDedicatedServerLaunch()) {
                 logSideSkip(mixinClassName, "client-only Baubles mixin on dedicated server");
@@ -310,6 +335,31 @@ public final class GpomMixinConfigPlugin implements IMixinConfigPlugin {
             }
         }
         return false;
+    }
+
+    static boolean resourcePresentInNamedJar(String resource, String jarName) {
+        File workingMods = new File(System.getProperty("user.dir", "."), "mods");
+        if (resourcePresentInNamedJar(workingMods, resource, jarName)) {
+            return true;
+        }
+        File minecraftHome = Launch.minecraftHome;
+        return minecraftHome != null
+                && resourcePresentInNamedJar(new File(minecraftHome, "mods"), resource, jarName);
+    }
+
+    private static boolean resourcePresentInNamedJar(File modsDirectory, String resource, String jarName) {
+        if (!modsDirectory.isDirectory()) {
+            return false;
+        }
+        File jar = new File(modsDirectory, jarName);
+        if (!jar.isFile()) {
+            return false;
+        }
+        try (JarFile archive = new JarFile(jar)) {
+            return archive.getEntry(resource) != null;
+        } catch (IOException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     @Override

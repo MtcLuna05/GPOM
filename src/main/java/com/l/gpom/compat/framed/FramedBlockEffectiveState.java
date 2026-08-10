@@ -76,14 +76,7 @@ public final class FramedBlockEffectiveState {
     }
 
     public static Block blockFromState(IBlockState state) {
-        if (state == null) {
-            return null;
-        }
-        try {
-            return state.getBlock();
-        } catch (RuntimeException | LinkageError ignored) {
-            return null;
-        }
+        return MinecraftMappingCompat.blockStateBlock(state);
     }
 
     private static IBlockState sanitized(IBlockState state) {
@@ -352,11 +345,7 @@ public final class FramedBlockEffectiveState {
         }
 
         public int func_175626_b(BlockPos pos, int lightValue) {
-            try {
-                return delegate.getCombinedLight(pos, lightValue);
-            } catch (RuntimeException | LinkageError ignored) {
-                return 0;
-            }
+            return MinecraftMappingCompat.blockAccessCombinedLight(delegate, pos, lightValue);
         }
 
         @Override
@@ -369,11 +358,7 @@ public final class FramedBlockEffectiveState {
             if (effective != null) {
                 return effective;
             }
-            try {
-                return delegate.getBlockState(pos);
-            } catch (RuntimeException | LinkageError ignored) {
-                return null;
-            }
+            return MinecraftMappingCompat.blockAccessState(delegate, pos);
         }
 
         @Override
@@ -382,11 +367,7 @@ public final class FramedBlockEffectiveState {
         }
 
         public boolean func_175623_d(BlockPos pos) {
-            try {
-                return delegate.isAirBlock(pos);
-            } catch (RuntimeException | LinkageError ignored) {
-                return false;
-            }
+            return MinecraftMappingCompat.blockAccessIsAirBlock(delegate, pos);
         }
 
         @Override
@@ -395,11 +376,7 @@ public final class FramedBlockEffectiveState {
         }
 
         public Biome func_180494_b(BlockPos pos) {
-            try {
-                return delegate.getBiome(pos);
-            } catch (RuntimeException | LinkageError ignored) {
-                return null;
-            }
+            return MinecraftMappingCompat.blockAccessBiome(delegate, pos);
         }
 
         @Override
@@ -408,11 +385,7 @@ public final class FramedBlockEffectiveState {
         }
 
         public int func_175627_a(BlockPos pos, EnumFacing direction) {
-            try {
-                return delegate.getStrongPower(pos, direction);
-            } catch (RuntimeException | LinkageError ignored) {
-                return 0;
-            }
+            return MinecraftMappingCompat.blockAccessStrongPower(delegate, pos, direction);
         }
 
         @Override
@@ -421,11 +394,7 @@ public final class FramedBlockEffectiveState {
         }
 
         public WorldType func_175624_G() {
-            try {
-                return delegate.getWorldType();
-            } catch (RuntimeException | LinkageError ignored) {
-                return null;
-            }
+            return MinecraftMappingCompat.blockAccessWorldType(delegate);
         }
 
         @Override
@@ -433,13 +402,9 @@ public final class FramedBlockEffectiveState {
             IBlockState effective = state(delegate, pos);
             Block block = blockFromState(effective);
             if (block != null) {
-                return block.isSideSolid(effective, this, pos, side);
+                return MinecraftMappingCompat.blockStateSideSolid(effective, this, pos, side);
             }
-            try {
-                return delegate.isSideSolid(pos, side, defaultValue);
-            } catch (RuntimeException | LinkageError ignored) {
-                return defaultValue;
-            }
+            return MinecraftMappingCompat.blockAccessSideSolid(delegate, pos, side, defaultValue);
         }
     }
 }

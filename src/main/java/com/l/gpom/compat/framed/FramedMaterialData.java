@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
@@ -30,6 +31,9 @@ public final class FramedMaterialData {
     private static final Set<String> PROBED_MATERIALS = ConcurrentHashMap.newKeySet();
     private static final Map<Class<?>, Boolean> LUMINOUS_BLOCK_TYPES = new ConcurrentHashMap<>();
     private static final AtomicInteger PROBE_COUNT = new AtomicInteger();
+    private static final int DECODED_STATE_CACHE_LIMIT = 4096;
+    private static final ThreadLocal<IdentityHashMap<NBTTagCompound, MaterialStates>> DECODED_STATES =
+            ThreadLocal.withInitial(IdentityHashMap::new);
 
     private FramedMaterialData() {
     }
@@ -78,14 +82,44 @@ public final class FramedMaterialData {
 
     public static MaterialStates states(Object tile, String expectedSource) {
         NBTTagCompound data = data(tile);
-        if (data == null || !expectedSource.equals(string(data, "source"))) {
+        if (data == null) {
+            return MaterialStates.EMPTY;
+        }
+        IdentityHashMap<NBTTagCompound, MaterialStates> cache = DECODED_STATES.get();
+        MaterialStates cached = cache.get(data);
+        if (cached != null) {
+            return expectedSource.equals(cached.source()) ? cached : MaterialStates.EMPTY;
+        }
+        String source = string(data, "source");
+        if (!expectedSource.equals(source)) {
             return MaterialStates.EMPTY;
         }
         NBTTagCompound normalized = normalizeData(data, null);
         if (tile instanceof FramedMaterialDataAccess && normalized != data) {
             ((FramedMaterialDataAccess) tile).gpom$setFramedMaterialData(normalized);
         }
-        return new MaterialStates(true, savedState(normalized, "primary"), savedState(normalized, "secondary"));
+        MaterialStates decoded = new MaterialStates(
+                true, source, savedState(normalized, "primary"), savedState(normalized, "secondary"));
+        if (cache.size() >= DECODED_STATE_CACHE_LIMIT) {
+            cache.clear();
+        }
+        cache.put(normalized, decoded);
+        return decoded;
+    }
+
+    /** Shared state codec for optional framed extensions that use the same canonical material format. */
+    public static NBTTagCompound serializeState(IBlockState state) {
+        return stateTag(state);
+    }
+
+    /** Shared state codec for optional framed extensions that use the same canonical material format. */
+    public static IBlockState deserializeState(NBTTagCompound state) {
+        if (state == null || MinecraftMappingCompat.nbtIsEmpty(state)) {
+            return null;
+        }
+        NBTTagCompound root = new NBTTagCompound();
+        setTag(root, "state", state);
+        return savedState(root, "state");
     }
 
     public static IBlockState authoritativeBlockcrafteryState(Object tile, IBlockState legacyState) {
@@ -101,13 +135,14 @@ public final class FramedMaterialData {
             BlockPos pos
     ) {
         TileEntity tile = MinecraftMappingCompat.worldTileEntity(world, pos);
-        NBTTagCompound data = data(tile);
-        String source = string(data, "source");
-        if ("architecturecraft".equals(source)) {
-            MaterialStates states = states(tile, source);
+        IBlockState doubleSlopeSecondary =
+                com.l.gpom.compat.blockcraftery.BlockcrafteryDoubleSlopeCompat.secondaryState(tile);
+        fallback = Math.max(fallback, stateLightValue(doubleSlopeSecondary, world, pos));
+        MaterialStates architectureStates = states(tile, "architecturecraft");
+        if (architectureStates.present()) {
             return Math.max(fallback, Math.max(
-                    stateLightValue(states.primary(), world, pos),
-                    stateLightValue(states.secondary(), world, pos)
+                    stateLightValue(architectureStates.primary(), world, pos),
+                    stateLightValue(architectureStates.secondary(), world, pos)
             ));
         }
         IBlockState inherited = FramedBlockEffectiveState.state(world, pos);
@@ -718,20 +753,26 @@ public final class FramedMaterialData {
     }
 
     public static final class MaterialStates {
-        private static final MaterialStates EMPTY = new MaterialStates(false, null, null);
+        private static final MaterialStates EMPTY = new MaterialStates(false, "", null, null);
 
         private final boolean present;
+        private final String source;
         private final IBlockState primary;
         private final IBlockState secondary;
 
-        private MaterialStates(boolean present, IBlockState primary, IBlockState secondary) {
+        private MaterialStates(boolean present, String source, IBlockState primary, IBlockState secondary) {
             this.present = present;
+            this.source = source;
             this.primary = primary;
             this.secondary = secondary;
         }
 
         public boolean present() {
             return present;
+        }
+
+        private String source() {
+            return source;
         }
 
         public IBlockState primary() {

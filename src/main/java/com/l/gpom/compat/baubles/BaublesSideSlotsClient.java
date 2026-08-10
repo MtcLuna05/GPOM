@@ -80,6 +80,8 @@ public final class BaublesSideSlotsClient {
     private static final String COSMETIC_ARMOR_MAIN_CLASS = "lain.mods.cos.CosmeticArmorReworked";
     private static final String COSMETIC_ARMOR_TOGGLE_BUTTON_CLASS = "lain.mods.cos.client.GuiCosArmorToggleButton";
     private static final String COSMETIC_ARMOR_PACKET_SET_SKIN_ARMOR_CLASS = "lain.mods.cos.network.packet.PacketSetSkinArmor";
+    private static final String CREATIVE_SLOT_CLASS =
+            "net.minecraft.client.gui.inventory.GuiContainerCreative$CreativeSlot";
     private static final int[][] BAUBLE_ICON_UV = {
             {78, 9},   // amulet
             {78, 27},  // ring
@@ -824,14 +826,14 @@ public final class BaublesSideSlotsClient {
     }
 
     private static Slot creativeSlotTarget(Slot slot) {
-        if (slot == null) {
+        if (slot == null || !isCreativeSlotWrapper(slot.getClass())) {
             return null;
         }
 
         try {
             Field field = creativeSlotTargetField;
-            if (field == null || field.getDeclaringClass() != slot.getClass()) {
-                field = findField(slot.getClass(), "slot", "field_148332_b");
+            if (field == null || !field.getDeclaringClass().isAssignableFrom(slot.getClass())) {
+                field = findField(slot.getClass(), "field_148332_b", "slot");
                 creativeSlotTargetField = field;
             }
             Object value = field == null ? null : field.get(slot);
@@ -839,6 +841,17 @@ public final class BaublesSideSlotsClient {
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             return null;
         }
+    }
+
+    private static boolean isCreativeSlotWrapper(Class<?> type) {
+        for (Class<?> current = type;
+             current != null && Slot.class.isAssignableFrom(current);
+             current = current.getSuperclass()) {
+            if (CREATIVE_SLOT_CLASS.equals(current.getName())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static void syncCosmeticArmorBaubleToggleButtons(GuiContainer gui, List<?> buttons) {

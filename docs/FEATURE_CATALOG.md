@@ -266,6 +266,11 @@ QoL features:
 gpom.hei.extendedCraftingLowerTierTransfer.enabled=true
 gpom.hei.draconicFusionTransfer.enabled=true
 gpom.hei.craftableRecipesFirst.enabled=true
+gpom.hei.wootMobDropsCategory.enabled=true
+gpom.hei.wootLootTableExtraction.enabled=false
+gpom.hei.wootLootTableExtraction.workers=0
+gpom.hei.wootUnsupportedFunctionLearning.enabled=false
+gpom.hei.wootUnsupportedFunctionLearning.parallelBoxes=1
 ```
 
 QoL details:
@@ -273,6 +278,13 @@ QoL details:
 - ExtendedCrafting lower-tier transfer adds HEI transfer buttons for lower-tier ExtendedCrafting table recipes in higher-tier table GUIs and maps the lower recipe into the centered sub-grid.
 - Draconic Fusion transfer stages catalyst and injector ingredients through a server-validated packet.
 - Craftable-recipes-first sorts visible recipe output so recipes whose required item inputs are present in the player's inventory appear first. It intentionally ignores non-item requirements.
+- Woot mob drops adds a Woot-gated HEI category. It enumerates every registered `EntityLiving` accepted by Woot's own policy repository, so Woot's entity/mod blacklists and whitelist remain authoritative instead of limiting pages to the mobs already present in `loot.json`. At HEI startup, a private repository is populated through Woot's `FactoryLootLoader`; the generated recipe snapshot is cached and invalidated when `loot.json`, Woot config/custom-drop inputs, the entity registry, or Blood Magic presence changes. Woot itself persists learned samples in `woot/loot.json` across launches.
+- GPOM does not eagerly kill or sample unknown mobs. Exact Woot learning requires the configured 500 fake kills at each of four Looting levels; for the current 1,118 eligible mobs that would be about 2.24 million entity kills. The optional loot-table extractor instead constructs only enough entity state to resolve `getLootTable`, loads final Forge tables on the HEI registration thread, and traverses frozen tables on bounded workers. Woot learned/custom data remains authoritative and table-derived potential outputs only fill missing items.
+- The extractor persists entity-to-table mappings, derived table records and unresolved function class names in `config/gpom-cache/woot-loot-tables.properties`. Entity class/source changes invalidate only that entity mapping; loot resources, referenced-table resources, exact table-referencing CraftTweaker scripts, LootTweaker/LootTableTweaker, and JER code signatures invalidate only dependent tables. New entities do not invalidate existing tables. Arbitrary `LivingDropsEvent` and hardcoded `onDeath`/`dropFewItems` behavior remains outside static extraction.
+- Optional unsupported-function learning queues only mobs whose resolved tables contain function classes GPOM cannot interpret. While a server world runs it time-slices Woot's real Tartarus spawn/fake-player-kill/collect/learn pipeline on the server thread, using bounded parallel spawn boxes. Every Woot Looting profile is sampled and `woot/loot.json` is updated after each completed task; HEI sees those authoritative learned results on the next recipe-index rebuild.
+- Each compact Woot recipe shows its programmed Ender Shard, a clipped JER-style live mob render, required farm tier and matching Factory Tier I-IV Cap, currently known drops, and Woot's per-Looting-level drop/stack-size chances. The cap is indexed as both an input and output, so Uses and Recipes lookup on a cap filters the category to mobs requiring that tier. It also shows Woot's deterministic Tier II, III and IV shard bonuses with the exact minimum farm tiers (I, II and III) and configured/inclusive-roll chances. The 84-pixel layout has two rows of 16 visible drop slots; small in-recipe arrow buttons switch larger drop lists without registering duplicate HEI recipes. All drops remain indexed, and opening HEI for a specific output selects the internal page containing it. Electroblob's Spell Books and Ruined Spell Books sort after ordinary drops so large spell pools do not displace useful loot from the first internal pages. An unspecified Thaumcraft `crystal_essence`, as used by the Wisp custom drop, is displayed as one cycling output slot containing the six correctly tagged primal vis crystals rather than as a broken empty crystal or six simultaneous drops.
+- When Blood Magic is present and Woot enables the integrations, each mob recipe indexes cycling tier I-III Sanguine Urn, Mechanical Altar and Cloned Soul upgrade inputs. Tooltips show their actual mob-aware Woot config values, RF/t, and scaled outputs: Life Essence fluid per simulated mob/cycle, LP delivered to a Blood Altar, and Demon Will/crystal growth buffered into a Demon Crystal. Life Essence is also a real HEI fluid output; altar LP and crystal growth remain described effects because they are not inventory drops.
+- Woot's Ender Shard, Factory Controller, and Factory Heart are catalysts; controller/factory and the Blood Magic upgrade blocks are also indexed inputs so the uses key can resolve the category.
 - Thaumcraft research-click bridge allows required-research hints to open the relevant HEI/category path where possible.
 - Salis Mundus recipe support is provided through the GPOM HEI QoL plugin when the recipe is available and research gating allows display.
 
@@ -555,6 +567,7 @@ Capabilities:
 - Repairs a missed BetterPortals server view-world manager transfer when the player dimension changes but the manager map has not been populated yet.
 - Makes Aether Skyroot-water portal activation temporarily scan as air while BetterPortals links the glowstone frame.
 - Suppresses Aether's immediate Skyroot-bucket water placement after a successful BetterPortals portal link so water cannot overwrite the new portal.
+- Keeps the Aether portal-break cleanup cheap for ordinary block notifications: mapped state/world/entity/position/registry access is centralized and cached, hot state/position calls use exact handles, and the portal-like result is cached per block singleton. The expensive nearby scan still runs only after a glowstone or Aether-portal removal is identified.
 - Supports JourneyMap waypoint teleport transitions through BetterPortals where active view requirements are met.
 
 Ownership note:
@@ -675,6 +688,7 @@ gpom.architecturecraft.additionalSawbenchMaterials.allowlist=enderio:block_fused
 gpom.blockcraftery.accurateHitboxes=true
 gpom.blockcraftery.parentMaterialOcclusion.enabled=true
 gpom.blockcraftery.modelRenderLayerCompat=true
+gpom.blockcraftery.doubleSlopes.enabled=true
 ```
 
 Capabilities:
@@ -683,6 +697,7 @@ Capabilities:
 - ArchitectureCraft accurate hitboxes and optional parent-material occlusion.
 - ArchitectureCraft sawbench material allowlist for safe non-opaque non-tile blocks, covering EnderIO fused/quite-clear glass without a hard EnderIO dependency.
 - Blockcraftery baked-model render-layer compatibility when AUSM is absent.
+- Complementary Blockcraftery double slopes with independently stored materials, full-cube collision, targeted half editing, and recoverable two-frame/two-material drops.
 - ArchitectureCraft fast shape lighting when AUSM is absent.
 - Blockcraftery/Mystical Lib startup ownership is handled by lifecycle/registry denylists, not by the model-layer patch; the model patch remains optional and no-ops when Blockcraftery is absent.
 - GPOM detects AUSM through classpath resource checks without a hard dependency.
@@ -931,6 +946,40 @@ gpom.loliasm.threadSafeStatefulRegistry=true
 ```
 
 Risk level: varies by feature. Exact-version ASM should verify jar/class shape and fail closed.
+
+## Gameplay Performance Experiments
+
+Feature area: recipe matching, client particles, saves, entity AI, redstone measurement, and conservative chunk IO scheduling.
+
+```properties
+gpom.performance.recipeLookupCache.enabled=true
+gpom.performance.gameRulesUnchangedValueFastPath.enabled=true
+gpom.performance.gendustryFluidSourceLookup.enabled=true
+gpom.performance.lavaCowInheritedTargetFieldLookup.enabled=true
+gpom.performance.ae2BdlibPowerNegativeLookupCache.enabled=true
+gpom.performance.hammerCoreItemColorNegativeLookupCache.enabled=true
+gpom.performance.particleSpawnThrottle.enabled=true
+gpom.performance.particleSpawnThrottle.maxPerTypePerTick=256
+gpom.performance.pacedChunkSaves.enabled=false
+gpom.performance.pacedChunkSaves.budgetMillis=4
+gpom.performance.pacedChunkSaves.maxBatchesPerTick=1
+gpom.performance.entityActivation.enabled=false
+gpom.performance.redstoneProfiler.enabled=false
+gpom.performance.alternateCurrent.enabled=false
+gpom.performance.existingChunkPrefetch.enabled=false
+```
+
+Capabilities:
+
+- Reuses the last successful crafting recipe per crafting inventory only after calling that recipe's matcher again. A miss always falls through to vanilla's complete registry scan.
+- Removes five measured exception/reflection loops without changing their successful lookup order: unchanged GameRules values are not reparsed and distinct parse outcomes are cached, Gendustry fluid-source lookup uses normal item/meta/wildcard branches, LavaCow caches inherited or absent target fields, AE2 remembers tile classes without an optional bdlib `power()` method, and HammerLib remembers that Quark's optional ColorRunes integration is absent. The four mod integrations are gated to the exact installed JAR names and target class resources.
+- Caps each particle type independently in a client-thread, 50 ms window. The default ceiling of 256 targets extreme bursts rather than ordinary effects.
+- Provides a default-off autosave mode that defers the chunk-provider portion of periodic saves into vanilla dirty-chunk batches over later server ticks. Its millisecond budget is a soft boundary between provider calls, not a preemptive cap on one vanilla batch. Overlapping autosaves refresh level metadata/events without re-enqueueing completed providers, and bounded progress/completion logs report queue age, p95 latency bucket, maximum call time and over-budget calls. Normal server shutdown still uses the original full flush. Universal Tweaks already moves Anvil file writes off-thread in MBC; this path targets the remaining main-thread NBT serialization burst.
+- Provides a default-off activation range for ordinary distant mobs. The vanilla despawn check still runs every tick; pets, villagers, named/ridden/targeting mobs and configured entity ids remain fully active.
+- Adds a default-off vanilla redstone-wire call/time probe and a separate default-off Alternate Current-style replacement for vanilla dust networks. The replacement uses an SRG-first compatibility bridge and fails back to vanilla after bridge failure, but intentionally changes update ordering and remains pending contraption/runtime validation.
+- Adds a default-off C2ME-adjacent prefetch experiment. It predicts chunks ahead of moving players, verifies that each candidate already exists in an Anvil region, and then uses Forge's existing asynchronous chunk IO path. It never generates chunks off-thread and has a bounded outstanding queue.
+
+Risk level: low for the enabled recipe and particle paths; medium/high for the disabled save, activation and chunk-prefetch experiments. Validate each experimental switch separately.
 
 ## Safety Model
 

@@ -4,7 +4,6 @@ import com.l.gpom.compat.minecraft.MinecraftMappingCompat;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
-import net.minecraft.init.Blocks;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -18,6 +17,8 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class BetterPortalsAetherPortalBreakCleanup {
     private static final String AETHER_PORTAL_SIZE = "com.gildedgames.the_aether.blocks.portal.AetherPortalSize";
@@ -27,6 +28,7 @@ public final class BetterPortalsAetherPortalBreakCleanup {
     private static final int NEARBY_PORTAL_SCAN_RADIUS = 8;
     private static final int PORTAL_CLUSTER_SCAN_LIMIT = 512;
     private static final ThreadLocal<Boolean> CLEANING = new ThreadLocal<>();
+    private static final ConcurrentMap<Block, Boolean> AETHER_PORTAL_BLOCK_CACHE = new ConcurrentHashMap<>();
 
     private BetterPortalsAetherPortalBreakCleanup() {
     }
@@ -72,28 +74,27 @@ public final class BetterPortalsAetherPortalBreakCleanup {
     }
 
     private static boolean isGlowstone(IBlockState state) {
-        try {
-            return state != null && blockFromState(state) == glowstoneBlock();
-        } catch (ReflectiveOperationException ignored) {
-            return false;
-        }
+        return state != null && blockFromState(state) == MinecraftMappingCompat.glowstoneBlock();
     }
 
     private static boolean isAetherPortalLike(IBlockState state) {
         if (state == null) {
             return false;
         }
-        try {
-            Block block = blockFromState(state);
-            String className = block.getClass().getName();
-            if (className.contains("aether") && className.contains("Portal")) {
-                return true;
-            }
-            String registryName = registryName(block);
-            return registryName.endsWith(":aether_portal") || "aether_portal".equals(registryName);
-        } catch (ReflectiveOperationException ignored) {
+        Block block = blockFromState(state);
+        if (block == null) {
             return false;
         }
+        return AETHER_PORTAL_BLOCK_CACHE.computeIfAbsent(block, BetterPortalsAetherPortalBreakCleanup::isAetherPortalBlock);
+    }
+
+    private static boolean isAetherPortalBlock(Block block) {
+        String className = block.getClass().getName();
+        if (className.contains("aether") && className.contains("Portal")) {
+            return true;
+        }
+        String registryName = registryName(block);
+        return registryName.endsWith(":aether_portal") || "aether_portal".equals(registryName);
     }
 
     private static Set<BlockPos> findNearbyPortalBlocks(World world, BlockPos center, Block portalBlock)
@@ -252,8 +253,20 @@ public final class BetterPortalsAetherPortalBreakCleanup {
     }
 
     private static Set<BlockPos> portalLocalBlocks(Entity entity) throws ReflectiveOperationException {
-        Object portal = invoke(entity, "getPortal");
-        Object blocks = invoke(portal, "getLocalBlocks");
+        Object portal = MinecraftMappingCompat.invoke(
+                entity,
+                "betterPortals.aetherEntity.getPortal",
+                MinecraftMappingCompat.NO_TYPES,
+                MinecraftMappingCompat.NO_ARGS,
+                "getPortal"
+        );
+        Object blocks = MinecraftMappingCompat.invoke(
+                portal,
+                "betterPortals.portal.getLocalBlocks",
+                MinecraftMappingCompat.NO_TYPES,
+                MinecraftMappingCompat.NO_ARGS,
+                "getLocalBlocks"
+        );
         Set<BlockPos> result = new HashSet<>();
         if (!(blocks instanceof Iterable<?>)) {
             return result;
@@ -291,68 +304,34 @@ public final class BetterPortalsAetherPortalBreakCleanup {
         return MinecraftMappingCompat.worldIsRemote(world);
     }
 
-    private static Block blockFromState(IBlockState state) throws ReflectiveOperationException {
-        Object block = invoke(state, new String[]{"func_177230_c", "getBlock"});
-        if (block instanceof Block) {
-            return (Block) block;
-        }
-        throw new NoSuchMethodException(state.getClass().getName() + ".getBlock");
+    private static Block blockFromState(IBlockState state) {
+        return MinecraftMappingCompat.blockStateBlock(state);
     }
 
-    private static Block glowstoneBlock() throws ReflectiveOperationException {
-        Object block = staticField(Blocks.class, "field_150426_aN", "GLOWSTONE");
-        if (block instanceof Block) {
-            return (Block) block;
-        }
-        throw new NoSuchFieldException(Blocks.class.getName() + ".GLOWSTONE");
+    private static BlockPos offset(BlockPos pos, int dx, int dy, int dz) {
+        return MinecraftMappingCompat.blockPosAdd(pos, dx, dy, dz);
     }
 
-    private static BlockPos offset(BlockPos pos, int dx, int dy, int dz) throws ReflectiveOperationException {
-        Object result = invoke(pos, new String[]{"func_177982_a", "add"}, dx, dy, dz);
-        if (result instanceof BlockPos) {
-            return (BlockPos) result;
-        }
-        throw new NoSuchMethodException(pos.getClass().getName() + ".add");
+    private static IBlockState blockState(World world, BlockPos pos) {
+        return MinecraftMappingCompat.blockAccessState(world, pos);
     }
 
-    private static IBlockState blockState(World world, BlockPos pos) throws ReflectiveOperationException {
-        Object result = invoke(world, new String[]{"func_180495_p", "getBlockState"}, pos);
-        if (result instanceof IBlockState) {
-            return (IBlockState) result;
-        }
-        throw new NoSuchMethodException(world.getClass().getName() + ".getBlockState");
+    private static List<?> loadedEntities(World world) {
+        return MinecraftMappingCompat.worldLoadedEntities(world);
     }
 
-    private static List<?> loadedEntities(World world) throws ReflectiveOperationException {
-        Object value = fieldValue(world, "field_72996_f", "loadedEntityList");
-        if (value instanceof List<?>) {
-            return (List<?>) value;
-        }
-        if (value instanceof Iterable<?>) {
-            List<Object> result = new ArrayList<>();
-            for (Object entry : (Iterable<?>) value) {
-                result.add(entry);
-            }
-            return result;
-        }
-        throw new NoSuchFieldException(world.getClass().getName() + ".loadedEntityList");
+    private static void setDead(Entity entity) {
+        MinecraftMappingCompat.entitySetDead(entity);
     }
 
-    private static void setDead(Entity entity) throws ReflectiveOperationException {
-        invoke(entity, new String[]{"func_70106_y", "setDead"});
+    private static void destroyBlock(World world, BlockPos pos) {
+        MinecraftMappingCompat.worldSetBlockToAir(world, pos);
     }
 
-    private static void destroyBlock(World world, BlockPos pos) throws ReflectiveOperationException {
-        invoke(world, new String[]{"func_175698_g", "setBlockToAir"}, pos);
-    }
-
-    private static double distanceSq(BlockPos first, BlockPos second) throws ReflectiveOperationException {
-        int dx = intValue(invoke(first, new String[]{"func_177958_n", "getX"}))
-                - intValue(invoke(second, new String[]{"func_177958_n", "getX"}));
-        int dy = intValue(invoke(first, new String[]{"func_177956_o", "getY"}))
-                - intValue(invoke(second, new String[]{"func_177956_o", "getY"}));
-        int dz = intValue(invoke(first, new String[]{"func_177952_p", "getZ"}))
-                - intValue(invoke(second, new String[]{"func_177952_p", "getZ"}));
+    private static double distanceSq(BlockPos first, BlockPos second) {
+        int dx = MinecraftMappingCompat.blockPosX(first) - MinecraftMappingCompat.blockPosX(second);
+        int dy = MinecraftMappingCompat.blockPosY(first) - MinecraftMappingCompat.blockPosY(second);
+        int dz = MinecraftMappingCompat.blockPosZ(first) - MinecraftMappingCompat.blockPosZ(second);
         return dx * dx + dy * dy + dz * dz;
     }
 
@@ -363,120 +342,6 @@ public final class BetterPortalsAetherPortalBreakCleanup {
         }
         field.setAccessible(true);
         return field.getInt(target);
-    }
-
-    private static Object invoke(Object target, String name) throws ReflectiveOperationException {
-        return invoke(target, new String[]{name});
-    }
-
-    private static Object invoke(Object target, String[] names, Object... args) throws ReflectiveOperationException {
-        for (String name : names) {
-            Method method = findMethod(target.getClass(), name, args);
-            if (method != null) {
-                return method.invoke(target, args);
-            }
-        }
-        throw new NoSuchMethodException(target.getClass().getName() + "." + java.util.Arrays.toString(names));
-    }
-
-    private static Method findMethod(Class<?> owner, String name, Object... args) {
-        for (Method method : owner.getMethods()) {
-            if (name.equals(method.getName()) && accepts(method.getParameterTypes(), args)) {
-                method.setAccessible(true);
-                return method;
-            }
-        }
-        for (Class<?> type = owner; type != null; type = type.getSuperclass()) {
-            for (Method method : type.getDeclaredMethods()) {
-                if (name.equals(method.getName()) && accepts(method.getParameterTypes(), args)) {
-                    method.setAccessible(true);
-                    return method;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static boolean accepts(Class<?>[] parameterTypes, Object[] args) {
-        if (parameterTypes.length != args.length) {
-            return false;
-        }
-        for (int index = 0; index < parameterTypes.length; index++) {
-            Object arg = args[index];
-            if (arg != null && !wrap(parameterTypes[index]).isInstance(arg)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static Class<?> wrap(Class<?> type) {
-        if (!type.isPrimitive()) {
-            return type;
-        }
-        if (type == int.class) {
-            return Integer.class;
-        }
-        if (type == boolean.class) {
-            return Boolean.class;
-        }
-        if (type == long.class) {
-            return Long.class;
-        }
-        if (type == float.class) {
-            return Float.class;
-        }
-        if (type == double.class) {
-            return Double.class;
-        }
-        if (type == byte.class) {
-            return Byte.class;
-        }
-        if (type == short.class) {
-            return Short.class;
-        }
-        if (type == char.class) {
-            return Character.class;
-        }
-        return Void.class;
-    }
-
-    private static Object fieldValue(Object target, String... names) throws ReflectiveOperationException {
-        for (String name : names) {
-            Field field = findField(target.getClass(), name);
-            if (field != null) {
-                field.setAccessible(true);
-                return field.get(target);
-            }
-        }
-        throw new NoSuchFieldException(target.getClass().getName() + "." + java.util.Arrays.toString(names));
-    }
-
-    private static Object staticField(Class<?> owner, String... names) throws ReflectiveOperationException {
-        for (String name : names) {
-            Field field = findField(owner, name);
-            if (field != null) {
-                field.setAccessible(true);
-                return field.get(null);
-            }
-        }
-        throw new NoSuchFieldException(owner.getName() + "." + java.util.Arrays.toString(names));
-    }
-
-    private static boolean booleanField(Object target, String... names) {
-        try {
-            Object value = fieldValue(target, names);
-            return value instanceof Boolean && (Boolean) value;
-        } catch (ReflectiveOperationException ignored) {
-            return false;
-        }
-    }
-
-    private static int intValue(Object value) throws ReflectiveOperationException {
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        throw new ReflectiveOperationException("Expected int value, got " + value);
     }
 
     private static Field findField(Class<?> owner, String name) {
@@ -493,23 +358,16 @@ public final class BetterPortalsAetherPortalBreakCleanup {
         if (state == null) {
             return "null";
         }
-        try {
-            return registryName(blockFromState(state));
-        } catch (ReflectiveOperationException ignored) {
-            return state.getClass().getName();
-        }
+        Block block = blockFromState(state);
+        return block == null ? state.getClass().getName() : registryName(block);
     }
 
     private static String registryName(Block block) {
         if (block == null) {
             return "null";
         }
-        try {
-            Object registryName = invoke(block, "getRegistryName");
-            return registryName == null ? block.getClass().getName() : String.valueOf(registryName);
-        } catch (ReflectiveOperationException ignored) {
-            return block.getClass().getName();
-        }
+        Object registryName = MinecraftMappingCompat.blockRegistryName(block);
+        return registryName == null ? block.getClass().getName() : String.valueOf(registryName);
     }
 
     private static void log(String message) {

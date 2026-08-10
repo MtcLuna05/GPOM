@@ -3,7 +3,11 @@ package com.l.gpom.compat.minecraft;
 import com.l.gpom.GPOM;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityList;
+import net.minecraft.entity.EntityLiving;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
@@ -11,6 +15,7 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.entity.player.PlayerCapabilities;
 import net.minecraft.inventory.InventoryCrafting;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
@@ -20,8 +25,11 @@ import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.nbt.NBTUtil;
+import net.minecraft.nbt.JsonToNBT;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.SPacketSetSlot;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.management.PlayerList;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.DamageSource;
@@ -41,7 +49,15 @@ import net.minecraft.world.GameRules;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldServer;
+import net.minecraft.world.WorldType;
+import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.storage.AnvilChunkLoader;
+import net.minecraft.world.chunk.storage.IChunkLoader;
+import net.minecraft.world.gen.ChunkProviderServer;
+import net.minecraft.world.storage.loot.LootTable;
+import net.minecraft.world.storage.loot.LootTableManager;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.fml.common.registry.ForgeRegistries;
@@ -50,7 +66,11 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Map;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -58,15 +78,96 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 public final class MinecraftMappingCompat {
-    private static final ConcurrentMap<String, Field> FIELDS = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<String, Method> METHODS = new ConcurrentHashMap<>();
+    /** Two-level caches avoid rebuilding owner-name/purpose strings on every
+     * mapped access. Those temporary keys were a dominant terrain-worker
+     * allocation site in the MBC JFR even after the reflective member itself
+     * had been resolved. */
+    private static final ConcurrentMap<Class<?>, ConcurrentMap<String, Field>> FIELDS = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<Class<?>, ConcurrentMap<String, Method>> METHODS = new ConcurrentHashMap<>();
     private static final Set<String> LOGGED_FAILURES = ConcurrentHashMap.newKeySet();
     public static final Class<?>[] NO_TYPES = new Class<?>[0];
     public static final Object[] NO_ARGS = new Object[0];
     private static volatile Constructor<SPacketSetSlot> setSlotPacketConstructor;
     private static volatile Class<?> glStateManagerClass;
+    private static final MethodHandle BLOCK_ACCESS_COMBINED_LIGHT = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.getCombinedLight",
+            new Class<?>[]{BlockPos.class, int.class},
+            MethodType.methodType(int.class, IBlockAccess.class, BlockPos.class, int.class),
+            "func_175626_b", "getCombinedLight");
+    private static final MethodHandle BLOCK_ACCESS_STATE = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.getBlockState",
+            new Class<?>[]{BlockPos.class},
+            MethodType.methodType(IBlockState.class, IBlockAccess.class, BlockPos.class),
+            "func_180495_p", "getBlockState");
+    private static final MethodHandle BLOCK_ACCESS_IS_AIR = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.isAirBlock",
+            new Class<?>[]{BlockPos.class},
+            MethodType.methodType(boolean.class, IBlockAccess.class, BlockPos.class),
+            "func_175623_d", "isAirBlock");
+    private static final MethodHandle BLOCK_ACCESS_BIOME = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.getBiome",
+            new Class<?>[]{BlockPos.class},
+            MethodType.methodType(Biome.class, IBlockAccess.class, BlockPos.class),
+            "func_180494_b", "getBiome");
+    private static final MethodHandle BLOCK_ACCESS_STRONG_POWER = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.getStrongPower",
+            new Class<?>[]{BlockPos.class, EnumFacing.class},
+            MethodType.methodType(int.class, IBlockAccess.class, BlockPos.class, EnumFacing.class),
+            "func_175627_a", "getStrongPower");
+    private static final MethodHandle BLOCK_ACCESS_WORLD_TYPE = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.getWorldType", NO_TYPES,
+            MethodType.methodType(WorldType.class, IBlockAccess.class),
+            "func_175624_G", "getWorldType");
+    private static final MethodHandle BLOCK_ACCESS_SIDE_SOLID = exactVirtualHandle(
+            IBlockAccess.class, "blockAccess.isSideSolid",
+            new Class<?>[]{BlockPos.class, EnumFacing.class, boolean.class},
+            MethodType.methodType(boolean.class, IBlockAccess.class, BlockPos.class, EnumFacing.class, boolean.class),
+            "isSideSolid");
+    private static final MethodHandle BLOCK_STATE_BLOCK = exactVirtualHandle(
+            IBlockState.class, "blockState.getBlock", NO_TYPES,
+            MethodType.methodType(Block.class, IBlockState.class),
+            "func_177230_c", "getBlock");
+    private static final MethodHandle BLOCK_STATE_SIDE_SOLID = exactVirtualHandle(
+            IBlockState.class, "blockState.isSideSolid",
+            new Class<?>[]{IBlockAccess.class, BlockPos.class, EnumFacing.class},
+            MethodType.methodType(boolean.class, IBlockState.class, IBlockAccess.class, BlockPos.class, EnumFacing.class),
+            "isSideSolid");
+    private static final MethodHandle BLOCK_POS_ADD = exactVirtualHandle(
+            BlockPos.class, "blockPos.add",
+            new Class<?>[]{int.class, int.class, int.class},
+            MethodType.methodType(BlockPos.class, BlockPos.class, int.class, int.class, int.class),
+            "func_177982_a", "add");
 
     private MinecraftMappingCompat() {
+    }
+
+    public static Minecraft minecraftInstance() {
+        Object value = invokeStatic(Minecraft.class, "minecraft.getMinecraft", noTypes(), noArgs(),
+                "func_71410_x", "getMinecraft");
+        return value instanceof Minecraft ? (Minecraft) value : null;
+    }
+
+    public static World minecraftWorld(Minecraft minecraft) {
+        Object value = fieldValue(minecraft, "minecraft.world", "field_71441_e", "world");
+        return value instanceof World ? (World) value : null;
+    }
+
+    public static FontRenderer minecraftFontRenderer(Minecraft minecraft) {
+        Object value = fieldValue(minecraft, "minecraft.fontRenderer", "field_71466_p", "fontRenderer");
+        return value instanceof FontRenderer ? (FontRenderer) value : null;
+    }
+
+    public static String fontTrimStringToWidth(FontRenderer font, String value, int width) {
+        Object result = invoke(font, "fontRenderer.trimStringToWidth",
+                new Class<?>[]{String.class, int.class}, new Object[]{value, width},
+                "func_78269_a", "trimStringToWidth");
+        return result instanceof String ? (String) result : value;
+    }
+
+    public static void fontDrawString(FontRenderer font, String value, int x, int y, int color) {
+        invoke(font, "fontRenderer.drawString",
+                new Class<?>[]{String.class, int.class, int.class, int.class},
+                new Object[]{value, x, y, color}, "func_78276_b", "drawString");
     }
 
     public static boolean worldIsRemote(World world) {
@@ -77,6 +178,12 @@ public final class MinecraftMappingCompat {
     public static Random worldRandom(World world) {
         Object value = fieldValue(world, "world.rand", "field_73012_v", "rand");
         return value instanceof Random ? (Random) value : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<Entity> worldLoadedEntities(World world) {
+        Object value = fieldValue(world, "world.loadedEntityList", "field_72996_f", "loadedEntityList");
+        return value instanceof List<?> ? (List<Entity>) value : java.util.Collections.emptyList();
     }
 
     public static ItemStack emptyStack() {
@@ -109,6 +216,12 @@ public final class MinecraftMappingCompat {
     public static int itemStackMetadata(ItemStack stack) {
         Object value = invoke(stack, "itemStack.getMetadata", noTypes(), noArgs(),
                 "func_77960_j", "func_77952_i", "getMetadata", "getItemDamage");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static int itemStackDamage(ItemStack stack) {
+        Object value = invoke(stack, "itemStack.getItemDamage", noTypes(), noArgs(),
+                "func_77952_i", "getItemDamage");
         return value instanceof Number ? ((Number) value).intValue() : 0;
     }
 
@@ -380,6 +493,16 @@ public final class MinecraftMappingCompat {
         return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
     }
 
+    public static float entityWidth(Entity entity) {
+        Object value = fieldValue(entity, "entity.width", "field_70130_N", "width");
+        return value instanceof Number ? ((Number) value).floatValue() : 1.0F;
+    }
+
+    public static float entityHeight(Entity entity) {
+        Object value = fieldValue(entity, "entity.height", "field_70131_O", "height");
+        return value instanceof Number ? ((Number) value).floatValue() : 1.0F;
+    }
+
     public static double entityPrevPosX(Entity entity) {
         Object value = fieldValue(entity, "entity.prevPosX", "field_70169_q", "prevPosX");
         return value instanceof Number ? ((Number) value).doubleValue() : entityPosX(entity);
@@ -398,6 +521,10 @@ public final class MinecraftMappingCompat {
     public static int entityId(Entity entity) {
         Object value = invoke(entity, "entity.getEntityId", noTypes(), noArgs(), "func_145782_y", "getEntityId");
         return value instanceof Number ? ((Number) value).intValue() : -1;
+    }
+
+    public static void entitySetDead(Entity entity) {
+        invoke(entity, "entity.setDead", noTypes(), noArgs(), "func_70106_y", "setDead");
     }
 
     public static Entity worldEntityById(World world, int entityId) {
@@ -490,9 +617,129 @@ public final class MinecraftMappingCompat {
     }
 
     public static IBlockState blockAccessState(IBlockAccess world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return null;
+        }
+        if (BLOCK_ACCESS_STATE != null) {
+            try {
+                return (IBlockState) BLOCK_ACCESS_STATE.invokeExact(world, pos);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.getBlockState", "threw", throwable);
+                return null;
+            }
+        }
         Object value = invoke(world, "blockAccess.getBlockState", new Class<?>[]{BlockPos.class}, new Object[]{pos},
                 "func_180495_p", "getBlockState");
         return value instanceof IBlockState ? (IBlockState) value : null;
+    }
+
+    public static int blockAccessCombinedLight(IBlockAccess world, BlockPos pos, int lightValue) {
+        if (world == null || pos == null) {
+            return 0;
+        }
+        if (BLOCK_ACCESS_COMBINED_LIGHT != null) {
+            try {
+                return (int) BLOCK_ACCESS_COMBINED_LIGHT.invokeExact(world, pos, lightValue);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.getCombinedLight", "threw", throwable);
+                return 0;
+            }
+        }
+        Object value = invoke(world, "blockAccess.getCombinedLight",
+                new Class<?>[]{BlockPos.class, int.class}, new Object[]{pos, lightValue},
+                "func_175626_b", "getCombinedLight");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static boolean blockAccessIsAirBlock(IBlockAccess world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return false;
+        }
+        if (BLOCK_ACCESS_IS_AIR != null) {
+            try {
+                return (boolean) BLOCK_ACCESS_IS_AIR.invokeExact(world, pos);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.isAirBlock", "threw", throwable);
+                return false;
+            }
+        }
+        Object value = invoke(world, "blockAccess.isAirBlock",
+                new Class<?>[]{BlockPos.class}, new Object[]{pos},
+                "func_175623_d", "isAirBlock");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static Biome blockAccessBiome(IBlockAccess world, BlockPos pos) {
+        if (world == null || pos == null) {
+            return null;
+        }
+        if (BLOCK_ACCESS_BIOME != null) {
+            try {
+                return (Biome) BLOCK_ACCESS_BIOME.invokeExact(world, pos);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.getBiome", "threw", throwable);
+                return null;
+            }
+        }
+        Object value = invoke(world, "blockAccess.getBiome",
+                new Class<?>[]{BlockPos.class}, new Object[]{pos},
+                "func_180494_b", "getBiome");
+        return value instanceof Biome ? (Biome) value : null;
+    }
+
+    public static int blockAccessStrongPower(IBlockAccess world, BlockPos pos, EnumFacing direction) {
+        if (world == null || pos == null || direction == null) {
+            return 0;
+        }
+        if (BLOCK_ACCESS_STRONG_POWER != null) {
+            try {
+                return (int) BLOCK_ACCESS_STRONG_POWER.invokeExact(world, pos, direction);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.getStrongPower", "threw", throwable);
+                return 0;
+            }
+        }
+        Object value = invoke(world, "blockAccess.getStrongPower",
+                new Class<?>[]{BlockPos.class, EnumFacing.class}, new Object[]{pos, direction},
+                "func_175627_a", "getStrongPower");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static WorldType blockAccessWorldType(IBlockAccess world) {
+        if (world == null) {
+            return null;
+        }
+        if (BLOCK_ACCESS_WORLD_TYPE != null) {
+            try {
+                return (WorldType) BLOCK_ACCESS_WORLD_TYPE.invokeExact(world);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.getWorldType", "threw", throwable);
+                return null;
+            }
+        }
+        Object value = invoke(world, "blockAccess.getWorldType", noTypes(), noArgs(),
+                "func_175624_G", "getWorldType");
+        return value instanceof WorldType ? (WorldType) value : null;
+    }
+
+    public static boolean blockAccessSideSolid(IBlockAccess world, BlockPos pos, EnumFacing side,
+                                               boolean defaultValue) {
+        if (world == null || pos == null || side == null) {
+            return defaultValue;
+        }
+        if (BLOCK_ACCESS_SIDE_SOLID != null) {
+            try {
+                return (boolean) BLOCK_ACCESS_SIDE_SOLID.invokeExact(world, pos, side, defaultValue);
+            } catch (Throwable throwable) {
+                logOnce(world.getClass(), "blockAccess.isSideSolid", "threw", throwable);
+                return defaultValue;
+            }
+        }
+        Object value = invoke(world, "blockAccess.isSideSolid",
+                new Class<?>[]{BlockPos.class, EnumFacing.class, boolean.class},
+                new Object[]{pos, side, defaultValue},
+                "isSideSolid");
+        return value instanceof Boolean ? (Boolean) value : defaultValue;
     }
 
     public static TileEntity worldTileEntity(IBlockAccess world, BlockPos pos) {
@@ -652,7 +899,23 @@ public final class MinecraftMappingCompat {
     }
 
     public static Block blockStateBlock(IBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        if (BLOCK_STATE_BLOCK != null) {
+            try {
+                return (Block) BLOCK_STATE_BLOCK.invokeExact(state);
+            } catch (Throwable throwable) {
+                logOnce(state.getClass(), "blockState.getBlock", "threw", throwable);
+                return null;
+            }
+        }
         Object value = invoke(state, "blockState.getBlock", noTypes(), noArgs(), "func_177230_c", "getBlock");
+        return value instanceof Block ? (Block) value : null;
+    }
+
+    public static Block glowstoneBlock() {
+        Object value = staticFieldValue(Blocks.class, "blocks.glowstone", "field_150426_aN", "GLOWSTONE");
         return value instanceof Block ? (Block) value : null;
     }
 
@@ -670,6 +933,190 @@ public final class MinecraftMappingCompat {
             return (ResourceLocation) value;
         }
         return item == null ? null : ForgeRegistries.ITEMS.getKey(item);
+    }
+
+    public static String entityTranslationName(ResourceLocation entityId) {
+        Object value = invokeStatic(EntityList.class, "entityList.getTranslationName",
+                new Class<?>[]{ResourceLocation.class}, new Object[]{entityId},
+                "func_191302_a", "getTranslationName");
+        return value instanceof String ? (String) value : null;
+    }
+
+    public static ResourceLocation entityRegistryName(Entity entity) {
+        Object value = invokeStatic(EntityList.class, "entityList.getKey",
+                new Class<?>[]{Entity.class}, new Object[]{entity},
+                "func_191301_a", "getKey");
+        return value instanceof ResourceLocation ? (ResourceLocation) value : null;
+    }
+
+    public static Entity createEntityById(ResourceLocation entityId, World world) {
+        Object value = invokeStatic(EntityList.class, "entityList.createEntityById",
+                new Class<?>[]{ResourceLocation.class, World.class}, new Object[]{entityId, world},
+                "func_188429_b", "createEntityByIDFromName");
+        return value instanceof Entity ? (Entity) value : null;
+    }
+
+    public static ResourceLocation entityLivingLootTable(EntityLiving entity) {
+        Object value = invoke(entity, "entityLiving.getLootTable", noTypes(), noArgs(),
+                "func_184647_J", "getLootTable");
+        return value instanceof ResourceLocation ? (ResourceLocation) value : null;
+    }
+
+    public static LootTable lootTableManagerGetTable(LootTableManager manager, ResourceLocation tableId) {
+        Object value = invoke(manager, "lootTableManager.getLootTable",
+                new Class<?>[]{ResourceLocation.class}, new Object[]{tableId},
+                "func_186521_a", "getLootTableFromLocation");
+        return value instanceof LootTable ? (LootTable) value : null;
+    }
+
+    public static NBTTagCompound jsonToNbt(String value) {
+        Object parsed = invokeStatic(JsonToNBT.class, "jsonToNbt.getTagFromJson",
+                new Class<?>[]{String.class}, new Object[]{value},
+                "func_180713_a", "getTagFromJson");
+        return parsed instanceof NBTTagCompound ? (NBTTagCompound) parsed : null;
+    }
+
+    public static void nbtMerge(NBTTagCompound target, NBTTagCompound source) {
+        if (target != null && source != null) {
+            invoke(target, "nbt.merge", new Class<?>[]{NBTTagCompound.class}, new Object[]{source},
+                    "func_179237_a", "merge");
+        }
+    }
+
+    public static boolean recipeMatches(IRecipe recipe, InventoryCrafting inventory, World world) {
+        Object value = invoke(recipe, "recipe.matches",
+                new Class<?>[]{InventoryCrafting.class, World.class}, new Object[]{inventory, world},
+                "func_77569_a", "matches");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static WorldServer[] minecraftServerWorlds(MinecraftServer server) {
+        Object value = fieldValue(server, "minecraftServer.worlds", "field_71305_c", "worlds");
+        return value instanceof WorldServer[] ? (WorldServer[]) value : new WorldServer[0];
+    }
+
+    public static WorldServer minecraftServerWorld(MinecraftServer server, int dimension) {
+        Object value = invoke(server, "minecraftServer.getWorld",
+                new Class<?>[]{int.class}, new Object[]{dimension},
+                "func_71218_a", "getWorld");
+        return value instanceof WorldServer ? (WorldServer) value : null;
+    }
+
+    public static List<EntityPlayerMP> minecraftServerPlayers(MinecraftServer server) {
+        Object playerListValue = invoke(server, "minecraftServer.getPlayerList", noTypes(), noArgs(),
+                "func_184103_al", "getPlayerList");
+        if (!(playerListValue instanceof PlayerList)) {
+            return java.util.Collections.emptyList();
+        }
+        Object players = invoke(playerListValue, "playerList.getPlayers", noTypes(), noArgs(),
+                "func_181057_v", "getPlayers");
+        if (!(players instanceof List)) {
+            return java.util.Collections.emptyList();
+        }
+        @SuppressWarnings("unchecked")
+        List<EntityPlayerMP> typedPlayers = (List<EntityPlayerMP>) players;
+        return typedPlayers;
+    }
+
+    public static boolean minecraftServerSaveAllWorlds(MinecraftServer server, boolean dontLog) {
+        return invokeVoid(server, "minecraftServer.saveAllWorlds",
+                new Class<?>[]{boolean.class}, new Object[]{dontLog},
+                "func_71267_a", "saveAllWorlds");
+    }
+
+    public static boolean worldServerSaveAllChunks(WorldServer world, boolean all) {
+        return invokeVoid(world, "worldServer.saveAllChunks",
+                new Class<?>[]{boolean.class, net.minecraft.util.IProgressUpdate.class},
+                new Object[]{all, null}, "func_73044_a", "saveAllChunks");
+    }
+
+    public static ChunkProviderServer worldServerChunkProvider(WorldServer world) {
+        Object value = invoke(world, "worldServer.getChunkProvider", noTypes(), noArgs(),
+                "func_72863_F", "getChunkProvider");
+        return value instanceof ChunkProviderServer ? (ChunkProviderServer) value : null;
+    }
+
+    public static Boolean chunkProviderSaveChunks(ChunkProviderServer provider, boolean all) {
+        Object value = invoke(provider, "chunkProvider.saveChunks",
+                new Class<?>[]{boolean.class}, new Object[]{all},
+                "func_186027_a", "saveChunks");
+        return value instanceof Boolean ? (Boolean) value : null;
+    }
+
+    public static Chunk chunkProviderLoadChunkAsync(ChunkProviderServer provider, int chunkX, int chunkZ,
+                                                     Runnable completion) {
+        Object value = invoke(provider, "chunkProvider.loadChunkAsync",
+                new Class<?>[]{int.class, int.class, Runnable.class},
+                new Object[]{chunkX, chunkZ, completion}, "loadChunk");
+        return value instanceof Chunk ? (Chunk) value : null;
+    }
+
+    public static Chunk chunkProviderLoadedChunk(ChunkProviderServer provider, int chunkX, int chunkZ) {
+        Object value = invoke(provider, "chunkProvider.getLoadedChunk",
+                new Class<?>[]{int.class, int.class}, new Object[]{chunkX, chunkZ},
+                "func_186026_b", "getLoadedChunk");
+        return value instanceof Chunk ? (Chunk) value : null;
+    }
+
+    public static boolean chunkProviderChunkExistsOnDisk(ChunkProviderServer provider, int chunkX, int chunkZ) {
+        Object loaderValue = fieldValue(provider, "chunkProvider.chunkLoader", "field_73247_e", "chunkLoader");
+        Object worldValue = fieldValue(provider, "chunkProvider.world", "field_73251_h", "world");
+        if (!(loaderValue instanceof IChunkLoader) || !(worldValue instanceof World)) {
+            return false;
+        }
+        if (loaderValue instanceof AnvilChunkLoader) {
+            Object value = invoke(loaderValue, "anvilChunkLoader.chunkExists",
+                    new Class<?>[]{World.class, int.class, int.class},
+                    new Object[]{worldValue, chunkX, chunkZ}, "chunkExists");
+            return value instanceof Boolean && (Boolean) value;
+        }
+        return false;
+    }
+
+    public static int entityTicksExisted(Entity entity) {
+        Object value = fieldValue(entity, "entity.ticksExisted", "field_70173_aa", "ticksExisted");
+        return value instanceof Number ? ((Number) value).intValue() : 0;
+    }
+
+    public static double entityMotionX(Entity entity) {
+        Object value = fieldValue(entity, "entity.motionX", "field_70159_w", "motionX");
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
+    public static double entityMotionZ(Entity entity) {
+        Object value = fieldValue(entity, "entity.motionZ", "field_70179_y", "motionZ");
+        return value instanceof Number ? ((Number) value).doubleValue() : 0.0D;
+    }
+
+    public static boolean entityHasCustomName(Entity entity) {
+        Object value = invoke(entity, "entity.hasCustomName", noTypes(), noArgs(),
+                "func_145818_k_", "hasCustomName");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static boolean entityIsRiding(Entity entity) {
+        Object value = invoke(entity, "entity.isRiding", noTypes(), noArgs(),
+                "func_184218_aH", "isRiding");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static boolean entityIsBeingRidden(Entity entity) {
+        Object value = invoke(entity, "entity.isBeingRidden", noTypes(), noArgs(),
+                "func_184207_aI", "isBeingRidden");
+        return value instanceof Boolean && (Boolean) value;
+    }
+
+    public static EntityLivingBase entityAttackTarget(EntityLiving entity) {
+        Object value = invoke(entity, "entityLiving.getAttackTarget", noTypes(), noArgs(),
+                "func_70638_az", "getAttackTarget");
+        return value instanceof EntityLivingBase ? (EntityLivingBase) value : null;
+    }
+
+    public static EntityPlayer worldClosestPlayer(World world, Entity entity, double distance) {
+        Object value = invoke(world, "world.getClosestPlayerToEntity",
+                new Class<?>[]{Entity.class, double.class}, new Object[]{entity, distance},
+                "func_72890_a", "getClosestPlayerToEntity");
+        return value instanceof EntityPlayer ? (EntityPlayer) value : null;
     }
 
     public static boolean blockHasTileEntity(Block block) {
@@ -707,7 +1154,28 @@ public final class MinecraftMappingCompat {
         return value instanceof Number ? ((Number) value).intValue() : 0;
     }
 
+    public static IBlockState blockStateFromMeta(Block block, int meta) {
+        if (block == null) {
+            return null;
+        }
+        Object value = invoke(block, "block.getStateFromMeta",
+                new Class<?>[]{int.class}, new Object[]{meta},
+                "func_176203_a", "getStateFromMeta");
+        return value instanceof IBlockState ? (IBlockState) value : null;
+    }
+
     public static boolean blockStateSideSolid(IBlockState state, IBlockAccess world, BlockPos pos, EnumFacing side) {
+        if (state == null || world == null || pos == null || side == null) {
+            return false;
+        }
+        if (BLOCK_STATE_SIDE_SOLID != null) {
+            try {
+                return (boolean) BLOCK_STATE_SIDE_SOLID.invokeExact(state, world, pos, side);
+            } catch (Throwable throwable) {
+                logOnce(state.getClass(), "blockState.isSideSolid", "threw", throwable);
+                return false;
+            }
+        }
         Object value = invoke(state, "blockState.isSideSolid",
                 new Class<?>[]{IBlockAccess.class, BlockPos.class, EnumFacing.class}, new Object[]{world, pos, side},
                 "isSideSolid");
@@ -717,6 +1185,24 @@ public final class MinecraftMappingCompat {
     public static BlockPos blockPosOffset(BlockPos pos, EnumFacing facing) {
         Object value = invoke(pos, "blockPos.offset", new Class<?>[]{EnumFacing.class}, new Object[]{facing},
                 "func_177972_a", "offset");
+        return value instanceof BlockPos ? (BlockPos) value : pos;
+    }
+
+    public static BlockPos blockPosAdd(BlockPos pos, int x, int y, int z) {
+        if (pos == null) {
+            return null;
+        }
+        if (BLOCK_POS_ADD != null) {
+            try {
+                return (BlockPos) BLOCK_POS_ADD.invokeExact(pos, x, y, z);
+            } catch (Throwable throwable) {
+                logOnce(pos.getClass(), "blockPos.add", "threw", throwable);
+                return pos;
+            }
+        }
+        Object value = invoke(pos, "blockPos.add",
+                new Class<?>[]{int.class, int.class, int.class}, new Object[]{x, y, z},
+                "func_177982_a", "add");
         return value instanceof BlockPos ? (BlockPos) value : pos;
     }
 
@@ -1105,9 +1591,32 @@ public final class MinecraftMappingCompat {
         }
     }
 
+    private static boolean invokeVoid(Object owner, String purpose, Class<?>[] parameterTypes, Object[] args,
+                                      String... names) {
+        if (owner == null) {
+            return false;
+        }
+        Method method = findMethod(owner.getClass(), purpose, parameterTypes, names);
+        if (method == null) {
+            return false;
+        }
+        try {
+            method.invoke(owner, args);
+            return true;
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            logOnce(owner.getClass(), purpose, "threw", cause);
+            return false;
+        } catch (Throwable throwable) {
+            logOnce(owner.getClass(), purpose, "could not invoke", throwable);
+            return false;
+        }
+    }
+
     private static Field findField(Class<?> ownerClass, String purpose, String... names) {
-        String key = ownerClass.getName() + '#' + purpose;
-        Field cached = FIELDS.get(key);
+        ConcurrentMap<String, Field> ownerFields = FIELDS.computeIfAbsent(
+                ownerClass, ignored -> new ConcurrentHashMap<>());
+        Field cached = ownerFields.get(purpose);
         if (cached != null) {
             return cached;
         }
@@ -1117,7 +1626,7 @@ public final class MinecraftMappingCompat {
                 try {
                     Field field = current.getDeclaredField(name);
                     field.setAccessible(true);
-                    Field existing = FIELDS.putIfAbsent(key, field);
+                    Field existing = ownerFields.putIfAbsent(purpose, field);
                     return existing == null ? field : existing;
                 } catch (NoSuchFieldException ignored) {
                     // Try every known runtime name before logging once.
@@ -1131,9 +1640,22 @@ public final class MinecraftMappingCompat {
         return null;
     }
 
+    public static String resourceLocationNamespace(ResourceLocation location) {
+        Object value = invoke(location, "resourceLocation.getNamespace", noTypes(), noArgs(),
+                "func_110624_b", "getNamespace", "getResourceDomain");
+        return value instanceof String ? (String) value : "minecraft";
+    }
+
+    public static String resourceLocationPath(ResourceLocation location) {
+        Object value = invoke(location, "resourceLocation.getPath", noTypes(), noArgs(),
+                "func_110623_a", "getPath", "getResourcePath");
+        return value instanceof String ? (String) value : "";
+    }
+
     private static Method findMethod(Class<?> ownerClass, String purpose, Class<?>[] parameterTypes, String... names) {
-        String key = ownerClass.getName() + '#' + purpose;
-        Method cached = METHODS.get(key);
+        ConcurrentMap<String, Method> ownerMethods = METHODS.computeIfAbsent(
+                ownerClass, ignored -> new ConcurrentHashMap<>());
+        Method cached = ownerMethods.get(purpose);
         if (cached != null) {
             return cached;
         }
@@ -1141,7 +1663,7 @@ public final class MinecraftMappingCompat {
             try {
                 Method method = ownerClass.getMethod(name, parameterTypes);
                 method.setAccessible(true);
-                Method existing = METHODS.putIfAbsent(key, method);
+                Method existing = ownerMethods.putIfAbsent(purpose, method);
                 return existing == null ? method : existing;
             } catch (NoSuchMethodException ignored) {
                 // Try declared methods and interface defaults below before logging once.
@@ -1155,7 +1677,7 @@ public final class MinecraftMappingCompat {
                 try {
                     Method method = current.getDeclaredMethod(name, parameterTypes);
                     method.setAccessible(true);
-                    Method existing = METHODS.putIfAbsent(key, method);
+                    Method existing = ownerMethods.putIfAbsent(purpose, method);
                     return existing == null ? method : existing;
                 } catch (NoSuchMethodException ignored) {
                     // Try every known runtime name before logging once.
@@ -1167,6 +1689,21 @@ public final class MinecraftMappingCompat {
         }
         logOnce(ownerClass, purpose, "could not find method", null);
         return null;
+    }
+
+    private static MethodHandle exactVirtualHandle(Class<?> ownerClass, String purpose,
+                                                   Class<?>[] parameterTypes, MethodType exactType,
+                                                   String... names) {
+        Method method = findMethod(ownerClass, purpose, parameterTypes, names);
+        if (method == null) {
+            return null;
+        }
+        try {
+            return MethodHandles.lookup().unreflect(method).asType(exactType);
+        } catch (Throwable throwable) {
+            logOnce(ownerClass, purpose, "could not bind exact handle", throwable);
+            return null;
+        }
     }
 
     public static Class<?>[] noTypes() {

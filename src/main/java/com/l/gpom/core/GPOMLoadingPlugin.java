@@ -82,6 +82,7 @@ public final class GPOMLoadingPlugin implements IFMLLoadingPlugin {
                 "com.l.gpom.core.SfmLightweightSearchCacheTransformer",
                 "com.l.gpom.core.CustomMainMenuStartupOverlayTransformer",
                 "com.l.gpom.core.RandomThingsRenderUtilsTransformer",
+                "com.l.gpom.core.OptionalModExceptionLoopTransformer",
                 "com.l.gpom.core.LogSpamTransformer",
                 "com.l.gpom.core.WorldgenSafetyTransformer"
         };

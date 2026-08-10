@@ -41,6 +41,10 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
     private static final String RENDER_HELPER = "com/l/gpom/compat/blockcraftery/BlockcrafteryRenderCompat";
     private static final String FRAMED_HELPER = "com/l/gpom/compat/framed/FramedMaterialData";
     private static final String FRAMED_ACCESS = "com/l/gpom/compat/framed/FramedMaterialDataAccess";
+    private static final String DOUBLE_SLOPE_HELPER =
+            "com/l/gpom/compat/blockcraftery/BlockcrafteryDoubleSlopeCompat";
+    private static final String DOUBLE_SLOPE_ACCESS =
+            "com/l/gpom/compat/blockcraftery/BlockcrafteryDoubleSlopeAccess";
     private static final String NBT_COMPOUND = "Lnet/minecraft/nbt/NBTTagCompound;";
     private static final String BLOCK_STATE = "Lnet/minecraft/block/state/IBlockState;";
     private static final String RAYTRACE_DESC = "(Lnet/minecraft/block/state/IBlockState;Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/Vec3d;Lnet/minecraft/util/math/Vec3d;)Lnet/minecraft/util/math/RayTraceResult;";
@@ -69,6 +73,7 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             boolean modelNullSideCull = false;
             boolean modelLayerCompat = GpomEarlyConfig.blockcrafteryModelRenderLayerCompatEnabled();
             boolean framedMaterialStorage = GpomEarlyConfig.framedMaterialStateStorageEnabled();
+            boolean doubleSlopes = GpomEarlyConfig.blockcrafteryDoubleSlopesEnabled();
             if (TILE_EDITABLE_BLOCK.equals(className) && !framedMaterialStorage
                     && PATCHED_TILE_CLASSES.add("disabled:" + className)) {
                 GPOM.LOGGER.warn(
@@ -76,11 +81,11 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
                                 + "emission, Bloom, and CTM metadata will not be attached"
                 );
             }
-            if (!hitboxes && !modelLayerCompat && !modelNullSideCull && !framedMaterialStorage) {
+            if (!hitboxes && !modelLayerCompat && !modelNullSideCull && !framedMaterialStorage && !doubleSlopes) {
                 return basicClass;
             }
-            if (framedMaterialStorage && TILE_EDITABLE_BLOCK.equals(className)) {
-                return patchTileEditableBlock(basicClass);
+            if ((framedMaterialStorage || doubleSlopes) && TILE_EDITABLE_BLOCK.equals(className)) {
+                return patchTileEditableBlock(basicClass, framedMaterialStorage, doubleSlopes);
             }
             if (framedMaterialStorage && isAnyEditableBlock(className)) {
                 basicClass = patchEditableFramedVisuals(basicClass);
@@ -88,17 +93,23 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             if (hitboxes && CUBE.equals(className)) {
                 return patchCube(basicClass, parentMaterialOcclusion);
             }
-            if (hitboxes && (SLANT.equals(className) || CORNER.equals(className))) {
-                return patchShapedBlock(basicClass, parentMaterialOcclusion);
+            if (doubleSlopes && SLANT.equals(className)) {
+                basicClass = patchDoubleSlopeBlock(basicClass);
             }
-            if (hitboxes && parentMaterialOcclusion && isEditableBlock(className)) {
-                return patchEditableSideRenderOcclusion(basicClass);
+            if ((hitboxes || doubleSlopes) && (SLANT.equals(className) || CORNER.equals(className))) {
+                return patchShapedBlock(basicClass);
             }
             if (hitboxes && WORLD.equals(className)) {
                 return patchWorld(basicClass);
             }
-            if ((modelLayerCompat || modelNullSideCull || framedMaterialStorage) && MODEL_EDITABLE.equals(className)) {
-                return patchEditableModel(basicClass, modelLayerCompat, modelNullSideCull, framedMaterialStorage);
+            if ((modelLayerCompat || modelNullSideCull || framedMaterialStorage || doubleSlopes)
+                    && MODEL_EDITABLE.equals(className)) {
+                return patchEditableModel(
+                        basicClass,
+                        modelLayerCompat,
+                        modelNullSideCull,
+                        framedMaterialStorage || doubleSlopes
+                );
             }
         } catch (Throwable throwable) {
             if (TILE_EDITABLE_BLOCK.equals(className) || MODEL_EDITABLE.equals(className)) {
@@ -112,21 +123,38 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         return basicClass;
     }
 
-    private static byte[] patchTileEditableBlock(byte[] basicClass) {
+    private static byte[] patchTileEditableBlock(
+            byte[] basicClass,
+            boolean framedMaterialStorage,
+            boolean doubleSlopes
+    ) {
         ClassNode node = readNode(basicClass);
-        boolean accessChanged = addFramedMaterialAccess(node);
-        boolean readChanged = patchTileRead(node);
-        boolean writeChanged = patchTileWrite(node);
-        boolean mutationChanged = patchTileMaterialMutation(node);
-        boolean changed = accessChanged || readChanged || writeChanged || mutationChanged;
+        boolean accessChanged = framedMaterialStorage && addFramedMaterialAccess(node);
+        boolean readChanged = framedMaterialStorage && patchTileRead(node);
+        boolean writeChanged = framedMaterialStorage && patchTileWrite(node);
+        boolean mutationChanged = framedMaterialStorage && patchTileMaterialMutation(node);
+        boolean doubleAccessChanged = doubleSlopes && addDoubleSlopeAccess(node);
+        boolean doubleReadChanged = doubleSlopes && patchDoubleSlopeRead(node);
+        boolean doubleWriteChanged = doubleSlopes && patchDoubleSlopeWrite(node);
+        boolean doubleActivateChanged = doubleSlopes && patchDoubleSlopeActivate(node);
+        boolean doubleBreakChanged = doubleSlopes && patchDoubleSlopeBreak(node);
+        boolean changed = accessChanged || readChanged || writeChanged || mutationChanged
+                || doubleAccessChanged || doubleReadChanged || doubleWriteChanged
+                || doubleActivateChanged || doubleBreakChanged;
         if (PATCHED_TILE_CLASSES.add(node.name)) {
             GPOM.LOGGER.info(
                     "[GPOM Framed Material Probe] Blockcraftery tile patched "
-                            + "access={} read={} write={} mutation={} changed={}",
+                            + "access={} read={} write={} mutation={} doubleAccess={} doubleRead={} "
+                            + "doubleWrite={} doubleActivate={} doubleBreak={} changed={}",
                     accessChanged,
                     readChanged,
                     writeChanged,
                     mutationChanged,
+                    doubleAccessChanged,
+                    doubleReadChanged,
+                    doubleWriteChanged,
+                    doubleActivateChanged,
+                    doubleBreakChanged,
                     changed
             );
         }
@@ -411,6 +439,200 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         return method;
     }
 
+    private static boolean addDoubleSlopeAccess(ClassNode node) {
+        boolean changed = false;
+        if (!node.interfaces.contains(DOUBLE_SLOPE_ACCESS)) {
+            node.interfaces.add(DOUBLE_SLOPE_ACCESS);
+            changed = true;
+        }
+        if (findField(node, "gpom$doubleSlopeData", NBT_COMPOUND) == null) {
+            node.fields.add(new FieldNode(
+                    Opcodes.ACC_PRIVATE,
+                    "gpom$doubleSlopeData",
+                    NBT_COMPOUND,
+                    null,
+                    null
+            ));
+            changed = true;
+        }
+        if (findMethod(node, "gpom$getDoubleSlopeData", "()" + NBT_COMPOUND) == null) {
+            MethodNode getter = new MethodNode(
+                    Opcodes.ACC_PUBLIC,
+                    "gpom$getDoubleSlopeData",
+                    "()" + NBT_COMPOUND,
+                    null,
+                    null
+            );
+            getter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            getter.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                    Opcodes.GETFIELD,
+                    node.name,
+                    "gpom$doubleSlopeData",
+                    NBT_COMPOUND
+            ));
+            getter.instructions.add(new InsnNode(Opcodes.ARETURN));
+            node.methods.add(getter);
+            changed = true;
+        }
+        if (findMethod(node, "gpom$setDoubleSlopeData", "(" + NBT_COMPOUND + ")V") == null) {
+            MethodNode setter = new MethodNode(
+                    Opcodes.ACC_PUBLIC,
+                    "gpom$setDoubleSlopeData",
+                    "(" + NBT_COMPOUND + ")V",
+                    null,
+                    null
+            );
+            setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            setter.instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            setter.instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                    Opcodes.PUTFIELD,
+                    node.name,
+                    "gpom$doubleSlopeData",
+                    NBT_COMPOUND
+            ));
+            setter.instructions.add(new InsnNode(Opcodes.RETURN));
+            node.methods.add(setter);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean patchDoubleSlopeRead(ClassNode node) {
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("func_145839_a")
+                    || !method.desc.equals("(" + NBT_COMPOUND + ")V")
+                    || hasStaticCall(method, DOUBLE_SLOPE_HELPER, "read")) {
+                continue;
+            }
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
+                 instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.RETURN) {
+                    continue;
+                }
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        DOUBLE_SLOPE_HELPER,
+                        "read",
+                        "(L" + DOUBLE_SLOPE_ACCESS + ";" + NBT_COMPOUND + ")V",
+                        false
+                ));
+                method.instructions.insertBefore(instruction, injected);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean patchDoubleSlopeWrite(ClassNode node) {
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("func_189515_b")
+                    || !method.desc.equals("(" + NBT_COMPOUND + ")" + NBT_COMPOUND)
+                    || hasStaticCall(method, DOUBLE_SLOPE_HELPER, "write")) {
+                continue;
+            }
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
+                 instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.ARETURN) {
+                    continue;
+                }
+                int rootLocal = method.maxLocals++;
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ASTORE, rootLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, rootLocal));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        DOUBLE_SLOPE_HELPER,
+                        "write",
+                        "(L" + DOUBLE_SLOPE_ACCESS + ";" + NBT_COMPOUND + ")V",
+                        false
+                ));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, rootLocal));
+                method.instructions.insertBefore(instruction, injected);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean patchDoubleSlopeActivate(ClassNode node) {
+        final String descriptor = "(Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;"
+                + BLOCK_STATE + "Lnet/minecraft/entity/player/EntityPlayer;Lnet/minecraft/util/EnumHand;"
+                + "Lnet/minecraft/util/EnumFacing;FFF)Z";
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("activate") || !method.desc.equals(descriptor)
+                    || hasStaticCall(method, DOUBLE_SLOPE_HELPER, "activate")) {
+                continue;
+            }
+            LabelNode originalCode = new LabelNode();
+            InsnList injected = new InsnList();
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 4));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 5));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 6));
+            injected.add(new VarInsnNode(Opcodes.FLOAD, 7));
+            injected.add(new VarInsnNode(Opcodes.FLOAD, 8));
+            injected.add(new VarInsnNode(Opcodes.FLOAD, 9));
+            injected.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    DOUBLE_SLOPE_HELPER,
+                    "activate",
+                    "(L" + DOUBLE_SLOPE_ACCESS + ";" + descriptor.substring(1, descriptor.indexOf(')'))
+                            + ")Ljava/lang/Boolean;",
+                    false
+            ));
+            injected.add(new InsnNode(Opcodes.DUP));
+            injected.add(new JumpInsnNode(Opcodes.IFNULL, originalCode));
+            injected.add(new MethodInsnNode(
+                    Opcodes.INVOKEVIRTUAL,
+                    "java/lang/Boolean",
+                    "booleanValue",
+                    "()Z",
+                    false
+            ));
+            injected.add(new InsnNode(Opcodes.IRETURN));
+            injected.add(originalCode);
+            injected.add(new InsnNode(Opcodes.POP));
+            method.instructions.insert(injected);
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean patchDoubleSlopeBreak(ClassNode node) {
+        final String descriptor = "(Lnet/minecraft/world/World;Lnet/minecraft/util/math/BlockPos;"
+                + BLOCK_STATE + "Lnet/minecraft/entity/player/EntityPlayer;)V";
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("breakBlock") || !method.desc.equals(descriptor)
+                    || hasStaticCall(method, DOUBLE_SLOPE_HELPER, "beforeBreak")) {
+                continue;
+            }
+            InsnList injected = new InsnList();
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 2));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            injected.add(new VarInsnNode(Opcodes.ALOAD, 4));
+            injected.add(new MethodInsnNode(
+                    Opcodes.INVOKESTATIC,
+                    DOUBLE_SLOPE_HELPER,
+                    "beforeBreak",
+                    "(L" + DOUBLE_SLOPE_ACCESS + ";" + descriptor.substring(1, descriptor.indexOf(')'))
+                            + ")V",
+                    false
+            ));
+            method.instructions.insert(injected);
+            return true;
+        }
+        return false;
+    }
+
     private static byte[] patchWorld(byte[] basicClass) {
         ClassNode node = readNode(basicClass);
         boolean changed = patchMayPlaceMethod(node, "mayPlace");
@@ -441,6 +663,190 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         return changed ? writeNode(node) : basicClass;
     }
 
+    private static byte[] patchDoubleSlopeBlock(byte[] basicClass) {
+        ClassNode node = readNode(basicClass);
+        replaceMethod(node, doubleSlopeStateContainerMethod());
+        boolean extendedState = patchDoubleSlopeExtendedState(node);
+        boolean collision = addDoubleSlopeCollisionMethod(node);
+        if (PATCHED_TILE_CLASSES.add("double-slope:" + node.name)) {
+            GPOM.LOGGER.info(
+                    "[GPOM Double Slope] Blockcraftery slant patched stateContainer=true extendedState={} collision={}",
+                    extendedState,
+                    collision
+            );
+        }
+        return writeNode(node);
+    }
+
+    private static MethodNode doubleSlopeStateContainerMethod() {
+        MethodNode method = new MethodNode(
+                Opcodes.ACC_PUBLIC,
+                "func_180661_e",
+                "()Lnet/minecraft/block/state/BlockStateContainer;",
+                null,
+                null
+        );
+        InsnList instructions = method.instructions;
+        instructions.add(new InsnNode(Opcodes.ICONST_3));
+        instructions.add(new org.objectweb.asm.tree.TypeInsnNode(
+                Opcodes.ANEWARRAY,
+                "net/minecraft/block/properties/IProperty"
+        ));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new InsnNode(Opcodes.ICONST_0));
+        instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETSTATIC,
+                "epicsquid/mysticallib/block/BlockSlantBase",
+                "VERT",
+                "Lnet/minecraft/block/properties/PropertyInteger;"
+        ));
+        instructions.add(new InsnNode(Opcodes.AASTORE));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new InsnNode(Opcodes.ICONST_1));
+        instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETSTATIC,
+                "epicsquid/mysticallib/block/BlockSlantBase",
+                "DIR",
+                "Lnet/minecraft/block/properties/PropertyInteger;"
+        ));
+        instructions.add(new InsnNode(Opcodes.AASTORE));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new InsnNode(Opcodes.ICONST_2));
+        instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETSTATIC,
+                "epicsquid/blockcraftery/block/BlockEditableCube",
+                "LIGHT",
+                "Lnet/minecraft/block/properties/PropertyBool;"
+        ));
+        instructions.add(new InsnNode(Opcodes.AASTORE));
+        instructions.add(new VarInsnNode(Opcodes.ASTORE, 1));
+
+        instructions.add(new InsnNode(Opcodes.ICONST_2));
+        instructions.add(new org.objectweb.asm.tree.TypeInsnNode(
+                Opcodes.ANEWARRAY,
+                "net/minecraftforge/common/property/IUnlistedProperty"
+        ));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new InsnNode(Opcodes.ICONST_0));
+        instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETSTATIC,
+                "epicsquid/blockcraftery/block/BlockEditableSlant",
+                "STATEPROP",
+                "Lepicsquid/blockcraftery/block/BlockEditableSlant$UnlistedPropertyState;"
+        ));
+        instructions.add(new InsnNode(Opcodes.AASTORE));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new InsnNode(Opcodes.ICONST_1));
+        instructions.add(new org.objectweb.asm.tree.FieldInsnNode(
+                Opcodes.GETSTATIC,
+                "com/l/gpom/compat/blockcraftery/BlockcrafteryDoubleSlopeStateProperty",
+                "INSTANCE",
+                "Lcom/l/gpom/compat/blockcraftery/BlockcrafteryDoubleSlopeStateProperty;"
+        ));
+        instructions.add(new InsnNode(Opcodes.AASTORE));
+        instructions.add(new VarInsnNode(Opcodes.ASTORE, 2));
+
+        instructions.add(new org.objectweb.asm.tree.TypeInsnNode(
+                Opcodes.NEW,
+                "net/minecraftforge/common/property/ExtendedBlockState"
+        ));
+        instructions.add(new InsnNode(Opcodes.DUP));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESPECIAL,
+                "net/minecraftforge/common/property/ExtendedBlockState",
+                "<init>",
+                "(Lnet/minecraft/block/Block;[Lnet/minecraft/block/properties/IProperty;"
+                        + "[Lnet/minecraftforge/common/property/IUnlistedProperty;)V",
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.ARETURN));
+        return method;
+    }
+
+    private static boolean patchDoubleSlopeExtendedState(ClassNode node) {
+        final String descriptor = "(" + BLOCK_STATE + "Lnet/minecraft/world/IBlockAccess;"
+                + "Lnet/minecraft/util/math/BlockPos;)" + BLOCK_STATE;
+        for (MethodNode method : node.methods) {
+            if (!method.name.equals("getExtendedState") || !method.desc.equals(descriptor)
+                    || hasStaticCall(method, DOUBLE_SLOPE_HELPER, "attachSecondary")) {
+                continue;
+            }
+            int returnLocal = method.maxLocals++;
+            boolean changed = false;
+            for (AbstractInsnNode instruction = method.instructions.getFirst(); instruction != null;
+                 instruction = instruction.getNext()) {
+                if (instruction.getOpcode() != Opcodes.ARETURN) {
+                    continue;
+                }
+                InsnList injected = new InsnList();
+                injected.add(new VarInsnNode(Opcodes.ASTORE, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, returnLocal));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 2));
+                injected.add(new VarInsnNode(Opcodes.ALOAD, 3));
+                injected.add(new MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        DOUBLE_SLOPE_HELPER,
+                        "attachSecondary",
+                        "(" + BLOCK_STATE + "Lnet/minecraft/world/IBlockAccess;"
+                                + "Lnet/minecraft/util/math/BlockPos;)" + BLOCK_STATE,
+                        false
+                ));
+                method.instructions.insertBefore(instruction, injected);
+                changed = true;
+            }
+            return changed;
+        }
+        return false;
+    }
+
+    private static boolean addDoubleSlopeCollisionMethod(ClassNode node) {
+        final String descriptor = "(" + BLOCK_STATE + "Lnet/minecraft/world/World;"
+                + "Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/util/math/AxisAlignedBB;"
+                + "Ljava/util/List;Lnet/minecraft/entity/Entity;Z)V";
+        if (findMethod(node, "func_185477_a", descriptor) != null) {
+            return false;
+        }
+        MethodNode method = new MethodNode(Opcodes.ACC_PUBLIC, "func_185477_a", descriptor, null, null);
+        LabelNode originalCollision = new LabelNode();
+        InsnList instructions = method.instructions;
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 5));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                DOUBLE_SLOPE_HELPER,
+                "addFullCollisionIfDoubled",
+                "(Lnet/minecraft/world/IBlockAccess;Lnet/minecraft/util/math/BlockPos;"
+                        + "Lnet/minecraft/util/math/AxisAlignedBB;Ljava/util/List;)Z",
+                false
+        ));
+        instructions.add(new JumpInsnNode(Opcodes.IFEQ, originalCollision));
+        instructions.add(new InsnNode(Opcodes.RETURN));
+        instructions.add(originalCollision);
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 1));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 3));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 5));
+        instructions.add(new VarInsnNode(Opcodes.ALOAD, 6));
+        instructions.add(new VarInsnNode(Opcodes.ILOAD, 7));
+        instructions.add(new MethodInsnNode(
+                Opcodes.INVOKESPECIAL,
+                "epicsquid/mysticallib/block/BlockTESlantBase",
+                "func_185477_a",
+                descriptor,
+                false
+        ));
+        instructions.add(new InsnNode(Opcodes.RETURN));
+        node.methods.add(method);
+        return true;
+    }
+
     private static boolean synchronizeMethod(ClassNode node, String name, String descriptor) {
         boolean changed = false;
         for (MethodNode method : node.methods) {
@@ -454,21 +860,12 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
         return changed;
     }
 
-    private static byte[] patchShapedBlock(byte[] basicClass, boolean parentMaterialOcclusion) {
+    private static byte[] patchShapedBlock(byte[] basicClass) {
         ClassNode node = readNode(basicClass);
         replaceMethod(node, shapedRayTraceMethod("func_180636_a"));
         replaceMethod(node, shapedRayTraceMethod("collisionRayTrace"));
         replaceMethod(node, shapedSelectedBoxMethod("func_180640_a"));
         replaceMethod(node, shapedSelectedBoxMethod("getSelectedBoundingBox"));
-        if (parentMaterialOcclusion) {
-            addEditableSideRenderOcclusion(node);
-        }
-        return writeNode(node);
-    }
-
-    private static byte[] patchEditableSideRenderOcclusion(byte[] basicClass) {
-        ClassNode node = readNode(basicClass);
-        addEditableSideRenderOcclusion(node);
         return writeNode(node);
     }
 
@@ -486,11 +883,6 @@ public final class BlockcrafteryCompatibilityTransformer implements IClassTransf
             replaceMethod(node, cubeSideMethod("doesSideBlockRendering", "copiedDoesSideBlockRendering"));
         }
         return writeNode(node);
-    }
-
-    private static void addEditableSideRenderOcclusion(ClassNode node) {
-        replaceMethod(node, cubeSideMethod("func_176225_a", "copiedShouldSideBeRendered"));
-        replaceMethod(node, cubeSideMethod("shouldSideBeRendered", "copiedShouldSideBeRendered"));
     }
 
     private static MethodNode shapedRayTraceMethod(String name) {

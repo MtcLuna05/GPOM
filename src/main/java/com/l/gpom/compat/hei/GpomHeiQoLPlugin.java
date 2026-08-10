@@ -5,6 +5,7 @@ import com.l.gpom.GPOM;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.IModRegistry;
 import mezz.jei.api.JEIPlugin;
+import mezz.jei.api.recipe.IRecipeCategoryRegistration;
 import mezz.jei.api.recipe.VanillaRecipeCategoryUid;
 import mezz.jei.api.recipe.transfer.IRecipeTransferHandlerHelper;
 import mezz.jei.api.recipe.transfer.IRecipeTransferRegistry;
@@ -23,12 +24,31 @@ public final class GpomHeiQoLPlugin implements IModPlugin {
     private static final String DRACONIC_FUSION = "DraconicEvolution.Fusion";
 
     @Override
+    public void registerCategories(IRecipeCategoryRegistration registration) {
+        boolean enabled = GpomEarlyConfig.heiWootMobDropsCategoryEnabled();
+        boolean wootAvailable = WootMobDropsJeiIntegration.available();
+        WootJeiDiagnostics.log("registerCategories: registration={}, configEnabled={}, wootLoaded={}",
+                registration != null, enabled, wootAvailable);
+        if (registration != null && enabled && wootAvailable) {
+            WootMobDropsJeiIntegration.registerCategory(registration);
+        }
+    }
+
+    @Override
     public void register(IModRegistry registry) {
+        WootJeiDiagnostics.log("register: registry={}", registry != null);
         if (registry == null) {
             return;
         }
 
         GPOM.LOGGER.info("[GPOM HEI QoL] Registering HEI QoL plugin");
+        boolean enabled = GpomEarlyConfig.heiWootMobDropsCategoryEnabled();
+        boolean wootAvailable = WootMobDropsJeiIntegration.available();
+        WootJeiDiagnostics.log("register recipes gate: configEnabled={}, wootLoaded={}", enabled, wootAvailable);
+        if (enabled && wootAvailable) {
+            WootMobDropsJeiIntegration.registerRecipes(registry);
+        }
+
         IRecipeTransferRegistry transfers = registry.getRecipeTransferRegistry();
         if (transfers == null) {
             GPOM.LOGGER.warn("[GPOM HEI QoL] HEI recipe transfer registry is unavailable");

@@ -120,7 +120,8 @@ public final class BlockcrafteryRenderCompat {
             List<BakedQuad> result
     ) {
         IBlockState copied = copiedState(hostState);
-        String key = cacheKey(copied, hostState, side, MinecraftMappingCompat.currentRenderLayer());
+        IBlockState secondary = BlockcrafteryDoubleSlopeCompat.secondaryState(hostState);
+        String key = cacheKey(copied, secondary, hostState, side, MinecraftMappingCompat.currentRenderLayer());
         Map<String, List<BakedQuad>> cache = data(model);
         if (cache != null && cache.containsKey(key)) {
             Collection<BakedQuad> cached = cache.get(key);
@@ -131,6 +132,34 @@ public final class BlockcrafteryRenderCompat {
         }
 
         List<BakedQuad> generated = new ArrayList<>();
+        appendMaterialGeometry(model, 0, copied, hostState, side, rand, generated);
+        if (secondary != null) {
+            appendMaterialGeometry(
+                    model,
+                    1,
+                    secondary,
+                    BlockcrafteryDoubleSlopeCompat.complementaryState((IBlockState) hostState),
+                    side,
+                    rand,
+                    generated
+            );
+        }
+
+        if (cache != null) {
+            cache.put(key, generated);
+        }
+        result.addAll(generated);
+    }
+
+    private static void appendMaterialGeometry(
+            Object model,
+            int materialIndex,
+            IBlockState copied,
+            IBlockState geometryState,
+            EnumFacing side,
+            long rand,
+            List<BakedQuad> generated
+    ) {
         TextureAtlasSprite[] sprites = new TextureAtlasSprite[] {particle(model)};
         int[] tints = new int[] {0};
         boolean useFallbackTexture = true;
@@ -159,29 +188,26 @@ public final class BlockcrafteryRenderCompat {
         }
 
         BlockRenderLayer layer = MinecraftMappingCompat.currentRenderLayer();
-        if (generated.isEmpty() && ((useFallbackTexture && layer == BlockRenderLayer.CUTOUT_MIPPED)
-                || (!useFallbackTexture && rendersInLayer(copied, layer)))) {
+        if ((useFallbackTexture && layer == BlockRenderLayer.CUTOUT_MIPPED)
+                || (!useFallbackTexture && rendersInLayer(copied, layer))) {
             for (int index = 0; index < sprites.length; index++) {
                 int firstGenerated = generated.size();
-                addGeometry(model, generated, side, copied, hostState, repeatedSprites(sprites[index]), tints[index]);
-                registerQuads(generated.subList(firstGenerated, generated.size()), copied, side,
+                addGeometry(model, generated, side, copied, geometryState,
+                        repeatedSprites(sprites[index]), tints[index]);
+                registerQuads(generated.subList(firstGenerated, generated.size()), materialIndex, copied, side,
                         FramedQuadProvenance.Source.HOST_FALLBACK);
             }
         }
-
-        if (cache != null) {
-            cache.put(key, generated);
-        }
-        result.addAll(generated);
     }
 
-    private static void registerQuads(Collection<BakedQuad> quads, IBlockState material, EnumFacing side,
+    private static void registerQuads(Collection<BakedQuad> quads, int materialIndex,
+                                      IBlockState material, EnumFacing side,
                                       FramedQuadProvenance.Source source) {
         if (quads == null || material == null) {
             return;
         }
         for (BakedQuad quad : quads) {
-            FramedQuadProvenance.register(quad, 0, material, side, source);
+            FramedQuadProvenance.register(quad, materialIndex, material, side, source);
         }
     }
 
@@ -309,8 +335,16 @@ public final class BlockcrafteryRenderCompat {
         }
     }
 
-    private static String cacheKey(IBlockState copied, IBlockState host, EnumFacing side, BlockRenderLayer layer) {
+    private static String cacheKey(
+            IBlockState copied,
+            IBlockState secondary,
+            IBlockState host,
+            EnumFacing side,
+            BlockRenderLayer layer
+    ) {
         return String.valueOf(copied)
+                + '_'
+                + secondary
                 + '_'
                 + host
                 + '_'

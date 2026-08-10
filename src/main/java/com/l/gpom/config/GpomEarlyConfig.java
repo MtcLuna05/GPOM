@@ -198,11 +198,40 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.logMismatchedOutputs", "false");
         DEFAULTS.setProperty("gpom.ae2.patternDiagnostics.skipRecipeFunctions", "false");
         DEFAULTS.setProperty("gpom.crafting.safeBrokenRecipePreview.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.recipeLookupCache.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.gameRulesUnchangedValueFastPath.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.gendustryFluidSourceLookup.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.lavaCowInheritedTargetFieldLookup.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.ae2BdlibPowerNegativeLookupCache.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.hammerCoreItemColorNegativeLookupCache.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.particleSpawnThrottle.enabled", "true");
+        DEFAULTS.setProperty("gpom.performance.particleSpawnThrottle.maxPerTypePerTick", "256");
+        DEFAULTS.setProperty("gpom.performance.pacedChunkSaves.enabled", "false");
+        DEFAULTS.setProperty("gpom.performance.pacedChunkSaves.budgetMillis", "4");
+        DEFAULTS.setProperty("gpom.performance.pacedChunkSaves.maxBatchesPerTick", "1");
+        DEFAULTS.setProperty("gpom.performance.entityActivation.enabled", "false");
+        DEFAULTS.setProperty("gpom.performance.entityActivation.range", "64");
+        DEFAULTS.setProperty("gpom.performance.entityActivation.intervalTicks", "20");
+        DEFAULTS.setProperty("gpom.performance.entityActivation.denylist", "minecraft:ender_dragon,minecraft:wither");
+        DEFAULTS.setProperty("gpom.performance.redstoneProfiler.enabled", "false");
+        DEFAULTS.setProperty("gpom.performance.redstoneProfiler.intervalSeconds", "10");
+        DEFAULTS.setProperty("gpom.performance.alternateCurrent.enabled", "false");
+        DEFAULTS.setProperty("gpom.performance.alternateCurrent.maxNetworkSize", "131072");
+        DEFAULTS.setProperty("gpom.performance.existingChunkPrefetch.enabled", "false");
+        DEFAULTS.setProperty("gpom.performance.existingChunkPrefetch.intervalTicks", "10");
+        DEFAULTS.setProperty("gpom.performance.existingChunkPrefetch.distanceChunks", "2");
+        DEFAULTS.setProperty("gpom.performance.existingChunkPrefetch.minimumSpeed", "0.12");
+        DEFAULTS.setProperty("gpom.performance.existingChunkPrefetch.maxOutstanding", "8");
         DEFAULTS.setProperty("gpom.jecalculation.pinnedCraftOverlay.enabled", "true");
         DEFAULTS.setProperty("gpom.jecalculation.fuzzyVolatileItemNbt.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.extendedCraftingLowerTierTransfer.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.draconicFusionTransfer.enabled", "true");
         DEFAULTS.setProperty("gpom.hei.craftableRecipesFirst.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.wootMobDropsCategory.enabled", "true");
+        DEFAULTS.setProperty("gpom.hei.wootLootTableExtraction.enabled", "false");
+        DEFAULTS.setProperty("gpom.hei.wootLootTableExtraction.workers", "0");
+        DEFAULTS.setProperty("gpom.hei.wootUnsupportedFunctionLearning.enabled", "false");
+        DEFAULTS.setProperty("gpom.hei.wootUnsupportedFunctionLearning.parallelBoxes", "1");
         DEFAULTS.setProperty("gpom.journeymap.waypointDimensionDropup.enabled", "true");
         DEFAULTS.setProperty("gpom.mainMenuStartupTime.enabled", "true");
         DEFAULTS.setProperty("gpom.baubles.sideSlots.enabled", "true");
@@ -246,6 +275,7 @@ public final class GpomEarlyConfig {
         DEFAULTS.setProperty("gpom.blockcraftery.accurateHitboxes", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.parentMaterialOcclusion.enabled", "true");
         DEFAULTS.setProperty("gpom.blockcraftery.modelRenderLayerCompat", "true");
+        DEFAULTS.setProperty("gpom.blockcraftery.doubleSlopes.enabled", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaks", "true");
         DEFAULTS.setProperty("gpom.journeymap.cleanupLeaksOnDimensionHandoff", "false");
         DEFAULTS.setProperty("gpom.scannable.skipRedundantConfigOreCacheRebuilds", "true");
@@ -565,6 +595,27 @@ public final class GpomEarlyConfig {
         return booleanValue("gpom.hei.craftableRecipesFirst.enabled");
     }
 
+    public static boolean heiWootMobDropsCategoryEnabled() {
+        return booleanValue("gpom.hei.wootMobDropsCategory.enabled");
+    }
+
+    public static boolean heiWootLootTableExtractionEnabled() {
+        return booleanValue("gpom.hei.wootLootTableExtraction.enabled");
+    }
+
+    public static int heiWootLootTableExtractionWorkers() {
+        return Math.max(0, intValue("gpom.hei.wootLootTableExtraction.workers", 0));
+    }
+
+    public static boolean heiWootUnsupportedFunctionLearningEnabled() {
+        return booleanValue("gpom.hei.wootUnsupportedFunctionLearning.enabled");
+    }
+
+    public static int heiWootUnsupportedFunctionLearningParallelBoxes() {
+        return Math.max(1, Math.min(8,
+                intValue("gpom.hei.wootUnsupportedFunctionLearning.parallelBoxes", 1)));
+    }
+
     private static void load() {
         File file = configFile();
         ensureDefaultFile(file);
@@ -696,7 +747,12 @@ public final class GpomEarlyConfig {
         writeSection(writer, "HEI QoL", "Client-side Had Enough Items integration tweaks. These only register when the relevant target mod is loaded.",
                 "gpom.hei.extendedCraftingLowerTierTransfer.enabled",
                 "gpom.hei.draconicFusionTransfer.enabled",
-                "gpom.hei.craftableRecipesFirst.enabled"
+                "gpom.hei.craftableRecipesFirst.enabled",
+                "gpom.hei.wootMobDropsCategory.enabled",
+                "gpom.hei.wootLootTableExtraction.enabled",
+                "gpom.hei.wootLootTableExtraction.workers",
+                "gpom.hei.wootUnsupportedFunctionLearning.enabled",
+                "gpom.hei.wootUnsupportedFunctionLearning.parallelBoxes"
         );
         writeSection(writer, "Crafting Safety", "Fail-closed guards for recipe implementations that crash when previewed or consumed from synthetic crafting inventories such as ME terminals and ProjectEX arcane tablets.",
                 "gpom.crafting.safeBrokenRecipePreview.enabled"
@@ -836,6 +892,7 @@ public final class GpomEarlyConfig {
                 "gpom.blockcraftery.accurateHitboxes",
                 "gpom.blockcraftery.parentMaterialOcclusion.enabled",
                 "gpom.blockcraftery.modelRenderLayerCompat",
+                "gpom.blockcraftery.doubleSlopes.enabled",
                 "gpom.journeymap.cleanupLeaks",
                 "gpom.journeymap.cleanupLeaksOnDimensionHandoff",
                 "gpom.scannable.skipRedundantConfigOreCacheRebuilds",
@@ -1223,6 +1280,16 @@ public final class GpomEarlyConfig {
                 return "Skips CraftTweaker/RecipeStages recipes with recipe functions before AE2 PatternHelper validation, avoiding CT FATAL spam from synthetic diagnostic inventories.";
             case "gpom.crafting.safeBrokenRecipePreview.enabled":
                 return "Catches broken IRecipe preview/remainder exceptions from vanilla crafting containers, clears the output slot, and logs the failed recipe instead of crashing ME terminals or ProjectEX arcane tablets.";
+            case "gpom.performance.gameRulesUnchangedValueFastPath.enabled":
+                return "Skips unchanged GameRules values and caches vanilla-compatible parse outcomes per distinct string, avoiding repeated boolean-rule numeric parse exceptions.";
+            case "gpom.performance.gendustryFluidSourceLookup.enabled":
+                return "Uses ordinary Scala Option branches for Gendustry fluid-source item/meta lookup instead of exception-backed non-local returns.";
+            case "gpom.performance.lavaCowInheritedTargetFieldLookup.enabled":
+                return "Caches inherited and absent LavaCow entity-join targetClass fields, branching around expected misses without throwing.";
+            case "gpom.performance.ae2BdlibPowerNegativeLookupCache.enabled":
+                return "Caches tile classes that lack AE2's optional bdlib power() method so export buses do not repeat the same failed reflection lookup.";
+            case "gpom.performance.hammerCoreItemColorNegativeLookupCache.enabled":
+                return "Caches HammerLib's optional Quark ColorRunes class and method lookup so an absent Quark install does not throw once per enchanted-item color query.";
             case "gpom.jecalculation.pinnedCraftOverlay.enabled":
                 return "Adds a client-only pinned Just Enough Calculation craft overlay to normal container screens, with a GPOM pin toggle on JEC's craft screen. No-ops when JEC is absent.";
             case "gpom.jecalculation.fuzzyVolatileItemNbt.enabled":
@@ -1233,6 +1300,16 @@ public final class GpomEarlyConfig {
                 return "Adds a HEI transfer button for Draconic Evolution Fusion Crafting that stages catalyst and injector ingredients through a server-validated packet.";
             case "gpom.hei.craftableRecipesFirst.enabled":
                 return "Sorts HEI recipe views so recipes whose item inputs are present in the player inventory appear first. Non-item requirements are ignored.";
+            case "gpom.hei.wootMobDropsCategory.enabled":
+                return "Adds a Woot-only HEI category with cached learned drops, factory shard bonuses, Blood Magic upgrade outputs and scaling, Looting data, and required farm tiers. No-ops when Woot is absent.";
+            case "gpom.hei.wootLootTableExtraction.enabled":
+                return "Fills unknown Woot HEI drops from final Forge loot tables before HEI registration without spawning or killing mobs. Requires Woot and JER; learned Woot results remain authoritative.";
+            case "gpom.hei.wootLootTableExtraction.workers":
+                return "Worker count for immutable Woot loot-table traversal. Entity construction and Forge table loading always remain on the registration thread; 0 chooses a bounded automatic value.";
+            case "gpom.hei.wootUnsupportedFunctionLearning.enabled":
+                return "While a world is running, time-slices Woot's real Tartarus fake-kill pipeline for only mobs whose final loot tables contain functions GPOM cannot statically interpret. Results are saved to Woot's loot.json for the next HEI rebuild.";
+            case "gpom.hei.wootUnsupportedFunctionLearning.parallelBoxes":
+                return "Number of Woot Tartarus spawn boxes sampled in parallel each server tick for unsupported-function mobs. Capped at 8; higher values finish sooner but increase tick load.";
             case "gpom.mainMenuStartupTime.enabled":
                 return "Draws the last measured startup duration in the top-right corner of the main menu.";
             case "gpom.baubles.sideSlots.enabled":
@@ -1315,6 +1392,8 @@ public final class GpomEarlyConfig {
                 return "Lets Blockcraftery copied-block cubes answer side-render and side-occlusion checks as their copied material, matching adjacent copied translucent/solid block culling. Disable only if a copied block has broken side-render logic.";
             case "gpom.blockcraftery.modelRenderLayerCompat":
                 return "Rewrites Blockcraftery copied-block model layer checks to use Forge canRenderInLayer. Automatically skipped when AUSM is installed, because AUSM owns shader render-layer routing.";
+            case "gpom.blockcraftery.doubleSlopes.enabled":
+                return "Allows two complementary Blockcraftery framed slopes to share one block and carry independent materials. The optional second half is stored in GPOM NBT and no-ops when Blockcraftery is absent.";
             case "gpom.journeymap.waypointDimensionDropup.enabled":
                 return "Replaces JourneyMap's waypoint-manager dimension cycling button with a scrollable dropup selector; right-click dimension rows to maintain an ordered pin list near the top across game restarts. No-op when JourneyMap is absent.";
             case "gpom.journeymap.cleanupLeaks":
@@ -1789,6 +1868,7 @@ public final class GpomEarlyConfig {
         copySystemPropertyIfAbsent("gpom.blockcraftery.accurateHitboxes");
         copySystemPropertyIfAbsent("gpom.blockcraftery.parentMaterialOcclusion.enabled");
         copySystemPropertyIfAbsent("gpom.blockcraftery.modelRenderLayerCompat");
+        copySystemPropertyIfAbsent("gpom.blockcraftery.doubleSlopes.enabled");
         copySystemPropertyIfAbsent("gpom.journeymap.waypointDimensionDropup.enabled");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaks");
         copySystemPropertyIfAbsent("gpom.journeymap.cleanupLeaksOnDimensionHandoff");
@@ -2030,6 +2110,102 @@ public final class GpomEarlyConfig {
 
     public static boolean safeBrokenRecipePreviewEnabled() {
         return booleanValue("gpom.crafting.safeBrokenRecipePreview.enabled");
+    }
+
+    public static boolean recipeLookupCacheEnabled() {
+        return booleanValue("gpom.performance.recipeLookupCache.enabled");
+    }
+
+    public static boolean gameRulesUnchangedValueFastPathEnabled() {
+        return booleanValue("gpom.performance.gameRulesUnchangedValueFastPath.enabled");
+    }
+
+    public static boolean gendustryFluidSourceLookupEnabled() {
+        return booleanValue("gpom.performance.gendustryFluidSourceLookup.enabled");
+    }
+
+    public static boolean lavaCowInheritedTargetFieldLookupEnabled() {
+        return booleanValue("gpom.performance.lavaCowInheritedTargetFieldLookup.enabled");
+    }
+
+    public static boolean ae2BdlibPowerNegativeLookupCacheEnabled() {
+        return booleanValue("gpom.performance.ae2BdlibPowerNegativeLookupCache.enabled");
+    }
+
+    public static boolean hammerCoreItemColorNegativeLookupCacheEnabled() {
+        return booleanValue("gpom.performance.hammerCoreItemColorNegativeLookupCache.enabled");
+    }
+
+    public static boolean particleSpawnThrottleEnabled() {
+        return booleanValue("gpom.performance.particleSpawnThrottle.enabled");
+    }
+
+    public static int particleSpawnThrottleMaxPerTypePerTick() {
+        return Math.max(16, intValue("gpom.performance.particleSpawnThrottle.maxPerTypePerTick", 256));
+    }
+
+    public static boolean pacedChunkSavesEnabled() {
+        return booleanValue("gpom.performance.pacedChunkSaves.enabled");
+    }
+
+    public static int pacedChunkSaveBudgetMillis() {
+        return Math.max(1, intValue("gpom.performance.pacedChunkSaves.budgetMillis", 4));
+    }
+
+    public static int pacedChunkSaveMaxBatchesPerTick() {
+        return Math.max(1, intValue("gpom.performance.pacedChunkSaves.maxBatchesPerTick", 1));
+    }
+
+    public static boolean entityActivationEnabled() {
+        return booleanValue("gpom.performance.entityActivation.enabled");
+    }
+
+    public static int entityActivationRange() {
+        return Math.max(16, intValue("gpom.performance.entityActivation.range", 64));
+    }
+
+    public static int entityActivationIntervalTicks() {
+        return Math.max(2, intValue("gpom.performance.entityActivation.intervalTicks", 20));
+    }
+
+    public static Set<String> entityActivationDenylist() {
+        return setValue("gpom.performance.entityActivation.denylist");
+    }
+
+    public static boolean redstoneProfilerEnabled() {
+        return gpomLoggingEnabled() && booleanValue("gpom.performance.redstoneProfiler.enabled");
+    }
+
+    public static int redstoneProfilerIntervalSeconds() {
+        return Math.max(1, intValue("gpom.performance.redstoneProfiler.intervalSeconds", 10));
+    }
+
+    public static boolean alternateCurrentEnabled() {
+        return booleanValue("gpom.performance.alternateCurrent.enabled");
+    }
+
+    public static int alternateCurrentMaxNetworkSize() {
+        return Math.max(1024, intValue("gpom.performance.alternateCurrent.maxNetworkSize", 131072));
+    }
+
+    public static boolean existingChunkPrefetchEnabled() {
+        return booleanValue("gpom.performance.existingChunkPrefetch.enabled");
+    }
+
+    public static int existingChunkPrefetchIntervalTicks() {
+        return Math.max(1, intValue("gpom.performance.existingChunkPrefetch.intervalTicks", 10));
+    }
+
+    public static int existingChunkPrefetchDistanceChunks() {
+        return Math.max(1, intValue("gpom.performance.existingChunkPrefetch.distanceChunks", 2));
+    }
+
+    public static double existingChunkPrefetchMinimumSpeed() {
+        return Math.max(0.01D, doubleValue("gpom.performance.existingChunkPrefetch.minimumSpeed", 0.12D));
+    }
+
+    public static int existingChunkPrefetchMaxOutstanding() {
+        return Math.max(1, intValue("gpom.performance.existingChunkPrefetch.maxOutstanding", 8));
     }
 
     public static boolean worldLifecycleProfilerEnabled() {
@@ -2299,6 +2475,10 @@ public final class GpomEarlyConfig {
 
     public static boolean blockcrafteryModelRenderLayerCompatEnabled() {
         return booleanValue("gpom.blockcraftery.modelRenderLayerCompat");
+    }
+
+    public static boolean blockcrafteryDoubleSlopesEnabled() {
+        return booleanValue("gpom.blockcraftery.doubleSlopes.enabled");
     }
 
     public static boolean journeyMapCleanupLeaksEnabled() {
@@ -2647,6 +2827,16 @@ public final class GpomEarlyConfig {
             return Integer.parseInt(raw);
         } catch (NumberFormatException exception) {
             GPOM.LOGGER.warn("[GPOM Config] Invalid integer {}={} ; using {}", key, raw, fallback);
+            return fallback;
+        }
+    }
+
+    private static double doubleValue(String key, double fallback) {
+        String raw = VALUES.getProperty(key, Double.toString(fallback)).trim();
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException exception) {
+            GPOM.LOGGER.warn("[GPOM Config] Invalid decimal {}={} ; using {}", key, raw, fallback);
             return fallback;
         }
     }
