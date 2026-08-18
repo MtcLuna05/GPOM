@@ -2,14 +2,12 @@
 
 General Purpose Optimization Mod, or GPOM, is a Minecraft 1.12.2 Cleanroom/Forge optimization coremod for heavily modded packs. It targets startup, registry, HEI, world-entry, compatibility, diagnostics, and selected gameplay/UI bottlenecks with exact-version ASM, mixins, caches, and experimental threaded FML lifecycle dispatch.
 
-The repository README is intentionally short. The maintained feature and validation details live in docs so this file does not drift from the operational profile.
+The repository README is intentionally short. The maintained public feature and configuration details live in docs so this file does not drift from the supported profile.
 
 ## Documentation
 
 - [Feature catalog](docs/FEATURE_CATALOG.md): maintained inventory of GPOM features, config model, risk levels, and pack-specific compatibility notes.
-- [Feature log](docs/FEATURE_LOG.md): current measured status, validation notes, latest crashes/fixes, and active tuning decisions. Historical status blocks older than today are intentionally removed from this file.
 - [Sample speed config](docs/gpom-early.properties): documented `config/gpom-early.properties` profile aligned with the tested MeatballCraft speed posture.
-- [Resume state](docs/GPOM_CHAT_RESUME_STATE.json): machine-readable handoff state for continuing work without losing current constraints.
 
 ## Building
 
