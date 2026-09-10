@@ -1,0 +1,9 @@
+{
+  "variants": {
+    "inventory": [
+      {
+        "model": "vajra:item/vajra"
+      }
+    ]
+  }
+}

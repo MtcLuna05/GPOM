@@ -1,6 +1,6 @@
 # GPOM Feature Catalog
 
-This catalog tracks GPOM features, not only startup optimizations. It is intended as the high-level inventory for maintainers and pack operators. Use `docs/FEATURE_LOG.md` for measured run history, validation notes, crashes, and active decisions.
+This catalog tracks GPOM features, not only startup optimizations. It is the public high-level inventory for maintainers and pack operators; transient profiling runs and local validation history are intentionally kept outside the repository.
 
 Current live context, 2026-06-23:
 
@@ -106,11 +106,13 @@ Behavior details:
 - Worker event handlers receive a thread-local active mod container so Forge context is correct for the running mod.
 - Mod-state writes are committed deterministically after worker completion.
 - Catchable Java failures can optionally be logged and continued for diagnostics, but `continueOnModError` should remain `false` for play.
+- A lifecycle handler that escapes from a GPOM worker is rethrown with a crash-report-visible probable-cause warning naming the mod, lifecycle phase, and exact phase denylist key to edit before retrying.
+- `ClassNotFoundException`, `NoClassDefFoundError`, initialization, and other linkage failures receive an additional class-loading/order note. This is evidence that the failure occurred in threaded dispatch, not proof that the mod is intrinsically broken; the confirmation step is retrying with that mod denied in the named phase.
 - Native aborts and `System.exit` cannot be recovered.
 
 Live MeatballCraft posture:
 
-- Broad lifecycle threading is enabled in the live profile with `allowlist=*` and empirical phase denylists.
+- PreInit, Init, PostInit, and LoadComplete threading are enabled in the live profile with `allowlist=*` and empirical phase denylists. Construction threading remains disabled in the production/default profile.
 - Blockcraftery and Mystical Lib stay on main-thread PreInit because Mystical Lib uses global active-mod state while Blockcraftery creates namespaced content through that library.
 
 Risk level: high when broad allowlists are used. Deny failing mods by phase first; patch only stable, high-value failures.
@@ -222,7 +224,7 @@ gpom.hei.parallelPluginRegistration.enabled=false
 gpom.hei.parallelPluginRegistration.workers=6
 gpom.hei.parallelPluginRegistration.overlapSerial=true
 gpom.hei.parallelPluginRegistration.allowlist=*
-gpom.hei.parallelPluginRegistration.denylist=mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,com.l.gpom.compat.hei.GpomHeiQoLPlugin,lumien.randomthings.handler.compability.jei.RandomThingsPlugin,com.blakebr0.mysticalagradditions.compat.jei.CompatJEI
+gpom.hei.parallelPluginRegistration.denylist=mezz.jei.plugins.jei.JEIInternalPlugin,mezz.jei.plugins.modsupport.ModSupportPlugin,com.luna.gpom.compat.hei.GpomHeiQoLPlugin,lumien.randomthings.handler.compability.jei.RandomThingsPlugin,com.blakebr0.mysticalagradditions.compat.jei.CompatJEI
 ```
 
 Performance capabilities:
@@ -364,7 +366,8 @@ gpom.preInitClassPrewarm.explicitClasses=
 Capabilities:
 
 - Preloads class definitions for allowlisted mods during PreInit so later handlers hit warmer class metadata and IO.
-- Can pause during serial handlers to avoid adding CPU contention during main-thread-only work.
+- Drains any class load already in progress before a serial handler or blocking scheduler wait, then remains paused until the serialized section ends.
+- Custom Main Menu is serialized in both Construction and PreInit because its event-handler registration resolves client GUI classes through Foundation's shared launch classloader.
 - Can use no-static-init class loading by default to avoid executing mod code early.
 - Can be configured with extra prefixes and explicit classes for targeted testing.
 - When static initialization is enabled broadly, scanned registry/block/item/recipe holder classes are automatically routed through no-static-init loading. This preserves class metadata warming without constructing registry objects before Forge has the owning mod container active.

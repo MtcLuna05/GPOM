@@ -1,6 +1,6 @@
 {
   "required": false,
-  "package": "com.l.gpom.mixin",
+  "package": "com.luna.gpom.mixin",
   "compatibilityLevel": "JAVA_8",
   "refmap": "gpom.refmap.json",
   "mixins": [],

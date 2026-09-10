@@ -1,0 +1,135 @@
+package com.luna.gpom.mixin.fml;
+
+import com.luna.gpom.profiling.StartupProfiler;
+import com.luna.gpom.profiling.RuntimeSinkProfiler;
+import net.minecraftforge.event.RegistryEvent;
+import net.minecraftforge.fml.common.ModContainer;
+import net.minecraftforge.fml.common.eventhandler.ASMEventHandler;
+import net.minecraftforge.fml.common.eventhandler.Event;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(value = ASMEventHandler.class, remap = false)
+public abstract class MixinASMEventHandlerStartupProfiler {
+    @Shadow
+    @Final
+    private ModContainer owner;
+
+    @Shadow
+    @Final
+    private String readable;
+
+    @Unique
+    private long gpom$invokeStartedAt;
+
+    @Unique
+    private String gpom$invokeEventName;
+
+    @Unique
+    private long gpom$runtimeInvokeStartedAt;
+
+    @Inject(method = "invoke", at = @At("HEAD"))
+    private void gpom$beginInvoke(Event event, CallbackInfo ci) {
+        if (RuntimeSinkProfiler.shouldProfileForgeEvent(event)) {
+            gpom$runtimeInvokeStartedAt = RuntimeSinkProfiler.begin();
+        } else {
+            gpom$runtimeInvokeStartedAt = 0L;
+        }
+        if (!StartupProfiler.isPostPreInitTransitionActive()) {
+            gpom$invokeStartedAt = 0L;
+            gpom$invokeEventName = null;
+            return;
+        }
+        gpom$invokeStartedAt = StartupProfiler.beginProbe();
+        gpom$invokeEventName = gpom$eventName(event);
+        StartupProfiler.postPreInitProgressStage(gpom$postPreInitHandlerStage(gpom$invokeEventName));
+    }
+
+    @Inject(method = "invoke", at = @At("RETURN"))
+    private void gpom$endInvoke(Event event, CallbackInfo ci) {
+        long runtimeStartedAt = gpom$runtimeInvokeStartedAt;
+        if (runtimeStartedAt != 0L) {
+            RuntimeSinkProfiler.recordEventHandler(event, gpom$ownerName(), gpom$readableName(), runtimeStartedAt);
+            gpom$runtimeInvokeStartedAt = 0L;
+        }
+        long startedAt = gpom$invokeStartedAt;
+        if (startedAt == 0L) {
+            return;
+        }
+        StartupProfiler.endProbe(
+                "Forge Event handler " + gpom$invokeEventName + ' ' + gpom$ownerName() + ' ' + gpom$readableName(),
+                startedAt
+        );
+        gpom$invokeStartedAt = 0L;
+        gpom$invokeEventName = null;
+    }
+
+    @Unique
+    private String gpom$ownerName() {
+        return owner == null ? "<unknown>" : owner.getModId();
+    }
+
+    @Unique
+    private String gpom$readableName() {
+        return readable == null ? "<unknown>" : readable;
+    }
+
+    @Unique
+    private static String gpom$eventName(Event event) {
+        if (event == null) {
+            return "<null>";
+        }
+        String name = event.getClass().getName();
+        if (event instanceof RegistryEvent.Register) {
+            Object registryName = ((RegistryEvent.Register<?>) event).getName();
+            if (registryName != null) {
+                return name + " " + registryName;
+            }
+        }
+        return name;
+    }
+
+    @Unique
+    private String gpom$postPreInitHandlerStage(String eventName) {
+        if (eventName == null) {
+            return null;
+        }
+        String modId = gpom$ownerName();
+        if (eventName.contains("RegistryEvent$Register minecraft:recipes")) {
+            if ("crafttweaker".equals(modId)) {
+                return "CraftTweaker scripts";
+            }
+            if ("nuclearcraft".equals(modId)) {
+                return "NuclearCraft recipes";
+            }
+            if ("integrateddynamics".equals(modId)) {
+                return "IntegratedDynamics recipes";
+            }
+            if ("techreborn".equals(modId)) {
+                return "TechReborn recipes";
+            }
+            return "Recipe registry handlers";
+        }
+        if (eventName.contains("TextureStitchEvent$Pre")) {
+            if ("thebetweenlands".equals(modId)) {
+                return "Betweenlands textures";
+            }
+            if ("vintagefix".equals(modId)) {
+                return "VintageFix textures";
+            }
+            return "Texture stitching";
+        }
+        if (eventName.contains("ModelRegistryEvent")) {
+            return "Model registration";
+        }
+        if (eventName.contains("ModelBakeEvent")) {
+            return "Model baking";
+        }
+        return null;
+    }
+}
